@@ -21,7 +21,7 @@ export function GameScene({ game, overlay, teams, players }: Props) {
       <TeamColorInjector homeTeam={homeTeam} awayTeam={awayTeam} />
 
       {/* Scoreboard / Homerun banner — centered, ~36% of screen width */}
-      <div className="flex justify-center w-full">
+      <div className="flex justify-center w-full pt-4">
         <div style={{ width: '36%' }}>
           <AnimatePresence mode="wait">
             {overlay.homerun?.active ? (
