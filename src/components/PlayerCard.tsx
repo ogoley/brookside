@@ -42,7 +42,7 @@ export function PlayerCard({ player, team }: Props) {
         {(isPitcher || isBoth) && (
           <>
             <Stat label="ERA" value={stats.era !== undefined ? stats.era.toFixed(2) : '---'} />
-            <Stat label="K" value={stats.strikeouts ?? 0} />
+            <Stat label="K" value={stats.k ?? 0} />
             <Stat label="IP" value={stats.inningsPitched ?? 0} />
           </>
         )}

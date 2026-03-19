@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import type { GameMeta, Team, TimerState } from '../types'
-import { OutIndicator } from './OutIndicator'
 import { BaseDiamond } from './BaseDiamond'
 
 interface Props {
@@ -39,12 +38,12 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer }: Props) {
 
   return (
     // No outer background — pills and center each own their own bg
-    <div className="flex items-stretch" style={{ height: 70 }}>
+    <div className="inline-flex items-stretch" style={{ height: 70 }}>
 
       {/* ── Away pill (left) — SCORE | LOGO | NAME ── */}
       <div
-        className="flex items-center justify-between gap-1 pl-3 pr-2 rounded-l-full shrink-0"
-        style={{ background: awayPrimary, minWidth: 90 }}
+        className="flex items-center justify-between gap-1 pl-3 pr-2 rounded-l-full"
+        style={{ background: awayPrimary, width: 160, flexShrink: 0 }}
       >
         <span
           className="font-black leading-none shrink-0"
@@ -118,8 +117,8 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer }: Props) {
 
       {/* ── Home pill (right) — NAME | LOGO | SCORE ── */}
       <div
-        className="flex items-center justify-between gap-1 pr-3 pl-2 rounded-r-full shrink-0"
-        style={{ background: homePrimary, minWidth: 90 }}
+        className="flex items-center justify-between gap-1 pr-3 pl-2 rounded-r-full"
+        style={{ background: homePrimary, width: 160, flexShrink: 0 }}
       >
         <span
           className="font-bold tracking-wide truncate leading-none shrink-0"

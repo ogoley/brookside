@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "seed": "node scripts/seedPlayers.js"
+    "seed": "node scripts/seedPlayers.js",
+    "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
     "firebase": "^12.11.0",
@@ -27,6 +28,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-tools": "^15.11.0",
     "globals": "^17.4.0",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
