@@ -20,8 +20,8 @@ export function GameScene({ game, overlay, teams, players }: Props) {
 
       {/* Scoreboard — centered, ~25% of screen width */}
       <div className="flex justify-center w-full">
-        <div style={{ width: '26%' }}>
-          <Scoreboard game={game} homeTeam={homeTeam} awayTeam={awayTeam} />
+        <div style={{ width: '36%' }}>
+          <Scoreboard game={game} homeTeam={homeTeam} awayTeam={awayTeam} timer={overlay.timer} />
         </div>
       </div>
 

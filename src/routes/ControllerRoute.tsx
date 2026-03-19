@@ -1,11 +1,12 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { ref, update, set } from 'firebase/database'
 import { db } from '../firebase'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
-import type { SceneName } from '../types'
+import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
+import type { SceneName, TimerState } from '../types'
 
 const SCENES: { id: SceneName; label: string }[] = [
   { id: 'game', label: 'Game' },
@@ -15,6 +16,13 @@ const SCENES: { id: SceneName; label: string }[] = [
 ]
 
 const DELAY_OPTIONS = [3000, 5000, 8000, 10000, 15000]
+const TIMER_PRESETS = [
+  { label: '1m', ms: 60_000 },
+  { label: '2m', ms: 120_000 },
+  { label: '3m', ms: 180_000 },
+  { label: '5m', ms: 300_000 },
+  { label: '10m', ms: 600_000 },
+]
 
 export function ControllerRoute() {
   const { game } = useGameData()
@@ -26,25 +34,12 @@ export function ControllerRoute() {
   const [selectedPlayer, setSelectedPlayer] = useState('')
   const [dismissDelay, setDismissDelay] = useState(5000)
 
-  const longPressRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
   const adjustScore = useCallback((side: 'home' | 'away', delta: number) => {
     const key = side === 'home' ? 'homeScore' : 'awayScore'
     const current = side === 'home' ? game.homeScore : game.awayScore
     const next = Math.max(0, current + delta)
     update(ref(db, 'game/meta'), { [key]: next })
   }, [game.homeScore, game.awayScore])
-
-  const startLongPress = (side: 'home' | 'away', delta: number) => {
-    if (longPressRef.current) return
-    longPressRef.current = setInterval(() => adjustScore(side, delta), 150)
-  }
-  const stopLongPress = () => {
-    if (longPressRef.current) {
-      clearInterval(longPressRef.current)
-      longPressRef.current = null
-    }
-  }
 
   const setInning = (delta: number) => {
     const next = Math.max(1, game.inning + delta)
@@ -57,6 +52,40 @@ export function ControllerRoute() {
 
   const toggleBase = (base: 'first' | 'second' | 'third') => {
     update(ref(db, 'game/meta/bases'), { [base]: !game.bases[base] })
+  }
+
+  const resetInning = () => {
+    update(ref(db, 'game/meta'), { outs: 0 })
+    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+  }
+
+  const advanceHalfInning = () => {
+    if (game.isTopInning) {
+      update(ref(db, 'game/meta'), { isTopInning: false, outs: 0 })
+    } else {
+      update(ref(db, 'game/meta'), { isTopInning: true, inning: game.inning + 1, outs: 0 })
+    }
+    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+  }
+
+  const timerPreset = (ms: number) => {
+    set(ref(db, 'overlay/timer'), { durationMs: ms, startedAt: null, running: false })
+  }
+
+  const timerStart = () => {
+    update(ref(db, 'overlay/timer'), { startedAt: Date.now(), running: true })
+  }
+
+  const timerStop = () => {
+    // Freeze remaining time so display stays where it stopped
+    const t = overlay.timer
+    const elapsed = t.startedAt != null ? Date.now() - t.startedAt : 0
+    const remaining = Math.max(0, t.durationMs - elapsed)
+    set(ref(db, 'overlay/timer'), { durationMs: remaining, startedAt: null, running: false })
+  }
+
+  const timerReset = () => {
+    set(ref(db, 'overlay/timer'), { durationMs: 0, startedAt: null, running: false })
   }
 
   const setScene = (scene: SceneName) => {
@@ -98,101 +127,35 @@ export function ControllerRoute() {
       </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-        {/* ── LEFT COLUMN: game state ── */}
+        {/* ── LEFT COLUMN: interactive scoreboard ── */}
         <div className="flex flex-col gap-4">
-
-          {/* SCORE */}
-          <Section title="Score">
-            <ScoreControl
-              label={awayTeam?.name ?? 'Away'}
-              score={game.awayScore}
-              onIncrement={() => adjustScore('away', 1)}
-              onDecrement={() => adjustScore('away', -1)}
-              onLongStart={(d) => startLongPress('away', d)}
-              onLongEnd={stopLongPress}
-            />
-            <ScoreControl
-              label={homeTeam?.name ?? 'Home'}
-              score={game.homeScore}
-              onIncrement={() => adjustScore('home', 1)}
-              onDecrement={() => adjustScore('home', -1)}
-              onLongStart={(d) => startLongPress('home', d)}
-              onLongEnd={stopLongPress}
-            />
-          </Section>
-
-          {/* INNING */}
-          <Section title="Inning">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-3">
-                <TouchBtn onClick={() => setInning(-1)} className="w-14 h-14 text-2xl">◀</TouchBtn>
-                <span className="text-white text-3xl font-bold w-24 text-center" style={{ fontFamily: 'var(--font-score)' }}>
-                  {game.isTopInning ? 'Top' : 'Bot'} {game.inning}
-                </span>
-                <TouchBtn onClick={() => setInning(1)} className="w-14 h-14 text-2xl">▶</TouchBtn>
-              </div>
-              <div className="flex gap-3">
-                <TouchBtn
-                  onClick={() => update(ref(db, 'game/meta'), { isTopInning: true })}
-                  active={game.isTopInning}
-                  className="px-5 h-14 text-sm font-semibold"
-                >
-                  Top
-                </TouchBtn>
-                <TouchBtn
-                  onClick={() => update(ref(db, 'game/meta'), { isTopInning: false })}
-                  active={!game.isTopInning}
-                  className="px-5 h-14 text-sm font-semibold"
-                >
-                  Bot
-                </TouchBtn>
-              </div>
-            </div>
-          </Section>
-
-          {/* OUTS + BASES side by side on wider screens */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Section title="Outs">
-              <div className="flex gap-3">
-                {[0, 1, 2].map((n) => (
-                  <TouchBtn
-                    key={n}
-                    onClick={() => setOuts(n)}
-                    active={game.outs === n}
-                    className="flex-1 h-14 text-xl font-bold"
-                  >
-                    {n}
-                  </TouchBtn>
-                ))}
-              </div>
-            </Section>
-
-            <Section title="Bases">
-              <div className="flex gap-2 flex-wrap">
-                {(['first', 'second', 'third'] as const).map((base) => (
-                  <TouchBtn
-                    key={base}
-                    onClick={() => toggleBase(base)}
-                    active={game.bases[base]}
-                    className="flex-1 h-14 text-sm font-semibold"
-                  >
-                    {base === 'first' ? '1B' : base === 'second' ? '2B' : '3B'}
-                  </TouchBtn>
-                ))}
-                <TouchBtn
-                  onClick={() => update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })}
-                  className="flex-1 h-14 text-sm font-semibold"
-                >
-                  Clr
-                </TouchBtn>
-              </div>
-            </Section>
-          </div>
-
+          <InteractiveScoreboard
+            game={game}
+            homeTeam={homeTeam}
+            awayTeam={awayTeam}
+            onScoreChange={adjustScore}
+            onInningChange={setInning}
+            onSetHalf={(isTop) => update(ref(db, 'game/meta'), { isTopInning: isTop })}
+            onSetOuts={setOuts}
+            onToggleBase={toggleBase}
+            onReset={resetInning}
+            onAdvanceHalfInning={advanceHalfInning}
+          />
         </div>
 
         {/* ── RIGHT COLUMN: broadcast controls ── */}
         <div className="flex flex-col gap-4">
+
+          {/* TIMER */}
+          <Section title="Countdown Timer">
+            <TimerControl
+              timer={overlay.timer}
+              onPreset={timerPreset}
+              onStart={timerStart}
+              onStop={timerStop}
+              onReset={timerReset}
+            />
+          </Section>
 
           {/* STAT OVERLAY */}
           <Section title="Stat Overlay">
@@ -326,6 +289,113 @@ interface TouchBtnProps {
   disabled?: boolean
 }
 
+interface TimerControlProps {
+  timer: TimerState
+  onPreset: (ms: number) => void
+  onStart: () => void
+  onStop: () => void
+  onReset: () => void
+}
+
+function TimerControl({ timer, onPreset, onStart, onStop, onReset }: TimerControlProps) {
+  const [, setTick] = useState(0)
+  const [customMins, setCustomMins] = useState('60')
+
+  useEffect(() => {
+    if (!timer.running) return
+    const id = setInterval(() => setTick(t => t + 1), 250)
+    return () => clearInterval(id)
+  }, [timer.running])
+
+  const elapsed = timer.running && timer.startedAt != null ? Date.now() - timer.startedAt : 0
+  const remaining = Math.max(0, timer.durationMs - elapsed)
+  const totalSecs = Math.ceil(remaining / 1000)
+  const displayMins = Math.floor(totalSecs / 60)
+  const displaySecs = totalSecs % 60
+  const display = `${displayMins}:${displaySecs.toString().padStart(2, '0')}`
+
+  const handleCustomSet = () => {
+    const mins = parseFloat(customMins)
+    if (!isNaN(mins) && mins > 0) onPreset(Math.round(mins * 60_000))
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Quick presets */}
+      <div className="flex gap-2">
+        {TIMER_PRESETS.map(({ label, ms }) => (
+          <TouchBtn
+            key={ms}
+            onClick={() => onPreset(ms)}
+            active={!timer.running && timer.durationMs === ms && timer.startedAt === null}
+            className="flex-1 h-11 text-sm font-semibold"
+          >
+            {label}
+          </TouchBtn>
+        ))}
+      </div>
+
+      {/* Custom duration */}
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min="1"
+          step="0.5"
+          value={customMins}
+          onChange={e => setCustomMins(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleCustomSet()}
+          className="h-11 rounded-lg px-3 text-base font-semibold text-center w-24"
+          style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+        />
+        <span className="text-white/40 text-sm shrink-0" style={{ fontFamily: 'var(--font-ui)' }}>min</span>
+        <button
+          onClick={handleCustomSet}
+          className="h-11 px-4 rounded-lg font-semibold text-sm uppercase tracking-wider flex-1"
+          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.1)' }}
+        >
+          Set
+        </button>
+      </div>
+
+      {/* Display + start/pause/reset */}
+      <div className="flex items-center gap-3">
+        <span
+          className="text-white text-3xl font-black tabular-nums flex-1 text-center"
+          style={{ fontFamily: 'var(--font-score)' }}
+        >
+          {display}
+        </span>
+
+        {!timer.running ? (
+          <button
+            onClick={onStart}
+            className="h-12 px-5 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
+            style={{ background: '#16a34a', color: '#fff' }}
+          >
+            Start
+          </button>
+        ) : (
+          <button
+            onClick={onStop}
+            className="h-12 px-5 rounded-xl font-bold text-sm uppercase tracking-wider"
+            style={{ background: '#b45309', color: '#fff' }}
+          >
+            Pause
+          </button>
+        )}
+
+        <button
+          onClick={onReset}
+          className="h-12 px-4 rounded-xl font-bold text-sm uppercase tracking-wider"
+          style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function TouchBtn({ onClick, active, className = '', children, disabled }: TouchBtnProps) {
   return (
     <button
@@ -345,53 +415,3 @@ function TouchBtn({ onClick, active, className = '', children, disabled }: Touch
   )
 }
 
-interface ScoreControlProps {
-  label: string
-  score: number
-  onIncrement: () => void
-  onDecrement: () => void
-  onLongStart: (delta: number) => void
-  onLongEnd: () => void
-}
-
-function ScoreControl({ label, score, onIncrement, onDecrement, onLongStart, onLongEnd }: ScoreControlProps) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-1">
-      <span className="text-white font-semibold text-base flex-1 min-w-0 truncate" style={{ fontFamily: 'var(--font-ui)' }}>
-        {label}
-      </span>
-      <div className="flex items-center gap-4 shrink-0">
-        <button
-          onClick={onDecrement}
-          onMouseDown={() => onLongStart(-1)}
-          onMouseUp={onLongEnd}
-          onMouseLeave={onLongEnd}
-          onTouchStart={() => onLongStart(-1)}
-          onTouchEnd={onLongEnd}
-          className="w-14 h-14 rounded-xl text-2xl font-bold select-none"
-          style={{ background: 'rgba(255,255,255,0.07)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-        >
-          −
-        </button>
-        <span
-          className="text-white text-4xl font-black w-14 text-center"
-          style={{ fontFamily: 'var(--font-score)' }}
-        >
-          {score}
-        </span>
-        <button
-          onClick={onIncrement}
-          onMouseDown={() => onLongStart(1)}
-          onMouseUp={onLongEnd}
-          onMouseLeave={onLongEnd}
-          onTouchStart={() => onLongStart(1)}
-          onTouchEnd={onLongEnd}
-          className="w-14 h-14 rounded-xl text-2xl font-bold select-none"
-          style={{ background: 'rgba(255,255,255,0.07)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-        >
-          +
-        </button>
-      </div>
-    </div>
-  )
-}

@@ -4,14 +4,15 @@ interface Props {
   team?: Team
   score: number
   side: 'home' | 'away'
+  mirrored?: boolean
 }
 
-export function TeamBug({ team, score, side }: Props) {
+export function TeamBug({ team, score, side, mirrored }: Props) {
   const primary = side === 'home' ? 'var(--team-home-primary)' : 'var(--team-away-primary)'
   const secondary = side === 'home' ? 'var(--team-home-secondary)' : 'var(--team-away-secondary)'
 
   return (
-    <div className="flex items-center gap-0">
+    <div className={`flex items-center gap-0 ${mirrored ? 'flex-row-reverse' : ''}`}>
       {/* Logo / color block */}
       <div
         className="w-10 h-10 flex items-center justify-center overflow-hidden shrink-0"

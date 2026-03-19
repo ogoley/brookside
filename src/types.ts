@@ -35,9 +35,16 @@ export interface StatOverlayState {
   dismissAfterMs: number
 }
 
+export interface TimerState {
+  durationMs: number       // total countdown length
+  startedAt: number | null // epoch ms when last started; null = not running
+  running: boolean
+}
+
 export interface OverlayState {
   activeScene: 'game' | 'statCard' | 'matchup' | 'idle'
   statOverlay: StatOverlayState
+  timer: TimerState
 }
 
 export type SceneName = 'game' | 'statCard' | 'matchup' | 'idle'

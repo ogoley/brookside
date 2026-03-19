@@ -11,6 +11,11 @@ const DEFAULT_OVERLAY: OverlayState = {
     playerId: '',
     dismissAfterMs: 5000,
   },
+  timer: {
+    durationMs: 3_600_000, // 60 minutes default
+    startedAt: null,
+    running: false,
+  },
 }
 
 export function useOverlayState() {
@@ -27,6 +32,10 @@ export function useOverlayState() {
           statOverlay: {
             ...DEFAULT_OVERLAY.statOverlay,
             ...(data.statOverlay ?? {}),
+          },
+          timer: {
+            ...DEFAULT_OVERLAY.timer,
+            ...(data.timer ?? {}),
           },
         })
       }
