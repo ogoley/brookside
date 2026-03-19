@@ -10,8 +10,6 @@ interface Props {
 }
 
 export function Scoreboard({ game, homeTeam, awayTeam }: Props) {
-  const inningLabel = `${game.isTopInning ? 'Top' : 'Bot'} ${game.inning}`
-
   return (
     <div
       className="flex items-center justify-between px-4 h-12"
@@ -22,14 +20,15 @@ export function Scoreboard({ game, homeTeam, awayTeam }: Props) {
 
       {/* Center: inning + game state */}
       <div className="flex items-center gap-5 px-6">
-        {/* Inning */}
-        <div className="flex flex-col items-center">
-          <span
-            className="text-white text-sm font-semibold leading-none tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-score)' }}
-          >
-            {inningLabel}
-          </span>
+        {/* Inning arrow + number */}
+        <div className="flex flex-col items-center leading-none" style={{ fontFamily: 'var(--font-score)' }}>
+          {game.isTopInning && (
+            <span className="text-white text-xs leading-none">▲</span>
+          )}
+          <span className="text-white text-sm font-semibold">{game.inning}</span>
+          {!game.isTopInning && (
+            <span className="text-white text-xs leading-none">▼</span>
+          )}
         </div>
 
         {/* Divider */}

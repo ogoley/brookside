@@ -18,8 +18,12 @@ export function GameScene({ game, overlay, teams, players }: Props) {
     <div className="relative w-full h-full flex flex-col">
       <TeamColorInjector homeTeam={homeTeam} awayTeam={awayTeam} />
 
-      {/* Scoreboard — always at top */}
-      <Scoreboard game={game} homeTeam={homeTeam} awayTeam={awayTeam} />
+      {/* Scoreboard — centered, ~25% of screen width */}
+      <div className="flex justify-center w-full">
+        <div style={{ width: '26%' }}>
+          <Scoreboard game={game} homeTeam={homeTeam} awayTeam={awayTeam} />
+        </div>
+      </div>
 
       {/* Transparent game area */}
       <div className="flex-1" />
