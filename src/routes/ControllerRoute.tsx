@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ref, update, set } from 'firebase/database'
+import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
+import { TeamPillPreview } from '../components/TeamPillPreview'
 import type { SceneName, TimerState } from '../types'
 
 const SCENES: { id: SceneName; label: string }[] = [
@@ -44,6 +46,19 @@ export function ControllerRoute() {
 
   const resetInning = () => {
     update(ref(db, 'game/meta'), { outs: 0 })
+    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+  }
+
+  const setTeam = (side: 'home' | 'away', teamId: string) => {
+    const key = side === 'home' ? 'homeTeamId' : 'awayTeamId'
+    update(ref(db, 'game/meta'), { [key]: teamId })
+  }
+
+  const newGame = () => {
+    update(ref(db, 'game/meta'), {
+      homeScore: 0, awayScore: 0,
+      inning: 1, isTopInning: true, outs: 0,
+    })
     update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
   }
 
@@ -116,12 +131,70 @@ export function ControllerRoute() {
       className="min-h-screen px-4 py-4 sm:px-6 lg:px-10 lg:py-8"
       style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
-      <h1
-        className="text-white text-2xl font-black uppercase tracking-widest mb-4"
-        style={{ fontFamily: 'var(--font-score)' }}
-      >
-        Broadcast Control
-      </h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1
+          className="text-white text-2xl font-black uppercase tracking-widest"
+          style={{ fontFamily: 'var(--font-score)' }}
+        >
+          Broadcast Control
+        </h1>
+        <Link
+          to="/config"
+          className="text-sm font-semibold transition-colors"
+          style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-ui)' }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+        >
+          ⚙ Teams
+        </Link>
+      </div>
+
+      {/* ── MATCH SETUP ── */}
+      <Section title="Match">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Away */}
+          <div className="flex flex-col gap-2">
+            <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Away</span>
+            <select
+              value={game.awayTeamId}
+              onChange={e => setTeam('away', e.target.value)}
+              className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+              style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+            >
+              <option value="">— Select team —</option>
+              {Object.entries(teams).map(([id, t]) => (
+                <option key={id} value={id}>{t.name}</option>
+              ))}
+            </select>
+            {awayTeam && <TeamPillPreview team={awayTeam} score={game.awayScore} />}
+          </div>
+
+          {/* Home */}
+          <div className="flex flex-col gap-2">
+            <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Home</span>
+            <select
+              value={game.homeTeamId}
+              onChange={e => setTeam('home', e.target.value)}
+              className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+              style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+            >
+              <option value="">— Select team —</option>
+              {Object.entries(teams).map(([id, t]) => (
+                <option key={id} value={id}>{t.name}</option>
+              ))}
+            </select>
+            {homeTeam && <TeamPillPreview team={homeTeam} score={game.homeScore} />}
+          </div>
+        </div>
+
+        <button
+          onClick={newGame}
+          className="w-full h-11 rounded-xl font-bold text-sm uppercase tracking-wider mt-1"
+          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
+        >
+          New Game — Reset Score, Inning &amp; Bases
+        </button>
+      </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
         {/* ── LEFT COLUMN: interactive scoreboard ── */}
