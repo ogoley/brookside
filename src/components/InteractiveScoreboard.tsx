@@ -6,18 +6,17 @@ interface Props {
   homeTeam?: Team
   awayTeam?: Team
   onScoreChange: (side: 'home' | 'away', delta: number) => void
-  onInningChange: (delta: number) => void
-  onSetHalf: (isTop: boolean) => void
   onSetOuts: (outs: number) => void
   onToggleBase: (base: 'first' | 'second' | 'third') => void
   onReset: () => void
   onAdvanceHalfInning: () => void
+  onRewindHalfInning: () => void
 }
 
 export function InteractiveScoreboard({
   game, homeTeam, awayTeam,
-  onScoreChange, onInningChange, onSetHalf,
-  onSetOuts, onToggleBase, onReset, onAdvanceHalfInning,
+  onScoreChange, onSetOuts, onToggleBase,
+  onReset, onAdvanceHalfInning, onRewindHalfInning,
 }: Props) {
   const longPressRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -60,40 +59,18 @@ export function InteractiveScoreboard({
         {/* ── CENTER: inning / bases / outs ── */}
         <div className="flex items-center justify-center gap-4 sm:gap-5 px-4 py-3 sm:flex-1">
 
-          {/* Inning */}
-          <div className="flex items-center gap-1.5">
-            <NavBtn onClick={() => onInningChange(-1)}>◀</NavBtn>
+          {/* Inning — two half-inning step buttons flanking the display */}
+          <div className="flex items-center gap-2">
+            <HalfInningBtn onClick={onRewindHalfInning} direction="back" />
             <div
               className="flex flex-col items-center w-10 select-none"
               style={{ fontFamily: 'var(--font-score)' }}
             >
-              <button
-                onClick={() => onSetHalf(true)}
-                className="leading-none px-1 py-0.5 rounded transition-colors"
-                style={{ color: game.isTopInning ? '#facc15' : 'rgba(255,255,255,0.25)' }}
-              >
-                ▲
-              </button>
+              <span style={{ fontSize: 10, color: game.isTopInning ? '#facc15' : 'rgba(255,255,255,0.22)', lineHeight: 1 }}>▲</span>
               <span className="text-white text-2xl font-bold leading-tight">{game.inning}</span>
-              <button
-                onClick={() => onSetHalf(false)}
-                className="leading-none px-1 py-0.5 rounded transition-colors"
-                style={{ color: !game.isTopInning ? '#facc15' : 'rgba(255,255,255,0.25)' }}
-              >
-                ▼
-              </button>
+              <span style={{ fontSize: 10, color: !game.isTopInning ? '#facc15' : 'rgba(255,255,255,0.22)', lineHeight: 1 }}>▼</span>
             </div>
-            <NavBtn onClick={() => onInningChange(1)}>▶</NavBtn>
-            {/* Advance one half inning */}
-            <button
-              onClick={onAdvanceHalfInning}
-              title="Next half inning"
-              className="flex flex-col items-center justify-center w-8 h-8 rounded-lg select-none transition-colors hover:text-white"
-              style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', fontSize: 9, fontFamily: 'var(--font-score)', lineHeight: 1, gap: 1 }}
-            >
-              <span style={{ fontSize: 11 }}>▶</span>
-              <span className="uppercase tracking-wider" style={{ fontSize: 8 }}>½</span>
-            </button>
+            <HalfInningBtn onClick={onAdvanceHalfInning} direction="forward" />
           </div>
 
           <Divider />
@@ -268,14 +245,15 @@ function TapBase({ active, onClick }: { active: boolean; onClick: () => void }) 
   )
 }
 
-function NavBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function HalfInningBtn({ onClick, direction }: { onClick: () => void; direction: 'forward' | 'back' }) {
   return (
     <button
       onClick={onClick}
-      className="w-8 h-8 flex items-center justify-center rounded-lg text-white/50 hover:text-white transition-colors text-base select-none"
-      style={{ background: 'rgba(255,255,255,0.07)' }}
+      className="flex flex-col items-center justify-center w-10 h-10 rounded-xl select-none transition-colors hover:text-white"
+      style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)', fontFamily: 'var(--font-score)', lineHeight: 1 }}
     >
-      {children}
+      <span style={{ fontSize: 13 }}>{direction === 'forward' ? '▶' : '◀'}</span>
+      <span style={{ fontSize: 9 }}>½</span>
     </button>
   )
 }

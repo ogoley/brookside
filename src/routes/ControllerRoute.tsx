@@ -16,13 +16,6 @@ const SCENES: { id: SceneName; label: string }[] = [
 ]
 
 const DELAY_OPTIONS = [3000, 5000, 8000, 10000, 15000]
-const TIMER_PRESETS = [
-  { label: '1m', ms: 60_000 },
-  { label: '2m', ms: 120_000 },
-  { label: '3m', ms: 180_000 },
-  { label: '5m', ms: 300_000 },
-  { label: '10m', ms: 600_000 },
-]
 
 export function ControllerRoute() {
   const { game } = useGameData()
@@ -40,11 +33,6 @@ export function ControllerRoute() {
     const next = Math.max(0, current + delta)
     update(ref(db, 'game/meta'), { [key]: next })
   }, [game.homeScore, game.awayScore])
-
-  const setInning = (delta: number) => {
-    const next = Math.max(1, game.inning + delta)
-    update(ref(db, 'game/meta'), { inning: next })
-  }
 
   const setOuts = (outs: number) => {
     update(ref(db, 'game/meta'), { outs })
@@ -64,6 +52,15 @@ export function ControllerRoute() {
       update(ref(db, 'game/meta'), { isTopInning: false, outs: 0 })
     } else {
       update(ref(db, 'game/meta'), { isTopInning: true, inning: game.inning + 1, outs: 0 })
+    }
+    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+  }
+
+  const rewindHalfInning = () => {
+    if (!game.isTopInning) {
+      update(ref(db, 'game/meta'), { isTopInning: true, outs: 0 })
+    } else {
+      update(ref(db, 'game/meta'), { isTopInning: false, inning: Math.max(1, game.inning - 1), outs: 0 })
     }
     update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
   }
@@ -134,12 +131,11 @@ export function ControllerRoute() {
             homeTeam={homeTeam}
             awayTeam={awayTeam}
             onScoreChange={adjustScore}
-            onInningChange={setInning}
-            onSetHalf={(isTop) => update(ref(db, 'game/meta'), { isTopInning: isTop })}
             onSetOuts={setOuts}
             onToggleBase={toggleBase}
             onReset={resetInning}
             onAdvanceHalfInning={advanceHalfInning}
+            onRewindHalfInning={rewindHalfInning}
           />
         </div>
 
@@ -320,78 +316,55 @@ function TimerControl({ timer, onPreset, onStart, onStop, onReset }: TimerContro
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Quick presets */}
-      <div className="flex gap-2">
-        {TIMER_PRESETS.map(({ label, ms }) => (
-          <TouchBtn
-            key={ms}
-            onClick={() => onPreset(ms)}
-            active={!timer.running && timer.durationMs === ms && timer.startedAt === null}
-            className="flex-1 h-11 text-sm font-semibold"
-          >
-            {label}
-          </TouchBtn>
-        ))}
-      </div>
-
-      {/* Custom duration */}
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min="1"
-          step="0.5"
-          value={customMins}
-          onChange={e => setCustomMins(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleCustomSet()}
-          className="h-11 rounded-lg px-3 text-base font-semibold text-center w-24"
-          style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-        />
-        <span className="text-white/40 text-sm shrink-0" style={{ fontFamily: 'var(--font-ui)' }}>min</span>
+    <div className="flex items-center gap-2 flex-wrap">
+      <input
+        type="number"
+        min="1"
+        step="0.5"
+        value={customMins}
+        onChange={e => setCustomMins(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && handleCustomSet()}
+        className="h-11 rounded-lg px-3 text-base font-semibold text-center shrink-0"
+        style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', width: 72 }}
+      />
+      <span className="text-white/40 text-sm shrink-0" style={{ fontFamily: 'var(--font-ui)' }}>min</span>
+      <button
+        onClick={handleCustomSet}
+        className="h-11 px-3 rounded-lg font-semibold text-sm uppercase tracking-wider shrink-0"
+        style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        Set
+      </button>
+      <span
+        className="text-white font-black tabular-nums flex-1 text-center"
+        style={{ fontFamily: 'var(--font-score)', fontSize: 22 }}
+      >
+        {display}
+      </span>
+      {!timer.running ? (
         <button
-          onClick={handleCustomSet}
-          className="h-11 px-4 rounded-lg font-semibold text-sm uppercase tracking-wider flex-1"
-          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.75)', border: '1px solid rgba(255,255,255,0.1)' }}
+          onClick={onStart}
+          className="h-11 px-4 rounded-xl font-bold text-sm uppercase tracking-wider shrink-0"
+          style={{ background: '#16a34a', color: '#fff' }}
         >
-          Set
+          Start
         </button>
-      </div>
-
-      {/* Display + start/pause/reset */}
-      <div className="flex items-center gap-3">
-        <span
-          className="text-white text-3xl font-black tabular-nums flex-1 text-center"
-          style={{ fontFamily: 'var(--font-score)' }}
-        >
-          {display}
-        </span>
-
-        {!timer.running ? (
-          <button
-            onClick={onStart}
-            className="h-12 px-5 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
-            style={{ background: '#16a34a', color: '#fff' }}
-          >
-            Start
-          </button>
-        ) : (
-          <button
-            onClick={onStop}
-            className="h-12 px-5 rounded-xl font-bold text-sm uppercase tracking-wider"
-            style={{ background: '#b45309', color: '#fff' }}
-          >
-            Pause
-          </button>
-        )}
-
+      ) : (
         <button
-          onClick={onReset}
-          className="h-12 px-4 rounded-xl font-bold text-sm uppercase tracking-wider"
-          style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+          onClick={onStop}
+          className="h-11 px-4 rounded-xl font-bold text-sm uppercase tracking-wider shrink-0"
+          style={{ background: '#b45309', color: '#fff' }}
         >
-          Reset
+          Pause
         </button>
-      </div>
+      )}
+      <button
+        onClick={onReset}
+        className="h-11 px-3 rounded-xl font-bold text-sm uppercase tracking-wider shrink-0"
+        style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+      >
+        Reset
+      </button>
     </div>
   )
 }

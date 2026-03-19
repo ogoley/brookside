@@ -23,7 +23,8 @@ A live broadcast overlay system for a small wiffle ball league. Runs as a single
 ```
 /game/meta         — GameMeta: scores, inning, outs, bases, team IDs
 /teams/{teamId}    — Team: name, shortName, primaryColor, secondaryColor, logoUrl
-/overlay           — activeScene + statOverlay trigger state
+/overlay           — activeScene + statOverlay trigger state + timer state
+/overlay/timer     — TimerState: { durationMs, startedAt, running } — default 60 min
 /players/{id}      — Player: name, teamId, position, stats
 /gameStats/{gameId}/{atBatId}  — stretch goal at-bat log
 ```
@@ -36,10 +37,13 @@ Full type definitions in `src/types.ts`.
 - **Scene system is a flat map** — adding a scene means: new file in `src/scenes/`, export in `src/scenes/index.ts`, render case in `OverlayRoute.tsx`, button in `SCENES[]` in `ControllerRoute.tsx`, type added to `SceneName` in `types.ts`.
 - **Auto-dismiss lives in the overlay, not the controller** — `StatOverlay.tsx` runs the dismiss timer and writes `visible: false` back to Firebase itself. The controller just sets `visible: true`.
 - **`dismissAfterMs` is stored in Firebase** so it's live-adjustable from the controller without a redeploy.
-- **Scoreboard layout convention** — away team is `[COLOR | NAME | SCORE]` on the left; home team is `[SCORE | NAME | COLOR]` on the right (scores face the center). `TeamBug` accepts a `mirrored` prop to reverse this order — always pass `mirrored` for the home team.
-- **Broadcast scoreboard is centered at ~26% width** — `GameScene` wraps `Scoreboard` in a centered container (`width: 26%`). Do not make it full-width.
+- **Scoreboard is a pill layout** — `Scoreboard.tsx` builds the layout directly (does not use `TeamBug`). Away team: left pill `[NAME | SCORE]` rounded-left, home team: right pill `[SCORE | NAME]` rounded-right, scores facing the center. `TeamBug` still exists for potential future use and accepts a `mirrored` prop, but is not used in the overlay scoreboard.
+- **Broadcast scoreboard is centered at 36% width** — `GameScene` wraps `Scoreboard` in a centered container (`width: 36%`). Do not make it full-width or reduce below ~30% or the pills will clip.
+- **Scoreboard center section uses `flex-1` cells** — inning, timer, bases, and outs each own an equal slice of the center strip via `flex-1`. Do not use `justify-center` with fixed gaps — it leaves dead space at the edges.
+- **Timer is always visible in the scoreboard** — `TimerState` lives at `/overlay/timer`. The countdown shows in the center bar at all times (displays `0:00` when expired, full duration when not yet started). Default is 60 minutes. The controller timer control is a single row: `[min input] [Set] [countdown display] [Start/Pause] [Reset]`.
+- **Inning control is two half-inning step buttons** — `InteractiveScoreboard` exposes `onAdvanceHalfInning` and `onRewindHalfInning`. Both clear outs and bases. There are no separate +1/-1 inning or top/bottom toggle buttons.
 - **Tailwind v4 cascade layers** — do not add unlayered CSS rules (e.g. `* { padding: 0 }`) after `@import "tailwindcss"` in `index.css`. Unlayered styles outrank Tailwind's `@layer utilities`, silently breaking utility classes. Tailwind's Preflight already handles box-model resets.
-- **Controller game-state controls are in `InteractiveScoreboard`** — score, inning, bases, and outs are all controlled via the visual `InteractiveScoreboard` component, not separate button sections. Inning arrow (▲/▼) uses the same symbol as the broadcast overlay.
+- **Controller game-state controls are in `InteractiveScoreboard`** — score, inning, bases, and outs are all controlled via the visual `InteractiveScoreboard` component, not separate button sections. Inning ▲/▼ uses the same symbol as the broadcast overlay.
 
 ## File map
 ```
@@ -52,11 +56,11 @@ src/
     useOverlayState.ts      — /overlay listener
     usePlayers.ts           — /players listener
   components/
-    Scoreboard.tsx          — persistent top bar (composes TeamBug, BaseDiamond, OutIndicator); centered at 26% width in GameScene
-    TeamBug.tsx             — logo + short name + score block, colored by CSS vars; accepts mirrored prop for home team
-    BaseDiamond.tsx         — base runners indicator (read-only, used in overlay)
-    OutIndicator.tsx        — out dots (read-only, used in overlay)
-    InteractiveScoreboard.tsx — controller-only; full game-state control (score, inning, bases, outs) as a tappable visual scoreboard
+    Scoreboard.tsx          — broadcast overlay scoreboard; pill layout built inline (not via TeamBug); always shows countdown timer; centered at 36% width in GameScene
+    TeamBug.tsx             — logo + short name + score block (not used in Scoreboard); accepts mirrored prop; available for other scenes
+    BaseDiamond.tsx         — read-only base runners diamond (used in Scoreboard overlay)
+    OutIndicator.tsx        — read-only out dots (exists but Scoreboard inlines its own scaled version)
+    InteractiveScoreboard.tsx — controller-only; tappable scoreboard controlling score, inning (◀½ / ▶½ buttons), bases, outs
     StatOverlay.tsx         — Framer Motion slide-up strip with auto-dismiss timer
     PlayerCard.tsx          — reusable stat display block (used in StatCardScene)
     TeamColorInjector.tsx   — injects CSS vars on mount; renders nothing
