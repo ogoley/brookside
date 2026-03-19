@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ref, update, set } from 'firebase/database'
+// TODO: hrPlayerName is a temporary text input. Replace with playerId resolved from /players once the player roster feature is built out.
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useGameData } from '../hooks/useGameData'
@@ -28,6 +29,8 @@ export function ControllerRoute() {
   const [statType, setStatType] = useState<'hitter' | 'pitcher'>('hitter')
   const [selectedPlayer, setSelectedPlayer] = useState('')
   const [dismissDelay, setDismissDelay] = useState(5000)
+  // TODO: Replace with playerId dropdown once player roster is built — see TODO.md
+  const hrPlayerName = 'DRAGON OGOLEY'
 
   const adjustScore = useCallback((side: 'home' | 'away', delta: number) => {
     const key = side === 'home' ? 'homeScore' : 'awayScore'
@@ -78,6 +81,29 @@ export function ControllerRoute() {
       update(ref(db, 'game/meta'), { isTopInning: false, inning: Math.max(1, game.inning - 1), outs: 0 })
     }
     update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+  }
+
+  const triggerHomerun = () => {
+    const battingTeam = game.isTopInning ? 'away' : 'home'
+    const battingTeamObj = game.isTopInning ? awayTeam : homeTeam
+    const runsScored = 1
+      + (game.bases.first ? 1 : 0)
+      + (game.bases.second ? 1 : 0)
+      + (game.bases.third ? 1 : 0)
+
+    const scoreKey = game.isTopInning ? 'awayScore' : 'homeScore'
+    const currentScore = game.isTopInning ? game.awayScore : game.homeScore
+    update(ref(db, 'game/meta'), { [scoreKey]: currentScore + runsScored })
+    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+
+    set(ref(db, 'overlay/homerun'), {
+      active: true,
+      teamSide: battingTeam,
+      playerName: hrPlayerName.trim() || 'Player',
+      logoUrl: battingTeamObj?.logoUrl ?? '',
+      runsScored,
+      triggeredAt: Date.now(),
+    })
   }
 
   const timerPreset = (ms: number) => {
@@ -214,6 +240,31 @@ export function ControllerRoute() {
 
         {/* ── RIGHT COLUMN: broadcast controls ── */}
         <div className="flex flex-col gap-4">
+
+          {/* HOME RUN */}
+          <Section title="Home Run">
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={triggerHomerun}
+                className="w-full h-16 rounded-xl font-black text-lg uppercase tracking-widest transition-all"
+                style={{
+                  background: 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)',
+                  color: '#fff',
+                  border: '2px solid #ef4444',
+                  boxShadow: '0 0 24px rgba(239,68,68,0.35)',
+                  fontFamily: 'var(--font-score)',
+                  letterSpacing: '0.12em',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 0 36px rgba(239,68,68,0.6)')}
+                onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 0 24px rgba(239,68,68,0.35)')}
+              >
+                ⚾ HOME RUN
+              </button>
+              <p className="text-white/25 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
+                Auto-scores runs based on bases loaded · 10s overlay
+              </p>
+            </div>
+          </Section>
 
           {/* TIMER */}
           <Section title="Countdown Timer">

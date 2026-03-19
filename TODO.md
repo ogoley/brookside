@@ -47,6 +47,20 @@ allow write: if true;
 
 ---
 
+## ⚾ Home Run Feature — Player Data Hookup
+
+The Home Run overlay (`HomrunBanner`) currently uses a free-text player name input on the controller (`hrPlayerName` in `ControllerRoute.tsx`). This is a placeholder until the player roster is built out.
+
+**What needs to change:**
+- The controller's Home Run section should show a dropdown of current hitters (filtered from `/players` by the batting team) instead of a text input.
+- `HomrunState.playerName` should be replaced by `HomrunState.playerId`.
+- `HomrunBanner` should resolve the player name from the `PlayersMap` (already available in `GameScene` props).
+- The batting team is auto-detected from `game.isTopInning` — this logic is correct and should stay.
+
+**Files to touch:** `src/types.ts`, `src/components/HomrunBanner.tsx`, `src/routes/ControllerRoute.tsx`
+
+---
+
 ## 🧹 Other Clean-Up Items
 
 - [ ] `/scorekeeper` route is a stretch goal stub — either fully implement or gate it behind a feature flag so it doesn't appear as a live route.
@@ -54,3 +68,4 @@ allow write: if true;
 - [ ] No loading states are shown while Firebase hooks are fetching initial data — add skeleton/loading indicators to `/controller` and `/config` for slower connections.
 - [ ] Logo images uploaded to Firebase Storage are never deleted when a team is deleted or a logo is replaced — add cleanup (delete old Storage object when `logoUrl` is overwritten or team is removed).
 - [ ] The `/overlay` route has no error boundary — if Firebase is unreachable, OBS will show a blank screen with no indication of why.
+- [ ] The reset game button should have a confirmation

@@ -16,6 +16,14 @@ const DEFAULT_OVERLAY: OverlayState = {
     startedAt: null,
     running: false,
   },
+  homerun: {
+    active: false,
+    teamSide: 'away',
+    playerName: '',
+    logoUrl: '',
+    runsScored: 1,
+    triggeredAt: 0,
+  },
 }
 
 export function useOverlayState() {
@@ -36,6 +44,10 @@ export function useOverlayState() {
           timer: {
             ...DEFAULT_OVERLAY.timer,
             ...(data.timer ?? {}),
+          },
+          homerun: {
+            ...DEFAULT_OVERLAY.homerun,
+            ...(data.homerun ?? {}),
           },
         })
       }

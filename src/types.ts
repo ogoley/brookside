@@ -41,10 +41,21 @@ export interface TimerState {
   running: boolean
 }
 
+export interface HomrunState {
+  active: boolean
+  teamSide: 'home' | 'away'
+  // TODO: Replace playerName with playerId and resolve from /players once the player roster feature is built out
+  playerName: string
+  logoUrl: string
+  runsScored: number
+  triggeredAt: number
+}
+
 export interface OverlayState {
   activeScene: 'game' | 'statCard' | 'matchup' | 'idle'
   statOverlay: StatOverlayState
   timer: TimerState
+  homerun: HomrunState
 }
 
 export type SceneName = 'game' | 'statCard' | 'matchup' | 'idle'

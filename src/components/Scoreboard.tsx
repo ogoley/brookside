@@ -44,19 +44,17 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer }: Props) {
       {/* ── Away pill (left) ── */}
       <div
         className="flex items-center justify-between gap-2 pl-4 pr-3 rounded-l-full shrink-0"
-        style={{ background: awayPrimary, minWidth: 136 }}
+        style={{ background: awayPrimary, minWidth: 156 }}
       >
-        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-          {awayTeam?.logoUrl && (
-            <img src={awayTeam.logoUrl} alt="" className="w-5 h-5 object-contain shrink-0" />
-          )}
-          <span
-            className="font-bold tracking-wide truncate leading-none"
-            style={{ fontFamily: 'var(--font-score)', color: awaySecondary, fontSize: 14 }}
-          >
-            {awayTeam?.shortName ?? '---'}
-          </span>
-        </div>
+        <span
+          className="font-bold tracking-wide truncate leading-none shrink-0"
+          style={{ fontFamily: 'var(--font-score)', color: awaySecondary, fontSize: 14 }}
+        >
+          {awayTeam?.shortName ?? '---'}
+        </span>
+        {awayTeam?.logoUrl && (
+          <img src={awayTeam.logoUrl} alt="" style={{ height: 44, width: 44, objectFit: 'contain', flexShrink: 0 }} />
+        )}
         <span
           className="font-black leading-none shrink-0"
           style={{ fontFamily: 'var(--font-score)', color: awaySecondary, fontSize: 26 }}
@@ -120,7 +118,7 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer }: Props) {
       {/* ── Home pill (right) ── */}
       <div
         className="flex items-center justify-between gap-2 pr-4 pl-3 rounded-r-full shrink-0"
-        style={{ background: homePrimary, minWidth: 136 }}
+        style={{ background: homePrimary, minWidth: 156 }}
       >
         <span
           className="font-black leading-none shrink-0"
@@ -128,17 +126,15 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer }: Props) {
         >
           {game.homeScore}
         </span>
-        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-          <span
-            className="font-bold tracking-wide truncate leading-none"
-            style={{ fontFamily: 'var(--font-score)', color: homeSecondary, fontSize: 14 }}
-          >
-            {homeTeam?.shortName ?? '---'}
-          </span>
-          {homeTeam?.logoUrl && (
-            <img src={homeTeam.logoUrl} alt="" className="w-5 h-5 object-contain shrink-0" />
-          )}
-        </div>
+        {homeTeam?.logoUrl && (
+          <img src={homeTeam.logoUrl} alt="" style={{ height: 44, width: 44, objectFit: 'contain', flexShrink: 0 }} />
+        )}
+        <span
+          className="font-bold tracking-wide truncate leading-none shrink-0"
+          style={{ fontFamily: 'var(--font-score)', color: homeSecondary, fontSize: 14 }}
+        >
+          {homeTeam?.shortName ?? '---'}
+        </span>
       </div>
 
     </div>
