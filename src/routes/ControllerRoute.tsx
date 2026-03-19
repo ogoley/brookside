@@ -8,7 +8,6 @@ import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
-import { TeamPillPreview } from '../components/TeamPillPreview'
 import type { SceneName, TimerState } from '../types'
 
 const SCENES: { id: SceneName; label: string }[] = [
@@ -30,6 +29,7 @@ export function ControllerRoute() {
   const [selectedPlayer, setSelectedPlayer] = useState('')
   const [dismissDelay, setDismissDelay] = useState(5000)
   const [hrPlayerId, setHrPlayerId] = useState('')
+  const [confirmReset, setConfirmReset] = useState(false)
 
   const adjustScore = useCallback((side: 'home' | 'away', delta: number) => {
     const key = side === 'home' ? 'homeScore' : 'awayScore'
@@ -165,6 +165,7 @@ export function ControllerRoute() {
       className="min-h-screen px-4 py-4 sm:px-6 lg:px-10 lg:py-8"
       style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
+      {/* ── HEADER ── */}
       <div className="flex items-center justify-between mb-4">
         <h1
           className="text-white text-2xl font-black uppercase tracking-widest"
@@ -183,71 +184,44 @@ export function ControllerRoute() {
         </Link>
       </div>
 
-      {/* ── MATCH SETUP ── */}
-      <Section title="Match">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Away */}
-          <div className="flex flex-col gap-2">
-            <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Away</span>
-            <select
-              value={game.awayTeamId}
-              onChange={e => setTeam('away', e.target.value)}
-              className="w-full h-11 rounded-lg px-3 text-sm font-medium"
-              style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-            >
-              <option value="">— Select team —</option>
-              {Object.entries(teams).map(([id, t]) => (
-                <option key={id} value={id}>{t.name}</option>
-              ))}
-            </select>
-            {awayTeam && <TeamPillPreview team={awayTeam} score={game.awayScore} />}
-          </div>
+      {/* ── INTERACTIVE SCOREBOARD (full width, top) ── */}
+      <div className="mb-4">
+        <InteractiveScoreboard
+          game={game}
+          homeTeam={homeTeam}
+          awayTeam={awayTeam}
+          teams={teams}
+          onScoreChange={adjustScore}
+          onSetOuts={setOuts}
+          onToggleBase={toggleBase}
+          onReset={resetInning}
+          onAdvanceHalfInning={advanceHalfInning}
+          onRewindHalfInning={rewindHalfInning}
+          onSetTeam={setTeam}
+        />
+      </div>
 
-          {/* Home */}
-          <div className="flex flex-col gap-2">
-            <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Home</span>
-            <select
-              value={game.homeTeamId}
-              onChange={e => setTeam('home', e.target.value)}
-              className="w-full h-11 rounded-lg px-3 text-sm font-medium"
-              style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-            >
-              <option value="">— Select team —</option>
-              {Object.entries(teams).map(([id, t]) => (
-                <option key={id} value={id}>{t.name}</option>
-              ))}
-            </select>
-            {homeTeam && <TeamPillPreview team={homeTeam} score={game.homeScore} />}
-          </div>
-        </div>
-
-        <button
-          onClick={newGame}
-          className="w-full h-11 rounded-xl font-bold text-sm uppercase tracking-wider mt-1"
-          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
-        >
-          New Game — Reset Score, Inning &amp; Bases
-        </button>
-      </Section>
-
+      {/* ── BROADCAST CONTROLS GRID ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-        {/* ── LEFT COLUMN: interactive scoreboard ── */}
-        <div className="flex flex-col gap-4">
-          <InteractiveScoreboard
-            game={game}
-            homeTeam={homeTeam}
-            awayTeam={awayTeam}
-            onScoreChange={adjustScore}
-            onSetOuts={setOuts}
-            onToggleBase={toggleBase}
-            onReset={resetInning}
-            onAdvanceHalfInning={advanceHalfInning}
-            onRewindHalfInning={rewindHalfInning}
-          />
-        </div>
 
-        {/* ── RIGHT COLUMN: broadcast controls ── */}
+        {/* ── LEFT COLUMN ── */}
         <div className="flex flex-col gap-4">
+
+          {/* SCENE SWITCHER */}
+          <Section title="Scene">
+            <div className="grid grid-cols-2 gap-3">
+              {SCENES.map((s) => (
+                <TouchBtn
+                  key={s.id}
+                  onClick={() => setScene(s.id)}
+                  active={overlay.activeScene === s.id}
+                  className="h-16 text-base font-bold"
+                >
+                  {s.label}
+                </TouchBtn>
+              ))}
+            </div>
+          </Section>
 
           {/* HOME RUN */}
           <Section title="Home Run">
@@ -286,6 +260,11 @@ export function ControllerRoute() {
               </p>
             </div>
           </Section>
+
+        </div>
+
+        {/* ── RIGHT COLUMN ── */}
+        <div className="flex flex-col gap-4">
 
           {/* TIMER */}
           <Section title="Countdown Timer">
@@ -375,22 +354,6 @@ export function ControllerRoute() {
             </div>
           </Section>
 
-          {/* SCENE SWITCHER */}
-          <Section title="Scene">
-            <div className="grid grid-cols-2 gap-3">
-              {SCENES.map((s) => (
-                <TouchBtn
-                  key={s.id}
-                  onClick={() => setScene(s.id)}
-                  active={overlay.activeScene === s.id}
-                  className="h-16 text-base font-bold"
-                >
-                  {s.label}
-                </TouchBtn>
-              ))}
-            </div>
-          </Section>
-
           {/* END GAME */}
           <button
             onClick={() => update(ref(db, 'game/meta'), { isActive: false })}
@@ -402,6 +365,45 @@ export function ControllerRoute() {
 
         </div>
       </div>
+
+      {/* ── RESET GAME ── */}
+      <div className="mt-4">
+        {!confirmReset ? (
+          <button
+            onClick={() => setConfirmReset(true)}
+            className="w-full h-11 rounded-xl text-sm font-semibold uppercase tracking-wider"
+            style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            Reset Game
+          </button>
+        ) : (
+          <div
+            className="rounded-2xl px-4 py-3 flex flex-col gap-3"
+            style={{ background: '#1c1010', border: '1px solid #7f1d1d' }}
+          >
+            <p className="text-red-300 text-sm font-semibold text-center" style={{ fontFamily: 'var(--font-ui)' }}>
+              This will clear all scores, inning, outs, and bases. Are you sure?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { newGame(); setConfirmReset(false) }}
+                className="flex-1 h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
+                style={{ background: '#b91c1c', color: '#fff', border: '1px solid #ef4444' }}
+              >
+                Yes, Reset
+              </button>
+              <button
+                onClick={() => setConfirmReset(false)}
+                className="flex-1 h-11 rounded-xl font-semibold text-sm uppercase tracking-wider"
+                style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
     </div>
   )
 }
