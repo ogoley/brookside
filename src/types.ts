@@ -44,8 +44,7 @@ export interface TimerState {
 export interface HomrunState {
   active: boolean
   teamSide: 'home' | 'away'
-  // TODO: Replace playerName with playerId and resolve from /players once the player roster feature is built out
-  playerName: string
+  playerId: string
   logoUrl: string
   runsScored: number
   triggeredAt: number
@@ -61,12 +60,24 @@ export interface OverlayState {
 export type SceneName = 'game' | 'statCard' | 'matchup' | 'idle'
 
 export interface PlayerStats {
-  avg?: number
-  hr?: number
-  rbi?: number
+  // Hitting
+  gp?: number       // games played
+  pa?: number       // plate appearances
+  ab?: number       // at bats
+  h?: number        // hits
+  doubles?: number  // 2B
+  triples?: number  // 3B
+  hr?: number       // home runs
+  r?: number        // runs scored
+  rbi?: number      // runs batted in
+  bb?: number       // walks
+  k?: number        // strikeouts
+  avg?: number      // batting average
+  obp?: number      // on-base percentage
+  slg?: number      // slugging percentage
+  ops?: number      // OPS
+  // Pitching
   era?: number
-  strikeouts?: number
-  walks?: number
   inningsPitched?: number
 }
 
@@ -74,6 +85,7 @@ export interface Player {
   name: string
   teamId: string
   position: 'pitcher' | 'hitter' | 'both'
+  jerseyNumber?: string
   stats: PlayerStats
 }
 

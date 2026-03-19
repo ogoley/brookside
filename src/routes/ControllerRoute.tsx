@@ -29,8 +29,7 @@ export function ControllerRoute() {
   const [statType, setStatType] = useState<'hitter' | 'pitcher'>('hitter')
   const [selectedPlayer, setSelectedPlayer] = useState('')
   const [dismissDelay, setDismissDelay] = useState(5000)
-  // TODO: Replace with playerId dropdown once player roster is built — see TODO.md
-  const hrPlayerName = 'DRAGON OGOLEY'
+  const [hrPlayerId, setHrPlayerId] = useState('')
 
   const adjustScore = useCallback((side: 'home' | 'away', delta: number) => {
     const key = side === 'home' ? 'homeScore' : 'awayScore'
@@ -84,8 +83,8 @@ export function ControllerRoute() {
   }
 
   const triggerHomerun = () => {
+    if (!hrPlayerId) return
     const battingTeam = game.isTopInning ? 'away' : 'home'
-    const battingTeamObj = game.isTopInning ? awayTeam : homeTeam
     const runsScored = 1
       + (game.bases.first ? 1 : 0)
       + (game.bases.second ? 1 : 0)
@@ -99,7 +98,7 @@ export function ControllerRoute() {
     set(ref(db, 'overlay/homerun'), {
       active: true,
       teamSide: battingTeam,
-      playerName: hrPlayerName.trim() || 'Player',
+      playerId: hrPlayerId,
       logoUrl: battingTeamObj?.logoUrl ?? '',
       runsScored,
       triggeredAt: Date.now(),
@@ -146,6 +145,15 @@ export function ControllerRoute() {
 
   const homeTeam = teams[game.homeTeamId]
   const awayTeam = teams[game.awayTeamId]
+
+  const battingTeamId = game.isTopInning ? game.awayTeamId : game.homeTeamId
+  const battingTeamObj = game.isTopInning ? awayTeam : homeTeam
+  const battingPlayers = Object.entries(players)
+    .filter(([, p]) => p.teamId === battingTeamId)
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+
+  // Reset HR player selection when batting team changes
+  useEffect(() => { setHrPlayerId('') }, [battingTeamId])
 
   const filteredPlayers = Object.entries(players).filter(([, p]) => {
     if (statType === 'pitcher') return p.position === 'pitcher' || p.position === 'both'
@@ -244,24 +252,37 @@ export function ControllerRoute() {
           {/* HOME RUN */}
           <Section title="Home Run">
             <div className="flex flex-col gap-3">
+              <select
+                value={hrPlayerId}
+                onChange={e => setHrPlayerId(e.target.value)}
+                className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+              >
+                <option value="">— Select batter —</option>
+                {battingPlayers.map(([id, p]) => (
+                  <option key={id} value={id}>{p.name}</option>
+                ))}
+              </select>
               <button
                 onClick={triggerHomerun}
+                disabled={!hrPlayerId}
                 className="w-full h-16 rounded-xl font-black text-lg uppercase tracking-widest transition-all"
                 style={{
-                  background: 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)',
-                  color: '#fff',
-                  border: '2px solid #ef4444',
-                  boxShadow: '0 0 24px rgba(239,68,68,0.35)',
+                  background: hrPlayerId ? 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)' : '#1c2333',
+                  color: hrPlayerId ? '#fff' : 'rgba(255,255,255,0.3)',
+                  border: hrPlayerId ? '2px solid #ef4444' : '2px solid transparent',
+                  boxShadow: hrPlayerId ? '0 0 24px rgba(239,68,68,0.35)' : 'none',
                   fontFamily: 'var(--font-score)',
                   letterSpacing: '0.12em',
+                  cursor: hrPlayerId ? 'pointer' : 'not-allowed',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 0 36px rgba(239,68,68,0.6)')}
-                onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 0 24px rgba(239,68,68,0.35)')}
+                onMouseEnter={e => { if (hrPlayerId) e.currentTarget.style.boxShadow = '0 0 36px rgba(239,68,68,0.6)' }}
+                onMouseLeave={e => { if (hrPlayerId) e.currentTarget.style.boxShadow = '0 0 24px rgba(239,68,68,0.35)' }}
               >
                 ⚾ HOME RUN
               </button>
               <p className="text-white/25 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
-                Auto-scores runs based on bases loaded · 10s overlay
+                Filtered to batting team · auto-scores bases loaded · 10s overlay
               </p>
             </div>
           </Section>

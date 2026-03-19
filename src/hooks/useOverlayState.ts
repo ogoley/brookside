@@ -19,7 +19,7 @@ const DEFAULT_OVERLAY: OverlayState = {
   homerun: {
     active: false,
     teamSide: 'away',
-    playerName: '',
+    playerId: '',
     logoUrl: '',
     runsScored: 1,
     triggeredAt: 0,

@@ -47,19 +47,17 @@ allow write: if true;
 
 ---
 
-## ⚾ Home Run Feature — Player Data Hookup
+## 🌐 Stats API / External Integration
 
-The Home Run overlay (`HomrunBanner`) currently uses a free-text player name input on the controller (`hrPlayerName` in `ControllerRoute.tsx`). This is a placeholder until the player roster is built out.
+The league has an official website that displays stats. Long-term, `/players` in Firebase should not be the permanent source of truth — it should either pull from the website's data or push to it.
 
-**What needs to change:**
-- The controller's Home Run section should show a dropdown of current hitters (filtered from `/players` by the batting team) instead of a text input.
-- `HomrunState.playerName` should be replaced by `HomrunState.playerId`.
-- `HomrunBanner` should resolve the player name from the `PlayersMap` (already available in `GameScene` props).
-- The batting team is auto-detected from `game.isTopInning` — this logic is correct and should stay.
-
-**Files to touch:** `src/types.ts`, `src/components/HomrunBanner.tsx`, `src/routes/ControllerRoute.tsx`
+**What to build when ready:**
+- Expose a read-only REST endpoint (or Firebase Function) that serializes `/players` + `/gameStats` into a standard JSON format the website can consume.
+- Alternatively, if the website already has an authoritative stats database, write an import job that pulls from it into Firebase at the start of each game day instead of using `seedPlayers.js`.
+- The `seedPlayers.js` script is a stopgap — it imports last season's stats as a baseline. Real-time game stats via `/gameStats` (scorekeeper route) would layer on top.
 
 ---
+
 
 ## 🧹 Other Clean-Up Items
 

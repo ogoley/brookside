@@ -81,8 +81,8 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
             {isPitcher && (
               <>
                 <StatChip label="ERA" value={stats?.era !== undefined ? stats.era.toFixed(2) : '---'} />
-                <StatChip label="K" value={stats?.strikeouts ?? 0} />
-                <StatChip label="BB" value={stats?.walks ?? 0} />
+                <StatChip label="K" value={stats?.k ?? 0} />
+                <StatChip label="BB" value={stats?.bb ?? 0} />
                 <StatChip label="IP" value={stats?.inningsPitched ?? 0} />
               </>
             )}

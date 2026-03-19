@@ -28,6 +28,7 @@ export function GameScene({ game, overlay, teams, players }: Props) {
               <HomrunBanner
                 key="homerun"
                 homerun={overlay.homerun}
+                playerName={players[overlay.homerun.playerId]?.name ?? ''}
                 team={overlay.homerun.teamSide === 'home' ? homeTeam : awayTeam}
               />
             ) : (

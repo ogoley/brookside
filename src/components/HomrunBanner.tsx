@@ -8,14 +8,15 @@ const DISMISS_MS = 10_000
 
 interface Props {
   homerun: HomrunState
+  playerName: string
   team?: Team
 }
 
-export function HomrunBanner({ homerun, team }: Props) {
+export function HomrunBanner({ homerun, playerName, team }: Props) {
   const primary = team?.primaryColor ?? '#1a1a2e'
   const secondary = team?.secondaryColor ?? '#ffffff'
 
-  const nameParts = homerun.playerName.trim().split(' ')
+  const nameParts = playerName.trim().split(' ')
   const firstName = nameParts[0] ?? ''
   const lastName = nameParts.slice(1).join(' ')
 
