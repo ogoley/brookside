@@ -20,8 +20,8 @@ export function GameScene({ game, overlay, teams, players }: Props) {
     <div className="relative w-full h-full flex flex-col">
       <TeamColorInjector homeTeam={homeTeam} awayTeam={awayTeam} />
 
-      {/* Scoreboard / Homerun banner — centered, ~36% of screen width */}
-      <div className="flex justify-center w-full pt-4">
+      {/* Scoreboard / Homerun banner — absolutely centered at top */}
+      <div className="absolute top-4 left-0 right-0 flex justify-center pointer-events-none">
         <AnimatePresence mode="wait">
           {overlay.homerun?.active ? (
             <HomrunBanner
@@ -43,9 +43,6 @@ export function GameScene({ game, overlay, teams, players }: Props) {
           )}
         </AnimatePresence>
       </div>
-
-      {/* Transparent game area */}
-      <div className="flex-1" />
 
       {/* Ephemeral stat overlay — bottom */}
       <StatOverlay

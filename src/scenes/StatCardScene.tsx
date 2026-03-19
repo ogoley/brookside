@@ -45,15 +45,15 @@ export function StatCardScene({ game, teams, players }: Props) {
 }
 
 // Badge logo: fast entry spin (720°), then slow back-and-forth tilt wobble
-function SpinBadge({ src, alt, delay }: { src: string; alt: string; delay: number }) {
+function SpinBadge({ src, alt, delay, size = 96 }: { src: string; alt: string; delay: number; size?: number }) {
   const [phase, setPhase] = useState<'enter' | 'idle'>('enter')
 
   return (
-    <div style={{ perspective: '500px', width: 96, height: 96, flexShrink: 0 }}>
+    <div style={{ perspective: '500px', width: size, height: size, flexShrink: 0 }}>
       <motion.img
         src={src}
         alt={alt}
-        style={{ width: 96, height: 96, objectFit: 'contain', display: 'block' }}
+        style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
         initial={{ rotateY: 720, scale: 0.5, opacity: 0 }}
         animate={
           phase === 'enter'
@@ -87,39 +87,38 @@ function TeamColumn({
 
   return (
     <div className="flex-1 flex flex-col gap-4">
-      {/* Team header — drops in from top */}
-      <motion.div
-        className="flex items-center gap-4 mb-2"
-        initial={{ y: -60, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ type: 'spring', damping: 18, stiffness: 260, delay: 0.1 }}
-      >
-        {team?.logoUrl && <SpinBadge src={team.logoUrl} alt={team.name ?? ''} delay={0.22} />}
-        <div>
-          <motion.p
-            className="text-white/50 text-sm uppercase tracking-widest"
-            style={{ fontFamily: 'var(--font-score)' }}
-            initial={{ x: headerX, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            transition={{ delay: 0.18, duration: 0.3, ease: 'easeOut' }}
-          >
-            {side === 'away' ? 'Away' : 'Home'}
-          </motion.p>
-          <motion.p
-            className="text-white font-black uppercase leading-none"
-            style={{ fontFamily: 'var(--font-score)', fontSize: 52 }}
-            initial={{ x: headerX, opacity: 0 }}
-            animate={{ x: 0, opacity: [null, 1], scale: [null, 1, 1.06, 1] }}
-            transition={{
-              x: { type: 'spring', damping: 16, stiffness: 280, delay: 0.26 },
-              opacity: { duration: 0.3, delay: 0.26 },
-              scale: { delay: 2, duration: 0.5, ease: 'easeInOut', repeat: Infinity, repeatDelay: 4.5 },
-            }}
-          >
-            {team?.name ?? '---'}
-          </motion.p>
-        </div>
-      </motion.div>
+      {/* Team header — centered column: big logo, then name, then home/away */}
+      <div className="flex flex-col items-center gap-2 mb-2">
+        <motion.div
+          initial={{ y: -60, opacity: 0, scale: 0.4 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', damping: 14, stiffness: 220, delay: 0.1 }}
+        >
+          {team?.logoUrl && <SpinBadge src={team.logoUrl} alt={team.name ?? ''} delay={0.22} size={192} />}
+        </motion.div>
+        <motion.p
+          className="text-white font-black uppercase leading-none text-center"
+          style={{ fontFamily: 'var(--font-score)', fontSize: 52 }}
+          initial={{ x: headerX, opacity: 0 }}
+          animate={{ x: 0, opacity: [null, 1], scale: [null, 1, 1.06, 1] }}
+          transition={{
+            x: { type: 'spring', damping: 16, stiffness: 280, delay: 0.26 },
+            opacity: { duration: 0.3, delay: 0.26 },
+            scale: { delay: 2, duration: 0.5, ease: 'easeInOut', repeat: Infinity, repeatDelay: 4.5 },
+          }}
+        >
+          {team?.name ?? '---'}
+        </motion.p>
+        <motion.p
+          className="text-white/50 text-sm uppercase tracking-widest leading-none"
+          style={{ fontFamily: 'var(--font-score)' }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.35, duration: 0.3 }}
+        >
+          {side === 'away' ? 'Away' : 'Home'}
+        </motion.p>
+      </div>
 
       {/* Column headers */}
       <motion.div
