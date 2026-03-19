@@ -26,7 +26,6 @@ export function ControllerRoute() {
   const [selectedPlayer, setSelectedPlayer] = useState('')
   const [dismissDelay, setDismissDelay] = useState(5000)
 
-  // Score long-press
   const longPressRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const adjustScore = useCallback((side: 'home' | 'away', delta: number) => {
@@ -88,210 +87,216 @@ export function ControllerRoute() {
 
   return (
     <div
-      className="min-h-screen p-4 flex flex-col gap-4"
-      style={{ background: '#0d1117', fontFamily: 'var(--font-ui)', maxWidth: 680, margin: '0 auto' }}
+      className="min-h-screen px-4 py-4 sm:px-6 lg:px-10 lg:py-8"
+      style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
       <h1
-        className="text-white text-2xl font-black uppercase tracking-widest"
+        className="text-white text-2xl font-black uppercase tracking-widest mb-4"
         style={{ fontFamily: 'var(--font-score)' }}
       >
         Broadcast Control
       </h1>
 
-      {/* ── SCORE CONTROLS ── */}
-      <Section title="Score">
-        <ScoreControl
-          label={awayTeam?.name ?? 'Away'}
-          score={game.awayScore}
-          onIncrement={() => adjustScore('away', 1)}
-          onDecrement={() => adjustScore('away', -1)}
-          onLongStart={(d) => startLongPress('away', d)}
-          onLongEnd={stopLongPress}
-        />
-        <ScoreControl
-          label={homeTeam?.name ?? 'Home'}
-          score={game.homeScore}
-          onIncrement={() => adjustScore('home', 1)}
-          onDecrement={() => adjustScore('home', -1)}
-          onLongStart={(d) => startLongPress('home', d)}
-          onLongEnd={stopLongPress}
-        />
-      </Section>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+        {/* ── LEFT COLUMN: game state ── */}
+        <div className="flex flex-col gap-4">
 
-      {/* ── INNING ── */}
-      <Section title="Inning">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <TouchBtn onClick={() => setInning(-1)} className="w-14 h-14 text-2xl">◀</TouchBtn>
-            <span className="text-white text-3xl font-bold w-24 text-center" style={{ fontFamily: 'var(--font-score)' }}>
-              {game.isTopInning ? 'Top' : 'Bot'} {game.inning}
-            </span>
-            <TouchBtn onClick={() => setInning(1)} className="w-14 h-14 text-2xl">▶</TouchBtn>
+          {/* SCORE */}
+          <Section title="Score">
+            <ScoreControl
+              label={awayTeam?.name ?? 'Away'}
+              score={game.awayScore}
+              onIncrement={() => adjustScore('away', 1)}
+              onDecrement={() => adjustScore('away', -1)}
+              onLongStart={(d) => startLongPress('away', d)}
+              onLongEnd={stopLongPress}
+            />
+            <ScoreControl
+              label={homeTeam?.name ?? 'Home'}
+              score={game.homeScore}
+              onIncrement={() => adjustScore('home', 1)}
+              onDecrement={() => adjustScore('home', -1)}
+              onLongStart={(d) => startLongPress('home', d)}
+              onLongEnd={stopLongPress}
+            />
+          </Section>
+
+          {/* INNING */}
+          <Section title="Inning">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <TouchBtn onClick={() => setInning(-1)} className="w-14 h-14 text-2xl">◀</TouchBtn>
+                <span className="text-white text-3xl font-bold w-24 text-center" style={{ fontFamily: 'var(--font-score)' }}>
+                  {game.isTopInning ? 'Top' : 'Bot'} {game.inning}
+                </span>
+                <TouchBtn onClick={() => setInning(1)} className="w-14 h-14 text-2xl">▶</TouchBtn>
+              </div>
+              <div className="flex gap-3">
+                <TouchBtn
+                  onClick={() => update(ref(db, 'game/meta'), { isTopInning: true })}
+                  active={game.isTopInning}
+                  className="px-5 h-14 text-sm font-semibold"
+                >
+                  Top
+                </TouchBtn>
+                <TouchBtn
+                  onClick={() => update(ref(db, 'game/meta'), { isTopInning: false })}
+                  active={!game.isTopInning}
+                  className="px-5 h-14 text-sm font-semibold"
+                >
+                  Bot
+                </TouchBtn>
+              </div>
+            </div>
+          </Section>
+
+          {/* OUTS + BASES side by side on wider screens */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Section title="Outs">
+              <div className="flex gap-3">
+                {[0, 1, 2].map((n) => (
+                  <TouchBtn
+                    key={n}
+                    onClick={() => setOuts(n)}
+                    active={game.outs === n}
+                    className="flex-1 h-14 text-xl font-bold"
+                  >
+                    {n}
+                  </TouchBtn>
+                ))}
+              </div>
+            </Section>
+
+            <Section title="Bases">
+              <div className="flex gap-2 flex-wrap">
+                {(['first', 'second', 'third'] as const).map((base) => (
+                  <TouchBtn
+                    key={base}
+                    onClick={() => toggleBase(base)}
+                    active={game.bases[base]}
+                    className="flex-1 h-14 text-sm font-semibold"
+                  >
+                    {base === 'first' ? '1B' : base === 'second' ? '2B' : '3B'}
+                  </TouchBtn>
+                ))}
+                <TouchBtn
+                  onClick={() => update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })}
+                  className="flex-1 h-14 text-sm font-semibold"
+                >
+                  Clr
+                </TouchBtn>
+              </div>
+            </Section>
           </div>
 
-          <div className="flex gap-3">
-            <TouchBtn
-              onClick={() => update(ref(db, 'game/meta'), { isTopInning: true })}
-              active={game.isTopInning}
-              className="px-5 h-14 text-sm font-semibold"
-            >
-              Top
-            </TouchBtn>
-            <TouchBtn
-              onClick={() => update(ref(db, 'game/meta'), { isTopInning: false })}
-              active={!game.isTopInning}
-              className="px-5 h-14 text-sm font-semibold"
-            >
-              Bot
-            </TouchBtn>
-          </div>
         </div>
-      </Section>
 
-      {/* ── OUTS ── */}
-      <Section title="Outs">
-        <div className="flex gap-3">
-          {[0, 1, 2].map((n) => (
-            <TouchBtn
-              key={n}
-              onClick={() => setOuts(n)}
-              active={game.outs === n}
-              className="w-20 h-14 text-xl font-bold"
-            >
-              {n}
-            </TouchBtn>
-          ))}
-        </div>
-      </Section>
+        {/* ── RIGHT COLUMN: broadcast controls ── */}
+        <div className="flex flex-col gap-4">
 
-      {/* ── BASES ── */}
-      <Section title="Bases">
-        <div className="flex gap-3">
-          {(['first', 'second', 'third'] as const).map((base) => (
-            <TouchBtn
-              key={base}
-              onClick={() => toggleBase(base)}
-              active={game.bases[base]}
-              className="px-5 h-14 text-sm font-semibold capitalize"
-            >
-              {base === 'first' ? '1B' : base === 'second' ? '2B' : '3B'}
-            </TouchBtn>
-          ))}
-          <TouchBtn
-            onClick={() => update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })}
-            className="px-5 h-14 text-sm font-semibold"
-          >
-            Clear
-          </TouchBtn>
-        </div>
-      </Section>
+          {/* STAT OVERLAY */}
+          <Section title="Stat Overlay">
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-3">
+                <TouchBtn
+                  onClick={() => setStatType('hitter')}
+                  active={statType === 'hitter'}
+                  className="flex-1 h-12 text-sm font-semibold"
+                >
+                  Hitter
+                </TouchBtn>
+                <TouchBtn
+                  onClick={() => setStatType('pitcher')}
+                  active={statType === 'pitcher'}
+                  className="flex-1 h-12 text-sm font-semibold"
+                >
+                  Pitcher
+                </TouchBtn>
+              </div>
 
-      {/* ── STAT OVERLAY ── */}
-      <Section title="Stat Overlay">
-        <div className="flex flex-col gap-3">
-          {/* Type toggle */}
-          <div className="flex gap-3">
-            <TouchBtn
-              onClick={() => setStatType('hitter')}
-              active={statType === 'hitter'}
-              className="flex-1 h-12 text-sm font-semibold"
-            >
-              Hitter
-            </TouchBtn>
-            <TouchBtn
-              onClick={() => setStatType('pitcher')}
-              active={statType === 'pitcher'}
-              className="flex-1 h-12 text-sm font-semibold"
-            >
-              Pitcher
-            </TouchBtn>
-          </div>
-
-          {/* Player selector */}
-          <select
-            value={selectedPlayer}
-            onChange={(e) => setSelectedPlayer(e.target.value)}
-            className="w-full h-12 rounded-lg px-3 text-sm font-medium"
-            style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-          >
-            <option value="">— Select player —</option>
-            {filteredPlayers.map(([id, p]) => (
-              <option key={id} value={id}>
-                {p.name} ({teams[p.teamId]?.shortName ?? p.teamId})
-              </option>
-            ))}
-          </select>
-
-          {/* Delay selector */}
-          <div className="flex gap-3 flex-wrap">
-            {DELAY_OPTIONS.map((ms) => (
-              <TouchBtn
-                key={ms}
-                onClick={() => setDismissDelay(ms)}
-                active={dismissDelay === ms}
-                className="flex-1 h-12 text-sm font-semibold min-w-[60px]"
+              <select
+                value={selectedPlayer}
+                onChange={(e) => setSelectedPlayer(e.target.value)}
+                className="w-full h-12 rounded-lg px-3 text-sm font-medium"
+                style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
               >
-                {ms / 1000}s
-              </TouchBtn>
-            ))}
-          </div>
+                <option value="">— Select player —</option>
+                {filteredPlayers.map(([id, p]) => (
+                  <option key={id} value={id}>
+                    {p.name} ({teams[p.teamId]?.shortName ?? p.teamId})
+                  </option>
+                ))}
+              </select>
 
-          {/* Show / Dismiss */}
-          <div className="flex gap-3">
-            <button
-              onClick={showStatOverlay}
-              disabled={!selectedPlayer}
-              className="flex-1 h-14 rounded-xl text-white font-bold text-base uppercase tracking-wider transition-all"
-              style={{
-                background: selectedPlayer ? '#2563eb' : '#1c2333',
-                color: selectedPlayer ? '#fff' : 'rgba(255,255,255,0.3)',
-                cursor: selectedPlayer ? 'pointer' : 'not-allowed',
-              }}
-            >
-              ▶ Show Stats
-            </button>
-            <button
-              onClick={dismissStatOverlay}
-              className="h-14 px-6 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
-              style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
-            >
-              Dismiss
-            </button>
-          </div>
+              <div className="flex gap-2 flex-wrap">
+                {DELAY_OPTIONS.map((ms) => (
+                  <TouchBtn
+                    key={ms}
+                    onClick={() => setDismissDelay(ms)}
+                    active={dismissDelay === ms}
+                    className="flex-1 h-12 text-sm font-semibold min-w-[52px]"
+                  >
+                    {ms / 1000}s
+                  </TouchBtn>
+                ))}
+              </div>
 
-          {overlay.statOverlay.visible && (
-            <p className="text-green-400 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
-              Stat overlay is live
-            </p>
-          )}
+              <div className="flex gap-3">
+                <button
+                  onClick={showStatOverlay}
+                  disabled={!selectedPlayer}
+                  className="flex-1 h-14 rounded-xl text-white font-bold text-base uppercase tracking-wider transition-all"
+                  style={{
+                    background: selectedPlayer ? '#2563eb' : '#1c2333',
+                    color: selectedPlayer ? '#fff' : 'rgba(255,255,255,0.3)',
+                    cursor: selectedPlayer ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  ▶ Show Stats
+                </button>
+                <button
+                  onClick={dismissStatOverlay}
+                  className="h-14 px-6 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
+                  style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+                >
+                  Dismiss
+                </button>
+              </div>
+
+              {overlay.statOverlay.visible && (
+                <p className="text-green-400 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
+                  Stat overlay is live
+                </p>
+              )}
+            </div>
+          </Section>
+
+          {/* SCENE SWITCHER */}
+          <Section title="Scene">
+            <div className="grid grid-cols-2 gap-3">
+              {SCENES.map((s) => (
+                <TouchBtn
+                  key={s.id}
+                  onClick={() => setScene(s.id)}
+                  active={overlay.activeScene === s.id}
+                  className="h-16 text-base font-bold"
+                >
+                  {s.label}
+                </TouchBtn>
+              ))}
+            </div>
+          </Section>
+
+          {/* END GAME */}
+          <button
+            onClick={() => update(ref(db, 'game/meta'), { isActive: false })}
+            className="w-full h-12 rounded-xl text-sm font-semibold uppercase tracking-wider"
+            style={{ background: '#1c2333', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            End Game
+          </button>
+
         </div>
-      </Section>
-
-      {/* ── SCENE SWITCHER ── */}
-      <Section title="Scene">
-        <div className="grid grid-cols-2 gap-3">
-          {SCENES.map((s) => (
-            <TouchBtn
-              key={s.id}
-              onClick={() => setScene(s.id)}
-              active={overlay.activeScene === s.id}
-              className="h-16 text-base font-bold"
-            >
-              {s.label}
-            </TouchBtn>
-          ))}
-        </div>
-      </Section>
-
-      {/* ── END GAME ── */}
-      <div className="mt-2">
-        <button
-          onClick={() => update(ref(db, 'game/meta'), { isActive: false })}
-          className="w-full h-12 rounded-xl text-sm font-semibold uppercase tracking-wider"
-          style={{ background: '#1c2333', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)' }}
-        >
-          End Game
-        </button>
       </div>
     </div>
   )
@@ -352,10 +357,10 @@ interface ScoreControlProps {
 function ScoreControl({ label, score, onIncrement, onDecrement, onLongStart, onLongEnd }: ScoreControlProps) {
   return (
     <div className="flex items-center justify-between gap-4 py-1">
-      <span className="text-white font-semibold text-base min-w-[80px]" style={{ fontFamily: 'var(--font-ui)' }}>
+      <span className="text-white font-semibold text-base flex-1 min-w-0 truncate" style={{ fontFamily: 'var(--font-ui)' }}>
         {label}
       </span>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 shrink-0">
         <button
           onClick={onDecrement}
           onMouseDown={() => onLongStart(-1)}
