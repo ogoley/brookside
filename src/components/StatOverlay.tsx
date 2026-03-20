@@ -2,15 +2,17 @@ import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ref, update } from 'firebase/database'
 import { db } from '../firebase'
+import { useLivePlayerStats } from '../hooks/useLivePlayerStats'
 import type { StatOverlayState, PlayersMap, TeamsMap } from '../types'
 
 interface Props {
   statOverlay: StatOverlayState
   players: PlayersMap
   teams: TeamsMap
+  gameId: string | null
 }
 
-export function StatOverlay({ statOverlay, players, teams }: Props) {
+export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
   const { visible, playerId, type, dismissAfterMs } = statOverlay
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -28,12 +30,11 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
   const player = players[playerId]
   const team = player ? teams[player.teamId] : undefined
   const isPitcher = type === 'pitcher'
-  const stats = player?.stats
   const primary = team?.primaryColor ?? '#1a3a6b'
   const secondary = team?.secondaryColor ?? '#ffffff'
 
-  const h = stats?.hitting
-  const p = stats?.pitching
+  // Live stats = season totals merged with current game at-bats
+  const { hitting: h, pitching: p } = useLivePlayerStats(playerId || null, player, gameId)
 
   const hitterStats = [
     { label: 'AVG', value: h?.avg !== undefined ? h.avg.toFixed(3).replace(/^0/, '') : '---' },

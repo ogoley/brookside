@@ -11,7 +11,7 @@ export function useLiveRunners(gameId: string | null) {
   useEffect(() => {
     if (!gameId) { setLiveRunners(DEFAULT_RUNNERS); return }
     const unsub = onValue(ref(db, `liveRunners/${gameId}`), (snap) => {
-      setLiveRunners(snap.exists() ? snap.val() : DEFAULT_RUNNERS)
+      setLiveRunners(snap.exists() ? { ...DEFAULT_RUNNERS, ...snap.val() } : DEFAULT_RUNNERS)
     })
     return unsub
   }, [gameId])

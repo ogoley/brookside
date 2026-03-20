@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import type { GameMeta, Team, TeamsMap } from '../types'
 import { TeamColorInjector } from './TeamColorInjector'
 
@@ -7,7 +6,6 @@ interface Props {
   homeTeam?: Team
   awayTeam?: Team
   teams: TeamsMap
-  onScoreChange: (side: 'home' | 'away', delta: number) => void
   onSetOuts: (outs: number) => void
   onToggleBase: (base: 'first' | 'second' | 'third') => void
   onAdvanceHalfInning: () => void
@@ -17,22 +15,9 @@ interface Props {
 
 export function InteractiveScoreboard({
   game, homeTeam, awayTeam, teams,
-  onScoreChange, onSetOuts, onToggleBase,
+  onSetOuts, onToggleBase,
   onAdvanceHalfInning, onRewindHalfInning, onSetTeam,
 }: Props) {
-  const longPressRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const startLongPress = (side: 'home' | 'away', delta: number) => {
-    if (longPressRef.current) return
-    longPressRef.current = setInterval(() => onScoreChange(side, delta), 150)
-  }
-  const stopLongPress = () => {
-    if (longPressRef.current) {
-      clearInterval(longPressRef.current)
-      longPressRef.current = null
-    }
-  }
-
   const homePrimary = 'var(--team-home-primary)'
   const homeSecondary = 'var(--team-home-secondary)'
   const awayPrimary = 'var(--team-away-primary)'
@@ -44,7 +29,6 @@ export function InteractiveScoreboard({
       style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
     >
       <TeamColorInjector homeTeam={homeTeam} awayTeam={awayTeam} />
-      {/* Single row on sm+, stacked on mobile */}
       <div className="flex flex-col sm:flex-row sm:items-stretch">
 
         {/* ── AWAY ── */}
@@ -56,16 +40,13 @@ export function InteractiveScoreboard({
           primary={awayPrimary}
           secondary={awaySecondary}
           side="away"
-          onScoreChange={onScoreChange}
-          onLongStart={startLongPress}
-          onLongEnd={stopLongPress}
           onSetTeam={onSetTeam}
         />
 
         {/* ── CENTER: inning / bases / outs ── */}
         <div className="flex items-center justify-center gap-4 sm:gap-5 px-4 py-3 sm:flex-1">
 
-          {/* Inning — two half-inning step buttons flanking the display */}
+          {/* Inning */}
           <div className="flex items-center gap-2">
             <HalfInningBtn onClick={onRewindHalfInning} direction="back" />
             <div className="flex items-center gap-1 select-none" style={{ fontFamily: 'var(--font-score)' }}>
@@ -95,7 +76,7 @@ export function InteractiveScoreboard({
 
           <Divider />
 
-          {/* Outs + reset */}
+          {/* Outs */}
           <div className="flex flex-col items-center gap-2">
             <div
               className="flex items-center gap-1 rounded-xl px-2 py-2"
@@ -144,9 +125,6 @@ export function InteractiveScoreboard({
           secondary={homeSecondary}
           side="home"
           mirrored
-          onScoreChange={onScoreChange}
-          onLongStart={startLongPress}
-          onLongEnd={stopLongPress}
           onSetTeam={onSetTeam}
         />
 
@@ -157,7 +135,7 @@ export function InteractiveScoreboard({
 
 /* ── Sub-components ── */
 
-interface TeamScorePanelProps {
+function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, mirrored, onSetTeam }: {
   team?: Team
   teamId: string
   teams: TeamsMap
@@ -166,13 +144,8 @@ interface TeamScorePanelProps {
   secondary: string
   side: 'home' | 'away'
   mirrored?: boolean
-  onScoreChange: (side: 'home' | 'away', delta: number) => void
-  onLongStart: (side: 'home' | 'away', delta: number) => void
-  onLongEnd: () => void
   onSetTeam: (side: 'home' | 'away', teamId: string) => void
-}
-
-function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, mirrored, onScoreChange, onLongStart, onLongEnd, onSetTeam }: TeamScorePanelProps) {
+}) {
   const colorBlock = (
     <div className="w-12 shrink-0 flex items-center justify-center self-stretch" style={{ background: primary }}>
       {team?.logoUrl ? (
@@ -191,22 +164,12 @@ function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, 
         value={teamId}
         onChange={e => onSetTeam(side, e.target.value)}
         style={{
-          background: 'rgba(0,0,0,0.2)',
-          color: secondary,
-          fontFamily: 'var(--font-score)',
-          fontSize: 15,
-          fontWeight: 700,
-          border: 'none',
-          borderBottom: `2px solid rgba(255,255,255,0.35)`,
-          outline: 'none',
-          paddingLeft: 10,
-          paddingRight: 24,
-          cursor: 'pointer',
-          appearance: 'none',
-          WebkitAppearance: 'none',
-          width: '100%',
-          margin: '0 6px',
-          borderRadius: 4,
+          background: 'rgba(0,0,0,0.2)', color: secondary,
+          fontFamily: 'var(--font-score)', fontSize: 15, fontWeight: 700,
+          border: 'none', borderBottom: `2px solid rgba(255,255,255,0.35)`,
+          outline: 'none', paddingLeft: 10, paddingRight: 24,
+          cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none',
+          width: '100%', margin: '0 6px', borderRadius: 4,
         }}
       >
         <option value="" style={{ background: '#1c2333', color: '#fff' }}>— Select —</option>
@@ -214,28 +177,19 @@ function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, 
           <option key={id} value={id} style={{ background: '#1c2333', color: '#fff' }}>{t.shortName}</option>
         ))}
       </select>
-      {/* Custom dropdown caret */}
       <span style={{ position: 'absolute', right: 14, color: secondary, opacity: 0.7, fontSize: 10, pointerEvents: 'none' }}>▾</span>
     </div>
   )
 
+  // Score is read-only — derived from at-bat records, written by scorekeeper
   const scoreBlock = (
-    <div className="flex items-center" style={{ background: 'rgba(255,255,255,0.06)', borderLeft: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
-      <ScoreBtn
-        label={mirrored ? '+' : '−'}
-        onClick={() => onScoreChange(side, mirrored ? 1 : -1)}
-        onLongStart={() => onLongStart(side, mirrored ? 1 : -1)}
-        onLongEnd={onLongEnd}
-      />
-      <span className="text-white text-4xl font-black w-14 text-center select-none" style={{ fontFamily: 'var(--font-score)' }}>
+    <div
+      className="flex items-center justify-center px-4"
+      style={{ background: 'rgba(255,255,255,0.06)', borderLeft: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 64 }}
+    >
+      <span className="text-white font-black select-none" style={{ fontFamily: 'var(--font-score)', fontSize: 36 }}>
         {score}
       </span>
-      <ScoreBtn
-        label={mirrored ? '−' : '+'}
-        onClick={() => onScoreChange(side, mirrored ? -1 : 1)}
-        onLongStart={() => onLongStart(side, mirrored ? -1 : 1)}
-        onLongEnd={onLongEnd}
-      />
     </div>
   )
 
@@ -248,42 +202,12 @@ function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, 
   )
 }
 
-function ScoreBtn({
-  label, onClick, onLongStart, onLongEnd,
-}: {
-  label: string
-  onClick: () => void
-  onLongStart: () => void
-  onLongEnd: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      onMouseDown={onLongStart}
-      onMouseUp={onLongEnd}
-      onMouseLeave={onLongEnd}
-      onTouchStart={onLongStart}
-      onTouchEnd={onLongEnd}
-      className="w-10 h-full min-h-[56px] flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 active:bg-white/20 text-2xl font-bold transition-colors select-none"
-    >
-      {label}
-    </button>
-  )
-}
-
 function TapBase({ active, onClick }: { active: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className="w-8 h-8 flex items-center justify-center select-none"
-      style={{ background: 'transparent', border: 'none' }}
-    >
+    <button onClick={onClick} className="w-8 h-8 flex items-center justify-center select-none" style={{ background: 'transparent', border: 'none' }}>
       <div
         className="w-5 h-5 rotate-45 border-2 transition-colors duration-150 pointer-events-none"
-        style={{
-          background: active ? '#facc15' : 'transparent',
-          borderColor: active ? '#facc15' : 'rgba(255,255,255,0.45)',
-        }}
+        style={{ background: active ? '#facc15' : 'transparent', borderColor: active ? '#facc15' : 'rgba(255,255,255,0.45)' }}
       />
     </button>
   )

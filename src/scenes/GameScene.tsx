@@ -60,6 +60,7 @@ export function GameScene({ game, overlay, teams, players, matchup }: Props) {
         statOverlay={overlay.statOverlay}
         players={players}
         teams={teams}
+        gameId={game.currentGameId ?? null}
       />
     </div>
   )

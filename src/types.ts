@@ -119,9 +119,19 @@ export interface PlayersMap {
 
 export type AtBatResult =
   | 'single' | 'double' | 'triple' | 'home_run'
-  | 'walk' | 'strikeout' | 'groundout' | 'flyout'
+  | 'walk' | 'strikeout' | 'strikeout_looking'
+  | 'groundout' | 'flyout'
   | 'hbp' | 'sacrifice_fly' | 'sacrifice_bunt'
-  | 'fielders_choice' | 'error'
+  | 'fielders_choice' | 'pitchers_poison'
+
+// What happened to a runner already on base during a play.
+// If a runner was present on a base, their outcome key MUST be set.
+// Omitting a key means no runner occupied that base — never use omission to mean 'stayed'.
+export interface RunnerOutcomes {
+  first?:  'scored' | 'second' | 'third' | 'stayed' | 'out'
+  second?: 'scored' | 'third'  | 'stayed' | 'out'
+  third?:  'scored' | 'stayed' | 'out'
+}
 
 export interface RunnersState {
   first: string | null
@@ -132,22 +142,60 @@ export interface RunnersState {
 export interface AtBatRecord {
   batterId: string
   pitcherId: string
+  isSub: boolean           // denormalized from lineup at write time; excluded from season stats on finalization
   inning: number
   isTopInning: boolean
   timestamp: number
   result: AtBatResult
-  runnersOnBase: RunnersState
-  runnersScored: string[]
+  runnersOnBase: RunnersState   // snapshot of who was on base BEFORE this play
+  runnerOutcomes: RunnerOutcomes // what happened to each runner during this play
+  runnersScored: string[]        // playerIds who scored (derived from runnerOutcomes + HR batter)
+  outsOnPlay: number             // total outs on this play: (1 if batter out) + (runners marked 'out')
   rbiCount: number
   batterAdvancedTo: 'first' | 'second' | 'third' | 'home' | 'out' | null
-  isEarnedRun: boolean
   notes?: string
+}
+
+// One entry in a team's batting lineup
+export interface LineupEntry {
+  playerId: string
+  isSub: boolean
 }
 
 export interface GameRecord {
   homeTeamId: string
   awayTeamId: string
-  date: string
+  date: string              // "YYYY-MM-DD" in Eastern Time
+  isStreamed: boolean       // true = mirrors state to /game/meta for scorebug
   finalized: boolean
   finalizedAt?: number
+  startedAt: number         // epoch ms — used for 90-min game completion check
+  inning: number
+  isTopInning: boolean
+  outs: number
+  homeScore: number         // cached running total — source of truth is still /gameStats
+  awayScore: number
+}
+
+// /games/{gameId}/lineups/{teamId} — ordered batting lineup
+export type GameLineup = LineupEntry[]
+
+// /liveRunners/{gameId} — current base runners by player ID
+export type LiveRunners = RunnersState
+
+// /gameSummaries/{gameId}/{playerId} — per-game box score written on finalization
+export interface GameSummary {
+  playerId: string
+  teamId: string
+  ab: number
+  pa: number
+  h: number
+  doubles: number
+  triples: number
+  hr: number
+  r: number
+  rbi: number
+  bb: number
+  k: number
+  inningsPitched: number
 }

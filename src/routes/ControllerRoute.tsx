@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { ref, update, set, get } from 'firebase/database'
+import { useState, useEffect, useRef } from 'react'
+import { ref, update, set, get, remove } from 'firebase/database'
 // TODO: hrPlayerName is a temporary text input. Replace with playerId resolved from /players once the player roster feature is built out.
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
@@ -8,8 +8,10 @@ import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
+import { useGames } from '../hooks/useGames'
 import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
-import type { SceneName, TimerState, AtBatRecord, HittingStats, PitchingStats } from '../types'
+import type { SceneName, TimerState, AtBatRecord } from '../types'
+import { computeFinalization } from '../scoring/finalization'
 
 const SCENES: { id: SceneName; label: string }[] = [
   { id: 'game', label: 'Game' },
@@ -26,12 +28,18 @@ export function ControllerRoute() {
   const { overlay } = useOverlayState()
   const { players } = usePlayers()
   const { matchup } = useMatchup()
+  const { games } = useGames()
 
   const [dismissDelay, setDismissDelay] = useState(5000)
   const [confirmReset, setConfirmReset] = useState(false)
-  const [confirmNewGame, setConfirmNewGame] = useState(false)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
+  const [confirmCancelGame, setConfirmCancelGame] = useState(false)
+  const [confirmDevReset, setConfirmDevReset] = useState(false)
+  const [confirmSeasonReset, setConfirmSeasonReset] = useState(false)
+  const [devResetting, setDevResetting] = useState(false)
+  const [forceInning, setForceInning] = useState(1)
+  const [forceIsTop, setForceIsTop] = useState(true)
 
   // Auto-clear batter notch when bases or outs change
   const mountedRef = useRef(false)
@@ -39,13 +47,6 @@ export function ControllerRoute() {
     if (!mountedRef.current) { mountedRef.current = true; return }
     if (matchup.batterId) update(ref(db, 'game/matchup'), { batterId: null })
   }, [game.outs, game.bases.first, game.bases.second, game.bases.third])
-
-  const adjustScore = useCallback((side: 'home' | 'away', delta: number) => {
-    const key = side === 'home' ? 'homeScore' : 'awayScore'
-    const current = side === 'home' ? game.homeScore : game.awayScore
-    const next = Math.max(0, current + delta)
-    update(ref(db, 'game/meta'), { [key]: next })
-  }, [game.homeScore, game.awayScore])
 
   const setOuts = (outs: number) => {
     update(ref(db, 'game/meta'), { outs })
@@ -90,133 +91,115 @@ export function ControllerRoute() {
     update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
   }
 
-  const createNewGame = () => {
-    if (!game.homeTeamId || !game.awayTeamId) return
-    const today = new Date().toISOString().split('T')[0]
-    const homeSlug = (teams[game.homeTeamId]?.shortName ?? game.homeTeamId).toLowerCase().replace(/\s+/g, '-')
-    const awaySlug = (teams[game.awayTeamId]?.shortName ?? game.awayTeamId).toLowerCase().replace(/\s+/g, '-')
-    const gameId = `${today}_${homeSlug}_${awaySlug}`
-    set(ref(db, `games/${gameId}`), {
-      homeTeamId: game.homeTeamId,
-      awayTeamId: game.awayTeamId,
-      date: today,
-      finalized: false,
-    })
-    update(ref(db, 'game/meta'), {
-      currentGameId: gameId,
-      homeScore: 0, awayScore: 0,
-      inning: 1, isTopInning: true, outs: 0,
-    })
-    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
-    update(ref(db, 'game/matchup'), { batterId: null, pitcherId: null })
-    setConfirmNewGame(false)
-  }
 
   const finalizeGame = async () => {
     const gameId = game.currentGameId
     if (!gameId) return
     setFinalizing(true)
     try {
-      // Read all games metadata
+      // Read game metadata to find previously-finalized games
       const gamesSnap = await get(ref(db, 'games'))
-      const games: Record<string, { finalized: boolean }> = gamesSnap.exists() ? gamesSnap.val() : {}
+      const allGames: Record<string, { finalized: boolean; homeTeamId: string; awayTeamId: string; homeScore: number; awayScore: number; inning: number; isTopInning: boolean; outs: number; date: string; isStreamed: boolean; startedAt: number }> = gamesSnap.exists() ? gamesSnap.val() : {}
+      const thisGame = allGames[gameId]
+      if (!thisGame) return
 
-      // Collect all at-bats from finalized games + current game
-      const allAtBats: Array<AtBatRecord & { gameId: string }> = []
-      const gameIds = [
-        ...Object.entries(games).filter(([id, g]) => g.finalized && id !== gameId).map(([id]) => id),
-        gameId,
-      ]
+      // Read at-bats from all previously-finalized games
+      const prevGameIds = Object.entries(allGames)
+        .filter(([id, g]) => g.finalized && id !== gameId)
+        .map(([id]) => id)
 
-      for (const gId of gameIds) {
+      const previousAtBats: Array<AtBatRecord & { gameId: string }> = []
+      for (const gId of prevGameIds) {
         const snap = await get(ref(db, `gameStats/${gId}`))
         if (snap.exists()) {
           const records = snap.val() as Record<string, AtBatRecord>
           for (const ab of Object.values(records)) {
-            allAtBats.push({ ...ab, gameId: gId })
+            previousAtBats.push({ ...ab, gameId: gId })
           }
         }
       }
 
-      // Per-player accumulators
-      type BatAcc = { pa: number; ab: number; h: number; doubles: number; triples: number; hr: number; rbi: number; bb: number; k: number; hbp: number; sf: number; games: Set<string> }
-      type PitchAcc = { outs: number; k: number; bb: number; earnedRuns: number; games: Set<string> }
-      const batting: Record<string, BatAcc> = {}
-      const battingRuns: Record<string, number> = {}
-      const pitching: Record<string, PitchAcc> = {}
+      // Read current game at-bats
+      const currentSnap = await get(ref(db, `gameStats/${gameId}`))
+      const currentGameAtBats: AtBatRecord[] = currentSnap.exists()
+        ? Object.values(currentSnap.val() as Record<string, AtBatRecord>)
+        : []
 
-      for (const ab of allAtBats) {
-        const { batterId, pitcherId, result, runnersScored, rbiCount, batterAdvancedTo, isEarnedRun, gameId: gId } = ab
+      // Compute stats
+      const { updates, summary } = computeFinalization({
+        gameId,
+        game: { ...thisGame, finalized: false, finalizedAt: undefined },
+        currentGameAtBats,
+        previousAtBats,
+        players,
+      })
 
-        if (!batting[batterId]) batting[batterId] = { pa: 0, ab: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, games: new Set() }
-        const b = batting[batterId]
-        b.games.add(gId)
-        b.pa++
-        if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(result)) b.ab++
-        if (['single', 'double', 'triple', 'home_run'].includes(result)) b.h++
-        if (result === 'double') b.doubles++
-        if (result === 'triple') b.triples++
-        if (result === 'home_run') b.hr++
-        if (result === 'walk') b.bb++
-        if (result === 'strikeout') b.k++
-        if (result === 'hbp') b.hbp++
-        if (result === 'sacrifice_fly') b.sf++
-        b.rbi += rbiCount
-        if (batterAdvancedTo === 'home') battingRuns[batterId] = (battingRuns[batterId] ?? 0) + 1
-        for (const runnerId of runnersScored) {
-          battingRuns[runnerId] = (battingRuns[runnerId] ?? 0) + 1
-        }
-
-        if (pitcherId) {
-          if (!pitching[pitcherId]) pitching[pitcherId] = { outs: 0, k: 0, bb: 0, earnedRuns: 0, games: new Set() }
-          const p = pitching[pitcherId]
-          p.games.add(gId)
-          if (result === 'strikeout') p.k++
-          if (result === 'walk' || result === 'hbp') p.bb++
-          if (['strikeout', 'groundout', 'flyout', 'sacrifice_fly', 'sacrifice_bunt', 'fielders_choice'].includes(result)) p.outs++
-          if (isEarnedRun) {
-            p.earnedRuns += runnersScored.length
-            if (batterAdvancedTo === 'home') p.earnedRuns++
-          }
-        }
+      if (import.meta.env.DEV) {
+        console.group('[Finalization]')
+        summary.forEach(line => console.log(line))
+        console.groupEnd()
       }
-
-      // Build Firebase updates
-      const updates: Record<string, HittingStats | PitchingStats | boolean | number> = {}
-
-      for (const [playerId, b] of Object.entries(batting)) {
-        const r = battingRuns[playerId] ?? 0
-        const singles = b.h - b.doubles - b.triples - b.hr
-        const tb = singles + b.doubles * 2 + b.triples * 3 + b.hr * 4
-        const avg = b.ab > 0 ? Math.round((b.h / b.ab) * 1000) / 1000 : 0
-        const obpNum = b.h + b.bb + b.hbp
-        const obpDen = b.ab + b.bb + b.hbp + b.sf
-        const obp = obpDen > 0 ? Math.round((obpNum / obpDen) * 1000) / 1000 : 0
-        const slg = b.ab > 0 ? Math.round((tb / b.ab) * 1000) / 1000 : 0
-        const hs: HittingStats = {
-          gp: b.games.size, pa: b.pa, ab: b.ab, h: b.h,
-          doubles: b.doubles, triples: b.triples, hr: b.hr,
-          r, rbi: b.rbi, bb: b.bb, k: b.k,
-          avg, obp, slg, ops: Math.round((obp + slg) * 1000) / 1000,
-        }
-        updates[`players/${playerId}/stats/hitting`] = hs
-      }
-
-      for (const [playerId, p] of Object.entries(pitching)) {
-        const ip = Math.round((p.outs / 3) * 100) / 100
-        const era = ip > 0 ? Math.round((p.earnedRuns / (p.outs / 3)) * 9 * 100) / 100 : 0
-        const ps: PitchingStats = { gp: p.games.size, k: p.k, bb: p.bb, inningsPitched: ip, era }
-        updates[`players/${playerId}/stats/pitching`] = ps
-      }
-
-      updates[`games/${gameId}/finalized`] = true
-      updates[`games/${gameId}/finalizedAt`] = Date.now()
 
       await update(ref(db), updates)
     } finally {
       setFinalizing(false)
       setConfirmFinalize(false)
     }
+  }
+
+  // ── Dev actions ──────────────────────────────────────────────────────────
+  const devCancelGame = async () => {
+    const gameId = game.currentGameId
+    if (!gameId) return
+    await Promise.all([
+      remove(ref(db, `games/${gameId}`)),
+      remove(ref(db, `gameStats/${gameId}`)),
+      remove(ref(db, `liveRunners/${gameId}`)),
+      update(ref(db, 'game/meta'), { currentGameId: null }),
+    ])
+    setConfirmCancelGame(false)
+  }
+
+  const devClearAtBats = async () => {
+    const gameId = game.currentGameId
+    if (!gameId) return
+    await remove(ref(db, `gameStats/${gameId}`))
+  }
+
+  const devResetRunners = async () => {
+    const gameId = game.currentGameId
+    if (!gameId) return
+    await set(ref(db, `liveRunners/${gameId}`), { first: null, second: null, third: null })
+  }
+
+  const resetSeasonStats = async () => {
+    const snap = await get(ref(db, 'players'))
+    if (!snap.exists()) return
+    const updates: Record<string, null> = {}
+    const playerIds = Object.keys(snap.val() as Record<string, unknown>)
+    for (const id of playerIds) {
+      updates[`players/${id}/stats`] = null
+    }
+    await update(ref(db), updates)
+    setConfirmSeasonReset(false)
+  }
+
+  const devFullReset = async () => {
+    setDevResetting(true)
+    try {
+      const mod = await import('../../firebase-snapshot.json')
+      await set(ref(db, '/'), mod.default)
+      setConfirmDevReset(false)
+    } catch {
+      alert('firebase-snapshot.json not found. Run "npm run snapshot" from the terminal first.')
+    } finally {
+      setDevResetting(false)
+    }
+  }
+
+  const devForceInning = () => {
+    update(ref(db, 'game/meta'), { inning: forceInning, isTopInning: forceIsTop, outs: 0 })
+    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
   }
 
   const triggerHomerun = () => {
@@ -349,7 +332,6 @@ export function ControllerRoute() {
           homeTeam={homeTeam}
           awayTeam={awayTeam}
           teams={teams}
-          onScoreChange={adjustScore}
           onSetOuts={setOuts}
           onToggleBase={toggleBase}
           onAdvanceHalfInning={advanceHalfInning}
@@ -507,50 +489,33 @@ export function ControllerRoute() {
           {/* GAME */}
           <Section title="Game">
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span style={{ fontFamily: 'var(--font-ui)', color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
-                  {game.currentGameId ? (
-                    <span className="text-green-400 text-xs font-semibold">{game.currentGameId}</span>
-                  ) : (
-                    <span className="text-white/30 text-xs">No game in progress</span>
-                  )}
-                </span>
-              </div>
 
-              {!confirmNewGame ? (
-                <TouchBtn
-                  onClick={() => setConfirmNewGame(true)}
-                  className="h-11 text-sm font-bold"
-                  disabled={!game.homeTeamId || !game.awayTeamId}
+              {/* Live game selector */}
+              <div className="flex flex-col gap-1">
+                <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                  Live Game (scorebug)
+                </span>
+                <select
+                  value={game.currentGameId ?? ''}
+                  onChange={e => update(ref(db, 'game/meta'), { currentGameId: e.target.value || null })}
+                  className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                  style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
                 >
-                  New Game
-                </TouchBtn>
-              ) : (
-                <div
-                  className="rounded-xl px-3 py-3 flex flex-col gap-2"
-                  style={{ background: '#0d1a2e', border: '1px solid rgba(59,130,246,0.4)' }}
-                >
-                  <p className="text-blue-200 text-xs font-semibold text-center">
-                    Create new game? Scores and inning will reset.
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={createNewGame}
-                      className="flex-1 h-10 rounded-lg font-bold text-sm uppercase tracking-wider"
-                      style={{ background: '#1d4ed8', color: '#fff' }}
-                    >
-                      Create
-                    </button>
-                    <button
-                      onClick={() => setConfirmNewGame(false)}
-                      className="flex-1 h-10 rounded-lg font-semibold text-sm"
-                      style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
+                  <option value="">— None —</option>
+                  {games.filter(({ game: g }) => !g.finalized).map(({ gameId, game: g }) => {
+                    const home = teams[g.homeTeamId]?.shortName ?? g.homeTeamId
+                    const away = teams[g.awayTeamId]?.shortName ?? g.awayTeamId
+                    return (
+                      <option key={gameId} value={gameId}>
+                        {away} @ {home}{g.isStreamed ? ' 📡' : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+                {game.currentGameId && (
+                  <p className="text-green-400 text-xs font-semibold">{game.currentGameId}</p>
+                )}
+              </div>
 
               {!confirmFinalize ? (
                 <TouchBtn
@@ -635,6 +600,164 @@ export function ControllerRoute() {
               </div>
             </div>
           </CollapsibleSection>
+
+          {/* DEV TOOLS */}
+          {import.meta.env.DEV && (
+            <CollapsibleSection title="⚠️ Dev Tools">
+              <div className="flex flex-col gap-2">
+
+                {/* Full Firebase reset from snapshot */}
+                {!confirmDevReset ? (
+                  <button
+                    onClick={() => setConfirmDevReset(true)}
+                    className="w-full h-10 rounded-xl text-xs font-semibold uppercase tracking-wider"
+                    style={{ background: 'rgba(127,29,29,0.5)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.4)' }}
+                  >
+                    Reset Firebase to Snapshot
+                  </button>
+                ) : (
+                  <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: 'rgba(127,29,29,0.4)', border: '1px solid #7f1d1d' }}>
+                    <p className="text-red-300 text-xs text-center font-semibold">
+                      Wipes ALL Firebase data and restores clean snapshot. Cannot be undone.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={devFullReset}
+                        disabled={devResetting}
+                        className="flex-1 h-9 rounded-lg text-xs font-bold uppercase"
+                        style={{ background: '#b91c1c', color: '#fff' }}
+                      >
+                        {devResetting ? 'Resetting…' : 'Reset Everything'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDevReset(false)}
+                        disabled={devResetting}
+                        className="flex-1 h-9 rounded-lg text-xs font-semibold"
+                        style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Clear at-bat log */}
+                <button
+                  onClick={devClearAtBats}
+                  disabled={!game.currentGameId}
+                  className="w-full h-10 rounded-xl text-xs font-semibold uppercase tracking-wider"
+                  style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  Clear at-bat log
+                </button>
+
+                {/* Reset live runners */}
+                <button
+                  onClick={devResetRunners}
+                  disabled={!game.currentGameId}
+                  className="w-full h-10 rounded-xl text-xs font-semibold uppercase tracking-wider"
+                  style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  Reset live runners
+                </button>
+
+                {/* Force set inning */}
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number"
+                    min={1}
+                    max={9}
+                    value={forceInning}
+                    onChange={e => setForceInning(Number(e.target.value))}
+                    className="w-16 h-10 rounded-xl text-center text-sm font-bold"
+                    style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                  />
+                  <button
+                    onClick={() => setForceIsTop(t => !t)}
+                    className="h-10 px-3 rounded-xl text-xs font-bold"
+                    style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)', minWidth: 48 }}
+                  >
+                    {forceIsTop ? '▲ Top' : '▼ Bot'}
+                  </button>
+                  <button
+                    onClick={devForceInning}
+                    className="flex-1 h-10 rounded-xl text-xs font-semibold uppercase tracking-wider"
+                    style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}
+                  >
+                    Force Set Inning
+                  </button>
+                </div>
+
+                {/* Cancel game */}
+                {!confirmCancelGame ? (
+                  <button
+                    onClick={() => setConfirmCancelGame(true)}
+                    disabled={!game.currentGameId}
+                    className="w-full h-10 rounded-xl text-xs font-semibold uppercase tracking-wider"
+                    style={{ background: 'rgba(127,29,29,0.3)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                  >
+                    Cancel Game
+                  </button>
+                ) : (
+                  <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: 'rgba(127,29,29,0.4)', border: '1px solid #7f1d1d' }}>
+                    <p className="text-red-300 text-xs text-center font-semibold">
+                      Delete game record + all logs. No stats written.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={devCancelGame}
+                        className="flex-1 h-9 rounded-lg text-xs font-bold uppercase"
+                        style={{ background: '#b91c1c', color: '#fff' }}
+                      >
+                        Cancel Game
+                      </button>
+                      <button
+                        onClick={() => setConfirmCancelGame(false)}
+                        className="flex-1 h-9 rounded-lg text-xs font-semibold"
+                        style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
+                      >
+                        Back
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Season stats reset */}
+                {!confirmSeasonReset ? (
+                  <button
+                    onClick={() => setConfirmSeasonReset(true)}
+                    className="w-full h-10 rounded-xl text-xs font-semibold uppercase tracking-wider"
+                    style={{ background: 'rgba(127,29,29,0.5)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.4)' }}
+                  >
+                    Wipe Season Stats
+                  </button>
+                ) : (
+                  <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: 'rgba(127,29,29,0.4)', border: '1px solid #7f1d1d' }}>
+                    <p className="text-red-300 text-xs text-center font-semibold">
+                      Clears /players/*/stats for ALL players. At-bat records are preserved. Cannot be undone.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={resetSeasonStats}
+                        className="flex-1 h-9 rounded-lg text-xs font-bold uppercase"
+                        style={{ background: '#b91c1c', color: '#fff' }}
+                      >
+                        Wipe Stats
+                      </button>
+                      <button
+                        onClick={() => setConfirmSeasonReset(false)}
+                        className="flex-1 h-9 rounded-lg text-xs font-semibold"
+                        style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </CollapsibleSection>
+          )}
 
           {/* END GAME */}
           <button

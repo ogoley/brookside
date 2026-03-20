@@ -9,7 +9,8 @@
       "WebFetch(domain:www.littleleague.org)",
       "WebFetch(domain:www.platecrate.com)",
       "WebFetch(domain:www.mlb.com)",
-      "Skill(keybindings-help)"
+      "Skill(keybindings-help)",
+      "Bash(npx vite:*)"
     ]
   }
 }
