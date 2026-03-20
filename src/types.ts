@@ -14,6 +14,7 @@ export interface GameMeta {
   homeScore: number
   awayScore: number
   isActive: boolean
+  currentGameId?: string
 }
 
 export interface Team {
@@ -113,4 +114,41 @@ export interface Player {
 
 export interface PlayersMap {
   [playerId: string]: Player
+}
+
+// ── Scorekeeper / game log types ──
+
+export type AtBatResult =
+  | 'single' | 'double' | 'triple' | 'home_run'
+  | 'walk' | 'strikeout' | 'groundout' | 'flyout'
+  | 'hbp' | 'sacrifice_fly' | 'sacrifice_bunt'
+  | 'fielders_choice' | 'error'
+
+export interface RunnersState {
+  first: string | null
+  second: string | null
+  third: string | null
+}
+
+export interface AtBatRecord {
+  batterId: string
+  pitcherId: string
+  inning: number
+  isTopInning: boolean
+  timestamp: number
+  result: AtBatResult
+  runnersOnBase: RunnersState
+  runnersScored: string[]
+  rbiCount: number
+  batterAdvancedTo: 'first' | 'second' | 'third' | 'home' | 'out' | null
+  isEarnedRun: boolean
+  notes?: string
+}
+
+export interface GameRecord {
+  homeTeamId: string
+  awayTeamId: string
+  date: string
+  finalized: boolean
+  finalizedAt?: number
 }
