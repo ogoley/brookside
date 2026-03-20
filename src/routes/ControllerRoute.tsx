@@ -71,6 +71,7 @@ export function ControllerRoute() {
       update(ref(db, 'game/meta'), { isTopInning: true, inning: game.inning + 1, outs: 0 })
     }
     update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
   }
 
   const rewindHalfInning = () => {
@@ -351,6 +352,40 @@ export function ControllerRoute() {
                   Stat overlay is live
                 </p>
               )}
+            </div>
+          </Section>
+
+          {/* DEV — SCOREBUG CONTROLS (temporary) */}
+          <Section title="⚙️ Dev: Scorebug">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span style={{ fontFamily: 'var(--font-ui)', color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Pill border</span>
+                <button
+                  onClick={() => update(ref(db, 'overlay'), { scoreboardBorder: !overlay.scoreboardBorder })}
+                  className="px-5 h-10 rounded-lg font-semibold text-sm"
+                  style={{
+                    background: overlay.scoreboardBorder ? '#16a34a' : '#374151',
+                    color: '#fff',
+                  }}
+                >
+                  {overlay.scoreboardBorder ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between">
+                  <span style={{ fontFamily: 'var(--font-ui)', color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Size scale</span>
+                  <span style={{ fontFamily: 'var(--font-ui)', color: '#fff', fontSize: 14 }}>{overlay.scoreboardScale.toFixed(2)}×</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.05}
+                  value={overlay.scoreboardScale}
+                  onChange={(e) => update(ref(db, 'overlay'), { scoreboardScale: parseFloat(e.target.value) })}
+                  className="w-full"
+                />
+              </div>
             </div>
           </Section>
 

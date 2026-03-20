@@ -55,6 +55,8 @@ export interface OverlayState {
   statOverlay: StatOverlayState
   timer: TimerState
   homerun: HomrunState
+  scoreboardBorder: boolean
+  scoreboardScale: number
 }
 
 export type SceneName = 'game' | 'statCard' | 'matchup' | 'idle'

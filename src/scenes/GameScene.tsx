@@ -37,8 +37,9 @@ export function GameScene({ game, overlay, teams, players }: Props) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
+              style={{ transform: `scale(${overlay.scoreboardScale})`, transformOrigin: 'top center' }}
             >
-              <Scoreboard game={game} homeTeam={homeTeam} awayTeam={awayTeam} timer={overlay.timer} />
+              <Scoreboard game={game} homeTeam={homeTeam} awayTeam={awayTeam} timer={overlay.timer} showBorder={overlay.scoreboardBorder} />
             </motion.div>
           )}
         </AnimatePresence>

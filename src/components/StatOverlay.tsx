@@ -55,10 +55,10 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
         <motion.div
           key={`stat-overlay-${playerId}`}
           className="absolute bottom-0 left-0 right-0 overflow-hidden"
-          style={{ height: 130 }}
-          initial={{ y: 130 }}
+          style={{ height: 260 }}
+          initial={{ y: 260 }}
           animate={{ y: 0 }}
-          exit={{ y: 130 }}
+          exit={{ y: 260 }}
           transition={{ type: 'spring', stiffness: 260, damping: 28 }}
         >
           {/* Dark base */}
@@ -76,7 +76,7 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
           {/* Top border in team color */}
           <motion.div
             className="absolute top-0 left-0 right-0"
-            style={{ height: 3, background: primary }}
+            style={{ height: 6, background: primary }}
             initial={{ scaleX: 0, originX: 0 }}
             animate={{ scaleX: 1 }}
             transition={{ delay: 0.15, duration: 0.5, ease: 'easeOut' }}
@@ -95,14 +95,14 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
           />
 
           {/* Content */}
-          <div className="relative h-full flex items-center px-8 gap-8" style={{ zIndex: 10 }}>
+          <div className="relative h-full flex items-center px-16 gap-16" style={{ zIndex: 10 }}>
 
             {/* Logo */}
             {team?.logoUrl && (
               <motion.img
                 src={team.logoUrl}
                 alt=""
-                style={{ width: 80, height: 80, objectFit: 'contain', flexShrink: 0 }}
+                style={{ width: 160, height: 160, objectFit: 'contain', flexShrink: 0 }}
                 initial={{ scale: 0, opacity: 0, rotate: -15 }}
                 animate={{ scale: 1, opacity: 1, rotate: 0 }}
                 transition={{ type: 'spring', damping: 12, stiffness: 260, delay: 0.1 }}
@@ -110,10 +110,10 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
             )}
 
             {/* Player name block */}
-            <div className="flex flex-col justify-center shrink-0" style={{ minWidth: 240 }}>
+            <div className="flex flex-col justify-center shrink-0" style={{ minWidth: 480 }}>
               <motion.p
                 className="uppercase leading-none font-black"
-                style={{ fontFamily: 'var(--font-score)', color: secondary, opacity: 0.9, fontSize: 20, letterSpacing: '0.1em' }}
+                style={{ fontFamily: 'var(--font-score)', color: secondary, opacity: 0.9, fontSize: 40, letterSpacing: '0.1em' }}
                 initial={{ x: -40, opacity: 0 }}
                 animate={{ x: 0, opacity: 0.9 }}
                 transition={{ delay: 0.18, duration: 0.3, ease: 'easeOut' }}
@@ -122,7 +122,7 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
               </motion.p>
               <motion.p
                 className="uppercase font-black leading-none"
-                style={{ fontFamily: 'var(--font-score)', color: '#fff', fontSize: 46 }}
+                style={{ fontFamily: 'var(--font-score)', color: '#fff', fontSize: 92 }}
                 initial={{ x: -60, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ type: 'spring', damping: 14, stiffness: 280, delay: 0.24 }}
@@ -134,14 +134,14 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
             {/* Divider */}
             <motion.div
               className="self-stretch"
-              style={{ width: 2, background: 'rgba(255,255,255,0.15)', margin: '16px 0' }}
+              style={{ width: 3, background: 'rgba(255,255,255,0.15)', margin: '32px 0' }}
               initial={{ scaleY: 0 }}
               animate={{ scaleY: 1 }}
               transition={{ delay: 0.38, duration: 0.25, ease: 'easeOut' }}
             />
 
             {/* Stat chips — staggered pop-up */}
-            <div className="flex gap-8 flex-1">
+            <div className="flex gap-16 flex-1">
               {statItems.map((s, i) => (
                 <motion.div
                   key={s.label}
@@ -152,13 +152,13 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
                 >
                   <span
                     className="uppercase tracking-widest leading-none font-bold"
-                    style={{ fontFamily: 'var(--font-score)', color: 'rgba(255,255,255,0.75)', fontSize: 17 }}
+                    style={{ fontFamily: 'var(--font-score)', color: 'rgba(255,255,255,0.75)', fontSize: 34 }}
                   >
                     {s.label}
                   </span>
                   <span
                     className="font-black leading-none tabular-nums"
-                    style={{ fontFamily: 'var(--font-score)', color: '#fff', fontSize: 44 }}
+                    style={{ fontFamily: 'var(--font-score)', color: '#fff', fontSize: 88 }}
                   >
                     {s.value}
                   </span>

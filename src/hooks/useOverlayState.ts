@@ -24,6 +24,8 @@ const DEFAULT_OVERLAY: OverlayState = {
     runsScored: 1,
     triggeredAt: 0,
   },
+  scoreboardBorder: true,
+  scoreboardScale: 1,
 }
 
 export function useOverlayState() {
@@ -49,6 +51,8 @@ export function useOverlayState() {
             ...DEFAULT_OVERLAY.homerun,
             ...(data.homerun ?? {}),
           },
+          scoreboardBorder: data.scoreboardBorder ?? DEFAULT_OVERLAY.scoreboardBorder,
+          scoreboardScale: data.scoreboardScale ?? DEFAULT_OVERLAY.scoreboardScale,
         })
       }
       setLoading(false)

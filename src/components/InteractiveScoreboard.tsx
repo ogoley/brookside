@@ -119,7 +119,7 @@ export function InteractiveScoreboard({
               ))}
             </div>
             <button
-              onClick={onReset}
+              onClick={onAdvanceHalfInning}
               className="uppercase tracking-widest transition-all hover:bg-white/10"
               style={{
                 fontFamily: 'var(--font-score)', fontSize: 9,
@@ -129,7 +129,7 @@ export function InteractiveScoreboard({
                 borderRadius: 6, padding: '4px 10px',
               }}
             >
-              Reset
+              Advance
             </button>
           </div>
 

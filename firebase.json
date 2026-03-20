@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "brookside-14b4b",
     "public": "dist",
     "ignore": [
       "firebase.json",

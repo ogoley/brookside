@@ -23,7 +23,7 @@ export function HomrunBanner({ homerun, playerName, team }: Props) {
   const isGrandSlam = homerun.runsScored >= 4
   const mainText = isGrandSlam ? 'GRAND SLAM' : 'HOME RUN'
   // Font size slightly smaller for GRAND SLAM (10 chars) vs HOME RUN (8 chars)
-  const mainFontSize = isGrandSlam ? 46 : 52
+  const mainFontSize = isGrandSlam ? 72 : 82
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -40,7 +40,7 @@ export function HomrunBanner({ homerun, playerName, team }: Props) {
       exit={{ opacity: 0, scaleY: 0.6, transition: { duration: 0.4 } }}
       transition={{ type: 'spring', damping: 16, stiffness: 280 }}
       className="relative overflow-hidden flex items-center"
-      style={{ background: primary, borderRadius: 9999, height: 88, transformOrigin: 'center' }}
+      style={{ background: primary, borderRadius: 9999, height: 140, transformOrigin: 'center', minWidth: 900 }}
     >
       {/* White flash */}
       <motion.div
@@ -98,7 +98,7 @@ export function HomrunBanner({ homerun, playerName, team }: Props) {
           initial={{ x: -50, opacity: 0, scale: 0.4 }}
           animate={{ x: 0, opacity: 1, scale: 1 }}
           transition={{ delay: 0.18, type: 'spring', damping: 11, stiffness: 260 }}
-          style={{ height: 70, width: 70, objectFit: 'contain', flexShrink: 0, marginLeft: 10, position: 'relative', zIndex: 10 }}
+          style={{ height: 112, width: 112, objectFit: 'contain', flexShrink: 0, marginLeft: 16, position: 'relative', zIndex: 10 }}
         />
       ) : (
         <div style={{ width: 14, flexShrink: 0 }} />
@@ -126,14 +126,14 @@ export function HomrunBanner({ homerun, playerName, team }: Props) {
             }}
           >
             <span style={{
-              fontFamily: 'var(--font-score)', fontSize: 30, fontWeight: 900,
+              fontFamily: 'var(--font-score)', fontSize: 48, fontWeight: 900,
               color: secondary, lineHeight: 1,
               textShadow: '0 2px 10px rgba(0,0,0,0.4)',
             }}>
               {homerun.runsScored}
             </span>
             <span style={{
-              fontFamily: 'var(--font-score)', fontSize: 11, fontWeight: 700,
+              fontFamily: 'var(--font-score)', fontSize: 18, fontWeight: 700,
               color: secondary, opacity: 0.65,
               letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1,
             }}>
@@ -185,14 +185,14 @@ export function HomrunBanner({ homerun, playerName, team }: Props) {
         }}
       >
         <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 19, fontWeight: 700,
+          fontFamily: 'var(--font-score)', fontSize: 30, fontWeight: 700,
           color: secondary, opacity: 0.7,
           letterSpacing: '0.1em', textTransform: 'uppercase', lineHeight: 1,
         }}>
           {firstName}
         </span>
         <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 36, fontWeight: 900,
+          fontFamily: 'var(--font-score)', fontSize: 58, fontWeight: 900,
           color: secondary, letterSpacing: '0.04em',
           textTransform: 'uppercase', lineHeight: 1,
           textShadow: '0 2px 10px rgba(0,0,0,0.35)',
