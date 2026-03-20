@@ -93,7 +93,9 @@ export function ControllerRoute() {
   const createNewGame = () => {
     if (!game.homeTeamId || !game.awayTeamId) return
     const today = new Date().toISOString().split('T')[0]
-    const gameId = `${today}_${game.homeTeamId}_${game.awayTeamId}`
+    const homeSlug = (teams[game.homeTeamId]?.shortName ?? game.homeTeamId).toLowerCase().replace(/\s+/g, '-')
+    const awaySlug = (teams[game.awayTeamId]?.shortName ?? game.awayTeamId).toLowerCase().replace(/\s+/g, '-')
+    const gameId = `${today}_${homeSlug}_${awaySlug}`
     set(ref(db, `games/${gameId}`), {
       homeTeamId: game.homeTeamId,
       awayTeamId: game.awayTeamId,
@@ -287,11 +289,11 @@ export function ControllerRoute() {
   const fieldingTeamId = game.isTopInning ? game.homeTeamId : game.awayTeamId
 
   const matchupBatterPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === battingTeamId && (p.position === 'hitter' || p.position === 'both'))
+    .filter(([, p]) => p.teamId === battingTeamId)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const matchupPitcherPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === fieldingTeamId && (p.position === 'pitcher' || p.position === 'both'))
+    .filter(([, p]) => p.teamId === fieldingTeamId)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const selectBatter = (playerId: string) => {

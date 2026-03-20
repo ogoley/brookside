@@ -6,11 +6,7 @@ interface Props {
 }
 
 export function PlayerCard({ player, team }: Props) {
-  const { stats, position } = player
-
-  const isPitcher = position === 'pitcher'
-  const isHitter = position === 'hitter'
-  const isBoth = position === 'both'
+  const { stats } = player
 
   return (
     <div
@@ -32,18 +28,18 @@ export function PlayerCard({ player, team }: Props) {
 
       {/* Stats */}
       <div className="px-4 py-3 flex gap-5">
-        {(isHitter || isBoth) && (
+        {stats.hitting && (
           <>
-            <Stat label="AVG" value={stats.hitting?.avg !== undefined ? stats.hitting.avg.toFixed(3).replace(/^0/, '') : '---'} />
-            <Stat label="HR" value={stats.hitting?.hr ?? 0} />
-            <Stat label="RBI" value={stats.hitting?.rbi ?? 0} />
+            <Stat label="AVG" value={stats.hitting.avg !== undefined ? stats.hitting.avg.toFixed(3).replace(/^0/, '') : '---'} />
+            <Stat label="HR" value={stats.hitting.hr ?? 0} />
+            <Stat label="RBI" value={stats.hitting.rbi ?? 0} />
           </>
         )}
-        {(isPitcher || isBoth) && (
+        {stats.pitching && (
           <>
-            <Stat label="ERA" value={stats.pitching?.era !== undefined ? stats.pitching.era.toFixed(2) : '---'} />
-            <Stat label="K" value={stats.pitching?.k ?? 0} />
-            <Stat label="IP" value={stats.pitching?.inningsPitched ?? 0} />
+            <Stat label="ERA" value={stats.pitching.era !== undefined ? stats.pitching.era.toFixed(2) : '---'} />
+            <Stat label="K" value={stats.pitching.k ?? 0} />
+            <Stat label="IP" value={stats.pitching.inningsPitched ?? 0} />
           </>
         )}
       </div>

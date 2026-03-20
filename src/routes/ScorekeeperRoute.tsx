@@ -75,7 +75,7 @@ export function ScorekeeperRoute() {
   const fieldingTeamId = game.isTopInning ? game.homeTeamId : game.awayTeamId
 
   const batterOptions = Object.entries(players)
-    .filter(([, p]) => p.teamId === battingTeamId && (p.position === 'hitter' || p.position === 'both'))
+    .filter(([, p]) => p.teamId === battingTeamId)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const pitcherName = matchup.pitcherId ? (players[matchup.pitcherId]?.name ?? 'Unknown') : null

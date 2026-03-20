@@ -107,7 +107,6 @@ export interface PlayerStats {
 export interface Player {
   name: string
   teamId: string
-  position: 'pitcher' | 'hitter' | 'both'
   jerseyNumber?: string
   stats: PlayerStats
 }
