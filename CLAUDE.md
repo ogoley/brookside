@@ -92,3 +92,17 @@ Requires `.env.local` with Firebase config. See `.env.example` for keys. See `OB
 
 ## Fonts
 Always use `fontFamily: 'var(--font-score)'` for scoreboard/stat numbers and `var(--font-ui)` for prose/labels. Do not use Tailwind's `font-sans` — it won't load the right font.
+
+## Dev-only files
+These files are needed for development/setup but do not ship to production. Track them here so they can be cleaned up when the project is done.
+
+| File | Purpose | Safe to delete when |
+|---|---|---|
+| `scripts/seedPlayers.js` | One-time player import — seeds `/players` in Firebase | Season data is finalized and won't be re-seeded |
+| `scripts/exportSnapshot.js` | Captures current Firebase state to `firebase-snapshot.json` | No longer need to reset Firebase during development |
+| `scripts/resetDb.js` | Wipes Firebase and restores from snapshot | Development is done, no more test resets needed |
+| `scripts/migrateTeamIds.js` | One-time migration: GUID team IDs → slug IDs | Already ran — can delete now |
+| `firebase-snapshot.json` | Clean-state Firebase snapshot used by `npm run reset` | Development is done |
+| ~~`firebase-seed.json`~~ | ~~Old placeholder seed data — superseded~~ | ✅ Deleted |
+| ~~`brookside-11361-default-rtdb-pitchingStats-export.json`~~ | ~~Raw pitching stats export — inlined in `seedPlayers.js`~~ | ✅ Deleted |
+| `OBS_SETUP.md` | OBS browser source setup instructions | Project is fully documented elsewhere |

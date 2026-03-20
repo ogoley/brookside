@@ -1,0 +1,1527 @@
+{
+  "game": {
+    "meta": {
+      "homeTeamId": "",
+      "awayTeamId": "",
+      "inning": 1,
+      "isTopInning": true,
+      "outs": 0,
+      "bases": {
+        "first": false,
+        "second": false,
+        "third": false
+      },
+      "homeScore": 0,
+      "awayScore": 0,
+      "isActive": false
+    },
+    "matchup": {
+      "batterId": null,
+      "pitcherId": null,
+      "lastPitcherHome": null,
+      "lastPitcherAway": null
+    }
+  },
+  "overlay": {
+    "activeScene": "idle",
+    "scoreboardBorder": false,
+    "scoreboardScale": 1,
+    "statOverlay": {
+      "visible": false,
+      "type": "hitter",
+      "playerId": "",
+      "dismissAfterMs": 5000
+    },
+    "timer": {
+      "durationMs": 3600000,
+      "startedAt": null,
+      "running": false
+    },
+    "homerun": {
+      "active": false,
+      "teamSide": "home",
+      "playerId": "",
+      "logoUrl": "",
+      "runsScored": 0,
+      "triggeredAt": 0
+    }
+  },
+  "teams": {
+    "base_invaders": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Fbase-invaders-1773957264104.png?alt=media&token=0f05c329-91d3-443c-b68b-75701f8dabaf",
+      "name": "Base Invaders",
+      "primaryColor": "#a2109e",
+      "secondaryColor": "#22e614",
+      "shortName": "BI"
+    },
+    "gamecocks": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Fgamecocks-1773955502269.png?alt=media&token=2e04b55a-02ae-4e76-be34-591ee26aeb37",
+      "name": "Gamecocks",
+      "primaryColor": "#e11414",
+      "secondaryColor": "#ffffff",
+      "shortName": "GC"
+    },
+    "moose_knucklers": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Fmoose-knucklers-1773957219015.png?alt=media&token=4cd4289f-79a7-469e-8bad-d6d8ffebd9e2",
+      "name": "Moose Knucklers",
+      "primaryColor": "#052451",
+      "secondaryColor": "#e1b40e",
+      "shortName": "MK"
+    },
+    "nuke_squad": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Fnuke-squad-1773955382210.png?alt=media&token=82ace3b5-0ee8-48bc-815f-ab61d5a5aca0",
+      "name": "Nuke Squad",
+      "primaryColor": "#dd3308",
+      "secondaryColor": "#000000",
+      "shortName": "NS"
+    },
+    "swing_mafia": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Fswing-mafia-1773958013907.png?alt=media&token=995101ed-d168-46b5-b781-97896376d52f",
+      "name": "Swing Mafia",
+      "primaryColor": "#1c7d23",
+      "secondaryColor": "#ffffff",
+      "shortName": "SM"
+    },
+    "trash_pandas": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Ftrash-pandas-1773955810604.png?alt=media&token=ebb1b488-99e6-4d75-a5b9-ca95948990ac",
+      "name": "Trash Pandas",
+      "primaryColor": "#189ed8",
+      "secondaryColor": "#e10e7f",
+      "shortName": "TP"
+    },
+    "wiffle_whalers": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Fwiffle-whalers-1773955402660.png?alt=media&token=fb7cc306-f38f-46ea-8f56-7c6a1829bee4",
+      "name": "Wiffle Whalers",
+      "primaryColor": "#324dd2",
+      "secondaryColor": "#0cac27",
+      "shortName": "WW"
+    },
+    "yellow_bat_yetis": {
+      "logoUrl": "https://firebasestorage.googleapis.com/v0/b/brookside-14b4b.firebasestorage.app/o/logos%2Fyellow-bat-yetis-1773957153617.png?alt=media&token=48b6b2ef-ed87-4c9f-aebc-9966d62e436e",
+      "name": "Yellow Bat Yetis",
+      "primaryColor": "#5592ec",
+      "secondaryColor": "#f7e922",
+      "shortName": "YBY"
+    }
+  },
+  "players": {
+    "aaron_pryor": {
+      "jerseyNumber": "",
+      "name": "Aaron Pryor",
+      "stats": {
+        "hitting": {
+          "ab": 16,
+          "avg": 0.25,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 4,
+          "h": 4,
+          "hr": 0,
+          "k": 6,
+          "obp": 0.333,
+          "ops": 0.583,
+          "pa": 18,
+          "r": 2,
+          "rbi": 1,
+          "slg": 0.25,
+          "triples": 0
+        }
+      },
+      "teamId": "moose_knucklers"
+    },
+    "anthony_mazzaferro": {
+      "jerseyNumber": "18",
+      "name": "Anthony Mazzaferro",
+      "stats": {
+        "hitting": {
+          "ab": 28,
+          "avg": 0.357,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 6,
+          "h": 10,
+          "hr": 1,
+          "k": 7,
+          "obp": 0.4,
+          "ops": 0.864,
+          "pa": 30,
+          "r": 2,
+          "rbi": 9,
+          "slg": 0.464,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 4,
+          "cg": 0,
+          "era": 14.4,
+          "gp": 2,
+          "inningsPitched": 1.2,
+          "k": 0,
+          "l": 0,
+          "sv": 0,
+          "w": 0
+        }
+      },
+      "teamId": "base_invaders"
+    },
+    "brendan_mcdonald": {
+      "jerseyNumber": "",
+      "name": "Brendan McDonald",
+      "stats": {
+        "hitting": {
+          "ab": 42,
+          "avg": 0.5,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 9,
+          "h": 21,
+          "hr": 1,
+          "k": 6,
+          "obp": 0.533,
+          "ops": 1.105,
+          "pa": 45,
+          "r": 7,
+          "rbi": 10,
+          "slg": 0.571,
+          "triples": 0
+        }
+      },
+      "teamId": "base_invaders"
+    },
+    "brett_weston": {
+      "jerseyNumber": "",
+      "name": "Brett Weston",
+      "stats": {
+        "hitting": {
+          "ab": 19,
+          "avg": 0.211,
+          "bb": 1,
+          "doubles": 0,
+          "gp": 4,
+          "h": 4,
+          "hr": 0,
+          "k": 8,
+          "obp": 0.25,
+          "ops": 0.461,
+          "pa": 20,
+          "r": 2,
+          "rbi": 1,
+          "slg": 0.211,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 4,
+          "cg": 1,
+          "era": 9,
+          "gp": 3,
+          "inningsPitched": 10,
+          "k": 8,
+          "l": 2,
+          "sv": 0,
+          "w": 0
+        }
+      },
+      "teamId": "yellow_bat_yetis"
+    },
+    "brian_bergeron": {
+      "jerseyNumber": "",
+      "name": "Brian Bergeron",
+      "stats": {
+        "hitting": {
+          "ab": 34,
+          "avg": 0.324,
+          "bb": 6,
+          "doubles": 0,
+          "gp": 7,
+          "h": 11,
+          "hr": 1,
+          "k": 12,
+          "obp": 0.425,
+          "ops": 0.837,
+          "pa": 40,
+          "r": 6,
+          "rbi": 6,
+          "slg": 0.412,
+          "triples": 0
+        }
+      },
+      "teamId": "nuke_squad"
+    },
+    "brian_harrigan": {
+      "jerseyNumber": "",
+      "name": "Brian Harrigan",
+      "stats": {
+        "hitting": {
+          "ab": 45,
+          "avg": 0.378,
+          "bb": 5,
+          "doubles": 0,
+          "gp": 8,
+          "h": 17,
+          "hr": 0,
+          "k": 11,
+          "obp": 0.44,
+          "ops": 0.818,
+          "pa": 50,
+          "r": 13,
+          "rbi": 9,
+          "slg": 0.378,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 11,
+          "cg": 2,
+          "era": 3.19,
+          "gp": 5,
+          "inningsPitched": 26.1,
+          "k": 38,
+          "l": 1,
+          "sv": 0,
+          "w": 3
+        }
+      },
+      "teamId": "trash_pandas"
+    },
+    "brian_lenahan": {
+      "jerseyNumber": "4",
+      "name": "Brian Lenahan",
+      "stats": {
+        "hitting": {
+          "ab": 44,
+          "avg": 0.455,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 8,
+          "h": 20,
+          "hr": 2,
+          "k": 8,
+          "obp": 0.5,
+          "ops": 1.091,
+          "pa": 48,
+          "r": 12,
+          "rbi": 9,
+          "slg": 0.591,
+          "triples": 0
+        }
+      },
+      "teamId": "nuke_squad"
+    },
+    "brian_stromwall": {
+      "jerseyNumber": "",
+      "name": "Brian Stromwall",
+      "stats": {
+        "hitting": {
+          "ab": 18,
+          "avg": 0.222,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 4,
+          "h": 4,
+          "hr": 1,
+          "k": 3,
+          "obp": 0.3,
+          "ops": 0.689,
+          "pa": 20,
+          "r": 3,
+          "rbi": 4,
+          "slg": 0.389,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 2,
+          "cg": 3,
+          "era": 2.67,
+          "gp": 3,
+          "inningsPitched": 18,
+          "k": 14,
+          "l": 1,
+          "sv": 0,
+          "w": 2
+        }
+      },
+      "teamId": "gamecocks"
+    },
+    "casey_edgar": {
+      "jerseyNumber": "",
+      "name": "Casey Edgar",
+      "stats": {
+        "hitting": {
+          "ab": 24,
+          "avg": 0.417,
+          "bb": 5,
+          "doubles": 0,
+          "gp": 6,
+          "h": 10,
+          "hr": 0,
+          "k": 3,
+          "obp": 0.517,
+          "ops": 0.934,
+          "pa": 29,
+          "r": 7,
+          "rbi": 5,
+          "slg": 0.417,
+          "triples": 0
+        }
+      },
+      "teamId": "gamecocks"
+    },
+    "chris_frapp": {
+      "jerseyNumber": "",
+      "name": "Chris Frapp",
+      "stats": {
+        "hitting": {
+          "ab": 39,
+          "avg": 0.282,
+          "bb": 0,
+          "doubles": 0,
+          "gp": 8,
+          "h": 11,
+          "hr": 0,
+          "k": 8,
+          "obp": 0.282,
+          "ops": 0.564,
+          "pa": 39,
+          "r": 5,
+          "rbi": 3,
+          "slg": 0.282,
+          "triples": 0
+        }
+      },
+      "teamId": "base_invaders"
+    },
+    "chris_spring": {
+      "jerseyNumber": "",
+      "name": "Chris Spring",
+      "stats": {
+        "hitting": {
+          "ab": 43,
+          "avg": 0.419,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 8,
+          "h": 18,
+          "hr": 2,
+          "k": 9,
+          "obp": 0.468,
+          "ops": 1.026,
+          "pa": 47,
+          "r": 8,
+          "rbi": 11,
+          "slg": 0.558,
+          "triples": 0
+        }
+      },
+      "teamId": "swing_mafia"
+    },
+    "cole_barker": {
+      "jerseyNumber": "",
+      "name": "Cole Barker",
+      "stats": {
+        "hitting": {
+          "ab": 37,
+          "avg": 0.459,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 7,
+          "h": 17,
+          "hr": 2,
+          "k": 9,
+          "obp": 0.5,
+          "ops": 1.068,
+          "pa": 40,
+          "r": 9,
+          "rbi": 8,
+          "slg": 0.568,
+          "triples": 0
+        }
+      },
+      "teamId": "moose_knucklers"
+    },
+    "dave_rist": {
+      "jerseyNumber": "11",
+      "name": "Dave Rist",
+      "stats": {
+        "hitting": {
+          "ab": 35,
+          "avg": 0.686,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 7,
+          "h": 24,
+          "hr": 6,
+          "k": 1,
+          "obp": 0.718,
+          "ops": 1.918,
+          "pa": 39,
+          "r": 19,
+          "rbi": 19,
+          "slg": 1.2,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 0,
+          "cg": 1,
+          "era": 3.75,
+          "gp": 3,
+          "inningsPitched": 8,
+          "k": 6,
+          "l": 0,
+          "sv": 2,
+          "w": 1
+        }
+      },
+      "teamId": "wiffle_whalers"
+    },
+    "dennis_nelson": {
+      "jerseyNumber": "",
+      "name": "Dennis Nelson",
+      "stats": {
+        "hitting": {
+          "ab": 43,
+          "avg": 0.279,
+          "bb": 1,
+          "doubles": 0,
+          "gp": 9,
+          "h": 12,
+          "hr": 1,
+          "k": 14,
+          "obp": 0.295,
+          "ops": 0.644,
+          "pa": 44,
+          "r": 12,
+          "rbi": 12,
+          "slg": 0.349,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 8,
+          "cg": 5,
+          "era": 8.36,
+          "gp": 6,
+          "inningsPitched": 28,
+          "k": 41,
+          "l": 2,
+          "sv": 0,
+          "w": 2
+        }
+      },
+      "teamId": "gamecocks"
+    },
+    "derek_voss": {
+      "jerseyNumber": "12",
+      "name": "Derek Voss",
+      "stats": {
+        "hitting": {
+          "ab": 29,
+          "avg": 0.414,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 6,
+          "h": 12,
+          "hr": 1,
+          "k": 7,
+          "obp": 0.485,
+          "ops": 0.968,
+          "pa": 33,
+          "r": 7,
+          "rbi": 6,
+          "slg": 0.483,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 7,
+          "cg": 2,
+          "era": 5.8,
+          "gp": 4,
+          "inningsPitched": 15,
+          "k": 18,
+          "l": 1,
+          "sv": 1,
+          "w": 2
+        }
+      },
+      "teamId": "moose_knucklers"
+    },
+    "dom_pellegrino": {
+      "jerseyNumber": "",
+      "name": "Dom Pellegrino",
+      "stats": {
+        "hitting": {
+          "ab": 25,
+          "avg": 0.48,
+          "bb": 0,
+          "doubles": 0,
+          "gp": 5,
+          "h": 12,
+          "hr": 2,
+          "k": 6,
+          "obp": 0.48,
+          "ops": 1.2,
+          "pa": 25,
+          "r": 5,
+          "rbi": 5,
+          "slg": 0.72,
+          "triples": 0
+        }
+      },
+      "teamId": "trash_pandas"
+    },
+    "dwayne_lapinski": {
+      "jerseyNumber": "25",
+      "name": "Dwayne Lapinski",
+      "stats": {
+        "hitting": {
+          "ab": 11,
+          "avg": 0.182,
+          "bb": 1,
+          "doubles": 0,
+          "gp": 3,
+          "h": 2,
+          "hr": 0,
+          "k": 3,
+          "obp": 0.25,
+          "ops": 0.432,
+          "pa": 12,
+          "r": 0,
+          "rbi": 0,
+          "slg": 0.182,
+          "triples": 0
+        }
+      },
+      "teamId": "nuke_squad"
+    },
+    "eric_hiller": {
+      "jerseyNumber": "",
+      "name": "Eric Hiller",
+      "stats": {
+        "hitting": {
+          "ab": 22,
+          "avg": 0.409,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 6,
+          "h": 9,
+          "hr": 1,
+          "k": 5,
+          "obp": 0.458,
+          "ops": 1.004,
+          "pa": 24,
+          "r": 2,
+          "rbi": 2,
+          "slg": 0.545,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 0,
+          "cg": 0,
+          "era": 4,
+          "gp": 1,
+          "inningsPitched": 3,
+          "k": 0,
+          "l": 0,
+          "sv": 0,
+          "w": 0
+        }
+      },
+      "teamId": "base_invaders"
+    },
+    "gary_wright": {
+      "jerseyNumber": "",
+      "name": "Gary Wright",
+      "stats": {
+        "hitting": {
+          "ab": 31,
+          "avg": 0.387,
+          "bb": 6,
+          "doubles": 0,
+          "gp": 6,
+          "h": 12,
+          "hr": 3,
+          "k": 9,
+          "obp": 0.486,
+          "ops": 1.164,
+          "pa": 37,
+          "r": 8,
+          "rbi": 8,
+          "slg": 0.677,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 0,
+          "cg": 0,
+          "era": 0,
+          "gp": 1,
+          "inningsPitched": 1,
+          "k": 0,
+          "l": 0,
+          "sv": 0,
+          "w": 0
+        }
+      },
+      "teamId": "nuke_squad"
+    },
+    "jake_moreau": {
+      "jerseyNumber": "",
+      "name": "Jake Moreau",
+      "stats": {
+        "hitting": {
+          "ab": 27,
+          "avg": 0.407,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 6,
+          "h": 11,
+          "hr": 1,
+          "k": 6,
+          "obp": 0.467,
+          "ops": 0.986,
+          "pa": 30,
+          "r": 5,
+          "rbi": 7,
+          "slg": 0.519,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 6,
+          "cg": 2,
+          "era": 6.23,
+          "gp": 4,
+          "inningsPitched": 17.1,
+          "k": 15,
+          "l": 2,
+          "sv": 0,
+          "w": 2
+        }
+      },
+      "teamId": "yellow_bat_yetis"
+    },
+    "jason_menard": {
+      "jerseyNumber": "7",
+      "name": "Jason Menard",
+      "stats": {
+        "hitting": {
+          "ab": 46,
+          "avg": 0.261,
+          "bb": 5,
+          "doubles": 0,
+          "gp": 8,
+          "h": 12,
+          "hr": 2,
+          "k": 11,
+          "obp": 0.333,
+          "ops": 0.725,
+          "pa": 51,
+          "r": 10,
+          "rbi": 8,
+          "slg": 0.391,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 2,
+          "cg": 1,
+          "era": 9,
+          "gp": 1,
+          "inningsPitched": 6,
+          "k": 2,
+          "l": 1,
+          "sv": 0,
+          "w": 0
+        }
+      },
+      "teamId": "trash_pandas"
+    },
+    "jaye_hayes": {
+      "jerseyNumber": "",
+      "name": "Jaye Hayes",
+      "stats": {
+        "hitting": {
+          "ab": 26,
+          "avg": 0.5,
+          "bb": 6,
+          "doubles": 0,
+          "gp": 5,
+          "h": 13,
+          "hr": 0,
+          "k": 8,
+          "obp": 0.594,
+          "ops": 1.094,
+          "pa": 32,
+          "r": 6,
+          "rbi": 8,
+          "slg": 0.5,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 6,
+          "cg": 1,
+          "era": 8.26,
+          "gp": 5,
+          "inningsPitched": 20.1,
+          "k": 13,
+          "l": 2,
+          "sv": 0,
+          "w": 1
+        }
+      },
+      "teamId": "swing_mafia"
+    },
+    "joe_hutch": {
+      "jerseyNumber": "55",
+      "name": "Joe Hutch",
+      "stats": {
+        "hitting": {
+          "ab": 26,
+          "avg": 0.231,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 5,
+          "h": 6,
+          "hr": 0,
+          "k": 7,
+          "obp": 0.31,
+          "ops": 0.541,
+          "pa": 29,
+          "r": 4,
+          "rbi": 3,
+          "slg": 0.231,
+          "triples": 0
+        }
+      },
+      "teamId": "wiffle_whalers"
+    },
+    "joe_ogoley": {
+      "jerseyNumber": "",
+      "name": "Joe Ogoley",
+      "stats": {
+        "hitting": {
+          "ab": 42,
+          "avg": 0.548,
+          "bb": 1,
+          "doubles": 0,
+          "gp": 8,
+          "h": 23,
+          "hr": 4,
+          "k": 10,
+          "obp": 0.558,
+          "ops": 1.391,
+          "pa": 43,
+          "r": 10,
+          "rbi": 12,
+          "slg": 0.833,
+          "triples": 0
+        }
+      },
+      "teamId": "gamecocks"
+    },
+    "joey_lafluer": {
+      "jerseyNumber": "24",
+      "name": "Joey Lafluer",
+      "stats": {
+        "hitting": {
+          "ab": 34,
+          "avg": 0.324,
+          "bb": 1,
+          "doubles": 0,
+          "gp": 6,
+          "h": 11,
+          "hr": 2,
+          "k": 10,
+          "obp": 0.343,
+          "ops": 0.843,
+          "pa": 35,
+          "r": 4,
+          "rbi": 4,
+          "slg": 0.5,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 9,
+          "cg": 1,
+          "era": 8.74,
+          "gp": 5,
+          "inningsPitched": 11.2,
+          "k": 9,
+          "l": 2,
+          "sv": 0,
+          "w": 1
+        }
+      },
+      "teamId": "swing_mafia"
+    },
+    "john_chappel": {
+      "jerseyNumber": "11",
+      "name": "John Chappel",
+      "stats": {
+        "hitting": {
+          "ab": 33,
+          "avg": 0.152,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 7,
+          "h": 5,
+          "hr": 0,
+          "k": 23,
+          "obp": 0.243,
+          "ops": 0.395,
+          "pa": 37,
+          "r": 3,
+          "rbi": 2,
+          "slg": 0.152,
+          "triples": 0
+        }
+      },
+      "teamId": "swing_mafia"
+    },
+    "jon_spring": {
+      "jerseyNumber": "",
+      "name": "Jon Spring",
+      "stats": {
+        "hitting": {
+          "ab": 35,
+          "avg": 0.257,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 8,
+          "h": 9,
+          "hr": 2,
+          "k": 8,
+          "obp": 0.297,
+          "ops": 0.726,
+          "pa": 37,
+          "r": 5,
+          "rbi": 6,
+          "slg": 0.429,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 25,
+          "cg": 4,
+          "era": 6.05,
+          "gp": 8,
+          "inningsPitched": 37.2,
+          "k": 54,
+          "l": 5,
+          "sv": 0,
+          "w": 2
+        }
+      },
+      "teamId": "base_invaders"
+    },
+    "jordan_pitzer": {
+      "jerseyNumber": "",
+      "name": "Jordan Pitzer",
+      "stats": {
+        "hitting": {
+          "ab": 30,
+          "avg": 0.4,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 6,
+          "h": 12,
+          "hr": 2,
+          "k": 5,
+          "obp": 0.471,
+          "ops": 1.071,
+          "pa": 34,
+          "r": 8,
+          "rbi": 10,
+          "slg": 0.6,
+          "triples": 0
+        }
+      },
+      "teamId": "gamecocks"
+    },
+    "josh_griffith": {
+      "jerseyNumber": "4",
+      "name": "Josh Griffith",
+      "stats": {
+        "hitting": {
+          "ab": 16,
+          "avg": 0.25,
+          "bb": 0,
+          "doubles": 0,
+          "gp": 3,
+          "h": 4,
+          "hr": 0,
+          "k": 9,
+          "obp": 0.25,
+          "ops": 0.5,
+          "pa": 16,
+          "r": 3,
+          "rbi": 0,
+          "slg": 0.25,
+          "triples": 0
+        }
+      },
+      "teamId": "swing_mafia"
+    },
+    "keith_venancio": {
+      "jerseyNumber": "8",
+      "name": "Keith Venancio",
+      "stats": {
+        "hitting": {
+          "ab": 54,
+          "avg": 0.5,
+          "bb": 1,
+          "doubles": 0,
+          "gp": 9,
+          "h": 27,
+          "hr": 1,
+          "k": 7,
+          "obp": 0.509,
+          "ops": 1.065,
+          "pa": 55,
+          "r": 12,
+          "rbi": 11,
+          "slg": 0.556,
+          "triples": 0
+        }
+      },
+      "teamId": "gamecocks"
+    },
+    "kris_oconnor": {
+      "jerseyNumber": "23",
+      "name": "Kris O'Connor",
+      "stats": {
+        "hitting": {
+          "ab": 49,
+          "avg": 0.49,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 9,
+          "h": 24,
+          "hr": 3,
+          "k": 7,
+          "obp": 0.51,
+          "ops": 1.183,
+          "pa": 51,
+          "r": 14,
+          "rbi": 21,
+          "slg": 0.673,
+          "triples": 0
+        }
+      },
+      "teamId": "wiffle_whalers"
+    },
+    "kyle_venancio": {
+      "jerseyNumber": "",
+      "name": "Kyle Venancio",
+      "stats": {
+        "hitting": {
+          "ab": 47,
+          "avg": 0.596,
+          "bb": 3,
+          "doubles": 3,
+          "gp": 8,
+          "h": 28,
+          "hr": 0,
+          "k": 9,
+          "obp": 0.62,
+          "ops": 1.28,
+          "pa": 50,
+          "r": 8,
+          "rbi": 5,
+          "slg": 0.66,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 6,
+          "cg": 4,
+          "era": 5.44,
+          "gp": 7,
+          "inningsPitched": 32,
+          "k": 21,
+          "l": 2,
+          "sv": 0,
+          "w": 2
+        }
+      },
+      "teamId": "nuke_squad"
+    },
+    "lids_venancio": {
+      "jerseyNumber": "10",
+      "name": "Lids Venancio",
+      "stats": {
+        "hitting": {
+          "ab": 49,
+          "avg": 0.388,
+          "bb": 8,
+          "doubles": 0,
+          "gp": 9,
+          "h": 19,
+          "hr": 0,
+          "k": 11,
+          "obp": 0.474,
+          "ops": 0.861,
+          "pa": 57,
+          "r": 8,
+          "rbi": 14,
+          "slg": 0.388,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 11,
+          "cg": 1,
+          "era": 13.12,
+          "gp": 5,
+          "inningsPitched": 16,
+          "k": 14,
+          "l": 3,
+          "sv": 0,
+          "w": 1
+        }
+      },
+      "teamId": "nuke_squad"
+    },
+    "mark_davis": {
+      "jerseyNumber": "",
+      "name": "Mark Davis",
+      "stats": {
+        "hitting": {
+          "ab": 41,
+          "avg": 0.61,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 7,
+          "h": 25,
+          "hr": 6,
+          "k": 4,
+          "obp": 0.628,
+          "ops": 1.677,
+          "pa": 43,
+          "r": 15,
+          "rbi": 14,
+          "slg": 1.049,
+          "triples": 0
+        }
+      },
+      "teamId": "swing_mafia"
+    },
+    "mark_pafumi": {
+      "jerseyNumber": "13",
+      "name": "Mark Pafumi",
+      "stats": {
+        "hitting": {
+          "ab": 9,
+          "avg": 0.222,
+          "bb": 0,
+          "doubles": 0,
+          "gp": 2,
+          "h": 2,
+          "hr": 0,
+          "k": 1,
+          "obp": 0.222,
+          "ops": 0.444,
+          "pa": 9,
+          "r": 0,
+          "rbi": 0,
+          "slg": 0.222,
+          "triples": 0
+        }
+      },
+      "teamId": "trash_pandas"
+    },
+    "matt_souza": {
+      "jerseyNumber": "3",
+      "name": "Matt Souza",
+      "stats": {
+        "hitting": {
+          "ab": 37,
+          "avg": 0.432,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 7,
+          "h": 16,
+          "hr": 2,
+          "k": 10,
+          "obp": 0.488,
+          "ops": 1.056,
+          "pa": 41,
+          "r": 10,
+          "rbi": 9,
+          "slg": 0.568,
+          "triples": 0
+        }
+      },
+      "teamId": "yellow_bat_yetis"
+    },
+    "matt_wrisley": {
+      "jerseyNumber": "24",
+      "name": "Matt Wrisley",
+      "stats": {
+        "hitting": {
+          "ab": 39,
+          "avg": 0.333,
+          "bb": 0,
+          "doubles": 0,
+          "gp": 7,
+          "h": 13,
+          "hr": 5,
+          "k": 9,
+          "obp": 0.333,
+          "ops": 1.051,
+          "pa": 39,
+          "r": 7,
+          "rbi": 7,
+          "slg": 0.718,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 17,
+          "cg": 3,
+          "era": 6.97,
+          "gp": 5,
+          "inningsPitched": 20.2,
+          "k": 18,
+          "l": 1,
+          "sv": 0,
+          "w": 2
+        }
+      },
+      "teamId": "trash_pandas"
+    },
+    "michael_schoen": {
+      "jerseyNumber": "",
+      "name": "Michael Schoen",
+      "stats": {
+        "hitting": {
+          "ab": 31,
+          "avg": 0.323,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 7,
+          "h": 10,
+          "hr": 0,
+          "k": 6,
+          "obp": 0.4,
+          "ops": 0.723,
+          "pa": 35,
+          "r": 5,
+          "rbi": 1,
+          "slg": 0.323,
+          "triples": 0
+        }
+      },
+      "teamId": "wiffle_whalers"
+    },
+    "michael_verteramo": {
+      "jerseyNumber": "",
+      "name": "Michael Verteramo",
+      "stats": {
+        "hitting": {
+          "ab": 47,
+          "avg": 0.617,
+          "bb": 9,
+          "doubles": 0,
+          "gp": 9,
+          "h": 29,
+          "hr": 4,
+          "k": 6,
+          "obp": 0.679,
+          "ops": 1.551,
+          "pa": 56,
+          "r": 17,
+          "rbi": 19,
+          "slg": 0.872,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 6,
+          "cg": 6,
+          "era": 3.51,
+          "gp": 8,
+          "inningsPitched": 41,
+          "k": 54,
+          "l": 1,
+          "sv": 0,
+          "w": 7
+        }
+      },
+      "teamId": "wiffle_whalers"
+    },
+    "nate_fulton": {
+      "jerseyNumber": "",
+      "name": "Nate Fulton",
+      "stats": {
+        "hitting": {
+          "ab": 40,
+          "avg": 0.35,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 8,
+          "h": 14,
+          "hr": 0,
+          "k": 11,
+          "obp": 0.409,
+          "ops": 0.759,
+          "pa": 44,
+          "r": 6,
+          "rbi": 5,
+          "slg": 0.35,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 5,
+          "cg": 1,
+          "era": 7.5,
+          "gp": 3,
+          "inningsPitched": 12,
+          "k": 12,
+          "l": 2,
+          "sv": 0,
+          "w": 1
+        }
+      },
+      "teamId": "moose_knucklers"
+    },
+    "owen_langley": {
+      "jerseyNumber": "",
+      "name": "Owen Langley",
+      "stats": {
+        "hitting": {
+          "ab": 22,
+          "avg": 0.318,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 5,
+          "h": 7,
+          "hr": 0,
+          "k": 7,
+          "obp": 0.375,
+          "ops": 0.693,
+          "pa": 24,
+          "r": 3,
+          "rbi": 2,
+          "slg": 0.318,
+          "triples": 0
+        }
+      },
+      "teamId": "yellow_bat_yetis"
+    },
+    "rick_holden": {
+      "jerseyNumber": "",
+      "name": "Rick Holden",
+      "stats": {
+        "hitting": {
+          "ab": 30,
+          "avg": 0.467,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 7,
+          "h": 14,
+          "hr": 1,
+          "k": 6,
+          "obp": 0.515,
+          "ops": 1.082,
+          "pa": 33,
+          "r": 8,
+          "rbi": 2,
+          "slg": 0.567,
+          "triples": 0
+        }
+      },
+      "teamId": "base_invaders"
+    },
+    "rob_holden": {
+      "jerseyNumber": "",
+      "name": "Rob Holden",
+      "stats": {
+        "hitting": {
+          "ab": 44,
+          "avg": 0.568,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 8,
+          "h": 25,
+          "hr": 2,
+          "k": 7,
+          "obp": 0.596,
+          "ops": 1.3,
+          "pa": 47,
+          "r": 15,
+          "rbi": 15,
+          "slg": 0.705,
+          "triples": 0
+        }
+      },
+      "teamId": "wiffle_whalers"
+    },
+    "ryan_decker": {
+      "jerseyNumber": "",
+      "name": "Ryan Decker",
+      "stats": {
+        "hitting": {
+          "ab": 47,
+          "avg": 0.553,
+          "bb": 5,
+          "doubles": 0,
+          "gp": 9,
+          "h": 26,
+          "hr": 4,
+          "k": 7,
+          "obp": 0.596,
+          "ops": 1.383,
+          "pa": 52,
+          "r": 16,
+          "rbi": 15,
+          "slg": 0.787,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 9,
+          "cg": 5,
+          "era": 3.86,
+          "gp": 7,
+          "inningsPitched": 35,
+          "k": 42,
+          "l": 1,
+          "sv": 0,
+          "w": 5
+        }
+      },
+      "teamId": "yellow_bat_yetis"
+    },
+    "sean_callahan": {
+      "jerseyNumber": "7",
+      "name": "Sean Callahan",
+      "stats": {
+        "hitting": {
+          "ab": 25,
+          "avg": 0.28,
+          "bb": 2,
+          "doubles": 0,
+          "gp": 5,
+          "h": 7,
+          "hr": 1,
+          "k": 8,
+          "obp": 0.333,
+          "ops": 0.733,
+          "pa": 27,
+          "r": 4,
+          "rbi": 3,
+          "slg": 0.4,
+          "triples": 0
+        }
+      },
+      "teamId": "moose_knucklers"
+    },
+    "thai_bui": {
+      "jerseyNumber": "",
+      "name": "Thai Bui",
+      "stats": {
+        "hitting": {
+          "ab": 18,
+          "avg": 0.556,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 4,
+          "h": 10,
+          "hr": 1,
+          "k": 4,
+          "obp": 0.619,
+          "ops": 1.341,
+          "pa": 21,
+          "r": 4,
+          "rbi": 3,
+          "slg": 0.722,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 3,
+          "cg": 1,
+          "era": 5.54,
+          "gp": 4,
+          "inningsPitched": 13,
+          "k": 11,
+          "l": 1,
+          "sv": 0,
+          "w": 1
+        }
+      },
+      "teamId": "swing_mafia"
+    },
+    "tom_ogoley": {
+      "jerseyNumber": "",
+      "name": "Tom Ogoley",
+      "stats": {
+        "hitting": {
+          "ab": 41,
+          "avg": 0.439,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 7,
+          "h": 18,
+          "hr": 5,
+          "k": 5,
+          "obp": 0.477,
+          "ops": 1.282,
+          "pa": 44,
+          "r": 11,
+          "rbi": 15,
+          "slg": 0.805,
+          "triples": 0
+        }
+      },
+      "teamId": "trash_pandas"
+    },
+    "travis_hull": {
+      "jerseyNumber": "21",
+      "name": "Travis Hull",
+      "stats": {
+        "hitting": {
+          "ab": 42,
+          "avg": 0.333,
+          "bb": 3,
+          "doubles": 0,
+          "gp": 8,
+          "h": 14,
+          "hr": 2,
+          "k": 12,
+          "obp": 0.378,
+          "ops": 0.854,
+          "pa": 45,
+          "r": 8,
+          "rbi": 10,
+          "slg": 0.476,
+          "triples": 0
+        }
+      },
+      "teamId": "yellow_bat_yetis"
+    },
+    "tyler_granger": {
+      "jerseyNumber": "",
+      "name": "Tyler Granger",
+      "stats": {
+        "hitting": {
+          "ab": 44,
+          "avg": 0.545,
+          "bb": 4,
+          "doubles": 0,
+          "gp": 8,
+          "h": 24,
+          "hr": 3,
+          "k": 8,
+          "obp": 0.583,
+          "ops": 1.333,
+          "pa": 48,
+          "r": 14,
+          "rbi": 12,
+          "slg": 0.75,
+          "triples": 0
+        },
+        "pitching": {
+          "bb": 8,
+          "cg": 3,
+          "era": 4.12,
+          "gp": 6,
+          "inningsPitched": 26,
+          "k": 28,
+          "l": 2,
+          "sv": 0,
+          "w": 3
+        }
+      },
+      "teamId": "moose_knucklers"
+    }
+  }
+}

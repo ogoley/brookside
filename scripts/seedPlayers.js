@@ -5,13 +5,11 @@
  *
  * What it does:
  *   1. Reads Firebase config from .env.local
- *   2. Fetches /teams from Firebase to build a name→id map
- *   3. Remaps old season team names to new season team names
- *   4. Pushes all players to /players
+ *   2. Remaps old season team names to new season team names
+ *   3. Derives teamId and playerId as slugs (e.g. "Wiffle Whalers" → "wiffle_whalers")
+ *   4. Writes all players to /players/{playerId}
  *
- * ⚠️  TEAM_MAP values must match EXACTLY what you typed in /config.
- *     If a team name doesn't match, that player is skipped with a warning.
- *
+ * No Firebase reads required — team IDs are derived deterministically from names.
  * Run once. If you need to re-run, delete /players in Firebase first.
  *
  * Teams:
@@ -27,7 +25,11 @@
 
 import { readFileSync } from 'fs'
 import { initializeApp } from 'firebase/app'
-import { getDatabase, ref, get, push } from 'firebase/database'
+import { getDatabase, ref, set } from 'firebase/database'
+
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '_')
+}
 
 // ── Load .env.local ──────────────────────────────────────────────────────────
 function loadEnv() {
@@ -173,41 +175,21 @@ const RAW_PLAYERS = [
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  // 1. Fetch teams from Firebase
-  const teamsSnap = await get(ref(db, 'teams'))
-  if (!teamsSnap.exists()) {
-    console.error('❌  No teams found in Firebase. Create all teams in /config first.')
-    process.exit(1)
-  }
-
-  // Build name → Firebase ID map
-  const nameToId = {}
-  teamsSnap.forEach(child => {
-    nameToId[child.val().name] = child.key
-  })
-  console.log('Teams found in Firebase:', Object.keys(nameToId).join(', '), '\n')
-
-  // 2. Remap old team names to new team names
+  // 1. Remap old team names to new season names
   const players = RAW_PLAYERS.map(p => ({
     ...p,
     Team: TEAM_MAP[p.Team] ?? p.Team,
   }))
 
-  // 3. Push each player to /players
+  // 2. Write each player to /players/{playerId}
   let pushed = 0
-  let skipped = 0
 
   for (const p of players) {
-    const teamId = nameToId[p.Team]
-    if (!teamId) {
-      console.warn(`⚠️  No Firebase team found for "${p.Team}" — skipping ${p.Name}`)
-      skipped++
-      continue
-    }
-
+    const teamId  = slugify(p.Team)
     const pitching = PITCHING_BY_NAME[p.Name]
+    const playerId = slugify(p.Name)
 
-    await push(ref(db, 'players'), {
+    await set(ref(db, `players/${playerId}`), {
       name:         p.Name,
       teamId,
       jerseyNumber: p.number || '',
@@ -245,11 +227,11 @@ async function main() {
       },
     })
 
-    console.log(`✓  ${p.Name.padEnd(22)} → ${p.Team}`)
+    console.log(`✓  ${playerId.padEnd(25)} → ${p.Team}`)
     pushed++
   }
 
-  console.log(`\n✅  Done: ${pushed} players pushed, ${skipped} skipped.`)
+  console.log(`\n✅  Done: ${pushed} players pushed.`)
   process.exit(0)
 }
 
