@@ -67,3 +67,6 @@ The league has an official website that displays stats. Long-term, `/players` in
 - [ ] Logo images uploaded to Firebase Storage are never deleted when a team is deleted or a logo is replaced — add cleanup (delete old Storage object when `logoUrl` is overwritten or team is removed).
 - [ ] The `/overlay` route has no error boundary — if Firebase is unreachable, OBS will show a blank screen with no indication of why.
 - [ ] The reset game button should have a confirmation
+- [ ] Right now the notch for pitcher/hitter have a baseball and cricket bat. Need this to be a wiffle ball and wiffle bat.
+- [ ] There is a small space created in the animatino from the notch for pitcher hitter, where there is gap. We can add padding to the top of the notch so it fills that space when it overshoots the bottom of the notch on initial animatino.
+- [ ] We ahve the slider set to .75 percent of the original pill/homerun size so we need to update it. We could bring this to a separate UI config page which is outside of the game controller, not taking up real estate

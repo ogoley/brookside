@@ -32,19 +32,22 @@ export function StatOverlay({ statOverlay, players, teams }: Props) {
   const primary = team?.primaryColor ?? '#1a3a6b'
   const secondary = team?.secondaryColor ?? '#ffffff'
 
+  const h = stats?.hitting
+  const p = stats?.pitching
+
   const hitterStats = [
-    { label: 'AVG', value: stats?.avg !== undefined ? stats.avg.toFixed(3).replace(/^0/, '') : '---' },
-    { label: 'HR',  value: stats?.hr  ?? 0 },
-    { label: 'RBI', value: stats?.rbi ?? 0 },
-    { label: 'OPS', value: stats?.ops !== undefined ? stats.ops.toFixed(3).replace(/^0/, '') : '---' },
-    { label: 'BB',  value: stats?.bb  ?? 0 },
+    { label: 'AVG', value: h?.avg !== undefined ? h.avg.toFixed(3).replace(/^0/, '') : '---' },
+    { label: 'HR',  value: h?.hr  ?? 0 },
+    { label: 'RBI', value: h?.rbi ?? 0 },
+    { label: 'OPS', value: h?.ops !== undefined ? h.ops.toFixed(3).replace(/^0/, '') : '---' },
+    { label: 'BB',  value: h?.bb  ?? 0 },
   ]
 
   const pitcherStats = [
-    { label: 'ERA', value: stats?.era !== undefined ? stats.era.toFixed(2) : '---' },
-    { label: 'K',   value: stats?.k   ?? 0 },
-    { label: 'BB',  value: stats?.bb  ?? 0 },
-    { label: 'IP',  value: stats?.inningsPitched ?? 0 },
+    { label: 'ERA', value: p?.era !== undefined ? p.era.toFixed(2) : '---' },
+    { label: 'K',   value: p?.k   ?? 0 },
+    { label: 'BB',  value: p?.bb  ?? 0 },
+    { label: 'IP',  value: p?.inningsPitched ?? 0 },
   ]
 
   const statItems = isPitcher ? pitcherStats : hitterStats

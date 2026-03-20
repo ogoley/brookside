@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { ref, update, set } from 'firebase/database'
 // TODO: hrPlayerName is a temporary text input. Replace with playerId resolved from /players once the player roster feature is built out.
 import { Link } from 'react-router-dom'
@@ -7,6 +7,7 @@ import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
+import { useMatchup } from '../hooks/useMatchup'
 import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
 import type { SceneName, TimerState } from '../types'
 
@@ -24,12 +25,20 @@ export function ControllerRoute() {
   const { teams } = useTeams()
   const { overlay } = useOverlayState()
   const { players } = usePlayers()
+  const { matchup } = useMatchup()
 
   const [statType, setStatType] = useState<'hitter' | 'pitcher'>('hitter')
   const [selectedPlayer, setSelectedPlayer] = useState('')
   const [dismissDelay, setDismissDelay] = useState(5000)
   const [hrPlayerId, setHrPlayerId] = useState('')
   const [confirmReset, setConfirmReset] = useState(false)
+
+  // Auto-clear batter notch when bases or outs change
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return }
+    if (matchup.batterId) update(ref(db, 'game/matchup'), { batterId: null })
+  }, [game.outs, game.bases.first, game.bases.second, game.bases.third])
 
   const adjustScore = useCallback((side: 'home' | 'away', delta: number) => {
     const key = side === 'home' ? 'homeScore' : 'awayScore'
@@ -44,11 +53,6 @@ export function ControllerRoute() {
 
   const toggleBase = (base: 'first' | 'second' | 'third') => {
     update(ref(db, 'game/meta/bases'), { [base]: !game.bases[base] })
-  }
-
-  const resetInning = () => {
-    update(ref(db, 'game/meta'), { outs: 0 })
-    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
   }
 
   const setTeam = (side: 'home' | 'away', teamId: string) => {
@@ -66,11 +70,14 @@ export function ControllerRoute() {
 
   const advanceHalfInning = () => {
     if (game.isTopInning) {
+      // Top → bottom: home now bats, away now fields
       update(ref(db, 'game/meta'), { isTopInning: false, outs: 0 })
+      update(ref(db, 'game/matchup'), { batterId: null, pitcherId: matchup.lastPitcherAway ?? null })
     } else {
+      // Bottom → top: away now bats, home now fields
       update(ref(db, 'game/meta'), { isTopInning: true, inning: game.inning + 1, outs: 0 })
+      update(ref(db, 'game/matchup'), { batterId: null, pitcherId: matchup.lastPitcherHome ?? null })
     }
-    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
     update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
   }
 
@@ -161,6 +168,38 @@ export function ControllerRoute() {
     return p.position === 'hitter' || p.position === 'both'
   })
 
+  const fieldingTeamId = game.isTopInning ? game.homeTeamId : game.awayTeamId
+
+  const matchupBatterPlayers = Object.entries(players)
+    .filter(([, p]) => p.teamId === battingTeamId && (p.position === 'hitter' || p.position === 'both'))
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+
+  const matchupPitcherPlayers = Object.entries(players)
+    .filter(([, p]) => p.teamId === fieldingTeamId && (p.position === 'pitcher' || p.position === 'both'))
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+
+  const selectBatter = (playerId: string) => {
+    if (!playerId) {
+      update(ref(db, 'game/matchup'), { batterId: null })
+      return
+    }
+    update(ref(db, 'game/matchup'), { batterId: playerId })
+    set(ref(db, 'overlay/statOverlay'), { visible: true, type: 'hitter', playerId, dismissAfterMs: 20000 })
+  }
+
+  const selectPitcher = (playerId: string) => {
+    if (!playerId) {
+      update(ref(db, 'game/matchup'), { pitcherId: null })
+      return
+    }
+    const pitcher = players[playerId]
+    const isHome = pitcher?.teamId === game.homeTeamId
+    update(ref(db, 'game/matchup'), {
+      pitcherId: playerId,
+      ...(isHome ? { lastPitcherHome: playerId } : { lastPitcherAway: playerId }),
+    })
+  }
+
   return (
     <div
       className="min-h-screen px-4 py-4 sm:px-6 lg:px-10 lg:py-8"
@@ -195,7 +234,6 @@ export function ControllerRoute() {
           onScoreChange={adjustScore}
           onSetOuts={setOuts}
           onToggleBase={toggleBase}
-          onReset={resetInning}
           onAdvanceHalfInning={advanceHalfInning}
           onRewindHalfInning={rewindHalfInning}
           onSetTeam={setTeam}
@@ -221,6 +259,44 @@ export function ControllerRoute() {
                   {s.label}
                 </TouchBtn>
               ))}
+            </div>
+          </Section>
+
+          {/* MATCHUP */}
+          <Section title="Matchup">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                  🏏 At Bat — {battingTeamObj?.shortName ?? '...'}
+                </span>
+                <select
+                  value={matchup.batterId ?? ''}
+                  onChange={e => selectBatter(e.target.value)}
+                  className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                  style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                >
+                  <option value="">— Select batter —</option>
+                  {matchupBatterPlayers.map(([id, p]) => (
+                    <option key={id} value={id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                  ⚾ Pitching — {(game.isTopInning ? homeTeam : awayTeam)?.shortName ?? '...'}
+                </span>
+                <select
+                  value={matchup.pitcherId ?? ''}
+                  onChange={e => selectPitcher(e.target.value)}
+                  className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                  style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                >
+                  <option value="">— Select pitcher —</option>
+                  {matchupPitcherPlayers.map(([id, p]) => (
+                    <option key={id} value={id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </Section>
 

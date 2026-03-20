@@ -9,6 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "seed": "node scripts/seedPlayers.js",
+    "seed:pitchers": "node scripts/seedPitchers.js",
+    "migrate:players": "node scripts/migratePlayers.js",
+    "duplicate:pitching": "node scripts/duplicatePitchingStats.js",
     "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {

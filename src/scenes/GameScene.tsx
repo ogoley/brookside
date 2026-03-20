@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import type { GameMeta, OverlayState, PlayersMap, TeamsMap } from '../types'
+import type { GameMeta, OverlayState, PlayersMap, TeamsMap, MatchupState } from '../types'
 import { Scoreboard } from '../components/Scoreboard'
 import { HomrunBanner } from '../components/HomrunBanner'
 import { StatOverlay } from '../components/StatOverlay'
@@ -10,9 +10,10 @@ interface Props {
   overlay: OverlayState
   teams: TeamsMap
   players: PlayersMap
+  matchup: MatchupState
 }
 
-export function GameScene({ game, overlay, teams, players }: Props) {
+export function GameScene({ game, overlay, teams, players, matchup }: Props) {
   const homeTeam = teams[game.homeTeamId]
   const awayTeam = teams[game.awayTeamId]
 
@@ -39,7 +40,16 @@ export function GameScene({ game, overlay, teams, players }: Props) {
               transition={{ duration: 0.3 }}
               style={{ transform: `scale(${overlay.scoreboardScale})`, transformOrigin: 'top center' }}
             >
-              <Scoreboard game={game} homeTeam={homeTeam} awayTeam={awayTeam} timer={overlay.timer} showBorder={overlay.scoreboardBorder} />
+              <Scoreboard
+                game={game}
+                homeTeam={homeTeam}
+                awayTeam={awayTeam}
+                timer={overlay.timer}
+                showBorder={overlay.scoreboardBorder}
+                matchup={matchup}
+                players={players}
+                statOverlayVisible={overlay.statOverlay.visible}
+              />
             </motion.div>
           )}
         </AnimatePresence>

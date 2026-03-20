@@ -34,16 +34,16 @@ export function PlayerCard({ player, team }: Props) {
       <div className="px-4 py-3 flex gap-5">
         {(isHitter || isBoth) && (
           <>
-            <Stat label="AVG" value={stats.avg !== undefined ? stats.avg.toFixed(3).replace(/^0/, '') : '---'} />
-            <Stat label="HR" value={stats.hr ?? 0} />
-            <Stat label="RBI" value={stats.rbi ?? 0} />
+            <Stat label="AVG" value={stats.hitting?.avg !== undefined ? stats.hitting.avg.toFixed(3).replace(/^0/, '') : '---'} />
+            <Stat label="HR" value={stats.hitting?.hr ?? 0} />
+            <Stat label="RBI" value={stats.hitting?.rbi ?? 0} />
           </>
         )}
         {(isPitcher || isBoth) && (
           <>
-            <Stat label="ERA" value={stats.era !== undefined ? stats.era.toFixed(2) : '---'} />
-            <Stat label="K" value={stats.k ?? 0} />
-            <Stat label="IP" value={stats.inningsPitched ?? 0} />
+            <Stat label="ERA" value={stats.pitching?.era !== undefined ? stats.pitching.era.toFixed(2) : '---'} />
+            <Stat label="K" value={stats.pitching?.k ?? 0} />
+            <Stat label="IP" value={stats.pitching?.inningsPitched ?? 0} />
           </>
         )}
       </div>

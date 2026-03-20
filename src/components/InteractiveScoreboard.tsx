@@ -10,7 +10,6 @@ interface Props {
   onScoreChange: (side: 'home' | 'away', delta: number) => void
   onSetOuts: (outs: number) => void
   onToggleBase: (base: 'first' | 'second' | 'third') => void
-  onReset: () => void
   onAdvanceHalfInning: () => void
   onRewindHalfInning: () => void
   onSetTeam: (side: 'home' | 'away', teamId: string) => void
@@ -19,7 +18,7 @@ interface Props {
 export function InteractiveScoreboard({
   game, homeTeam, awayTeam, teams,
   onScoreChange, onSetOuts, onToggleBase,
-  onReset, onAdvanceHalfInning, onRewindHalfInning, onSetTeam,
+  onAdvanceHalfInning, onRewindHalfInning, onSetTeam,
 }: Props) {
   const longPressRef = useRef<ReturnType<typeof setInterval> | null>(null)
 

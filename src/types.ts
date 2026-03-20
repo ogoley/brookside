@@ -50,6 +50,13 @@ export interface HomrunState {
   triggeredAt: number
 }
 
+export interface MatchupState {
+  batterId: string | null
+  pitcherId: string | null
+  lastPitcherHome: string | null
+  lastPitcherAway: string | null
+}
+
 export interface OverlayState {
   activeScene: 'game' | 'statCard' | 'matchup' | 'idle'
   statOverlay: StatOverlayState
@@ -61,8 +68,7 @@ export interface OverlayState {
 
 export type SceneName = 'game' | 'statCard' | 'matchup' | 'idle'
 
-export interface PlayerStats {
-  // Hitting
+export interface HittingStats {
   gp?: number       // games played
   pa?: number       // plate appearances
   ab?: number       // at bats
@@ -78,9 +84,23 @@ export interface PlayerStats {
   obp?: number      // on-base percentage
   slg?: number      // slugging percentage
   ops?: number      // OPS
-  // Pitching
+}
+
+export interface PitchingStats {
+  gp?: number
   era?: number
+  k?: number
+  bb?: number
   inningsPitched?: number
+  w?: number
+  l?: number
+  cg?: number
+  sv?: number
+}
+
+export interface PlayerStats {
+  hitting?: HittingStats
+  pitching?: PitchingStats
 }
 
 export interface Player {

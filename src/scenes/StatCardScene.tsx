@@ -152,13 +152,13 @@ function TeamColumn({
               {player.name}
             </span>
             <span className="text-center text-white font-bold text-xl" style={{ fontFamily: 'var(--font-score)' }}>
-              {player.stats.avg !== undefined ? player.stats.avg.toFixed(3).replace(/^0/, '') : '---'}
+              {player.stats.hitting?.avg !== undefined ? player.stats.hitting.avg.toFixed(3).replace(/^0/, '') : '---'}
             </span>
             <span className="text-center text-white font-bold text-xl" style={{ fontFamily: 'var(--font-score)' }}>
-              {player.stats.hr ?? 0}
+              {player.stats.hitting?.hr ?? 0}
             </span>
             <span className="text-center text-white font-bold text-xl" style={{ fontFamily: 'var(--font-score)' }}>
-              {player.stats.rbi ?? 0}
+              {player.stats.hitting?.rbi ?? 0}
             </span>
           </motion.div>
         ))}

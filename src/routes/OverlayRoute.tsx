@@ -4,6 +4,7 @@ import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
+import { useMatchup } from '../hooks/useMatchup'
 import { GameScene, StatCardScene, MatchupScene, IdleScene } from '../scenes'
 
 export function OverlayRoute() {
@@ -11,6 +12,7 @@ export function OverlayRoute() {
   const { teams } = useTeams()
   const { overlay } = useOverlayState()
   const { players } = usePlayers()
+  const { matchup } = useMatchup()
 
   // Mark body as overlay mode so CSS can set transparent background
   useEffect(() => {
@@ -28,7 +30,7 @@ export function OverlayRoute() {
     >
       {/* Base layer — always present so scoreboard is visible under any scene */}
       <div className="absolute inset-0">
-        <GameScene game={game} overlay={overlay} teams={teams} players={players} />
+        <GameScene game={game} overlay={overlay} teams={teams} players={players} matchup={matchup} />
       </div>
 
       {/* Overlay scenes — rendered on top, animated in/out */}
