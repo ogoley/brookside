@@ -6,8 +6,9 @@ import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { GameScene, StatCardScene, MatchupScene, IdleScene } from '../scenes'
+import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
 
-export function OverlayRoute() {
+function OverlayContent() {
   const { game } = useGameData()
   const { teams } = useTeams()
   const { overlay } = useOverlayState()
@@ -73,5 +74,13 @@ export function OverlayRoute() {
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+export function OverlayRoute() {
+  return (
+    <OverlayErrorBoundary>
+      <OverlayContent />
+    </OverlayErrorBoundary>
   )
 }

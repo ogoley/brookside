@@ -384,7 +384,7 @@ export function ControllerRoute() {
           </Section>
 
           {/* DEV — SCOREBUG CONTROLS (temporary) */}
-          <Section title="⚙️ Dev: Scorebug">
+          <CollapsibleSection title="⚙️ Dev: Scorebug">
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <span style={{ fontFamily: 'var(--font-ui)', color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Pill border</span>
@@ -415,7 +415,7 @@ export function ControllerRoute() {
                 />
               </div>
             </div>
-          </Section>
+          </CollapsibleSection>
 
           {/* END GAME */}
           <button
@@ -483,6 +483,31 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </h2>
       {children}
+    </div>
+  )
+}
+
+function CollapsibleSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}
+    >
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 transition-colors hover:bg-white/5"
+      >
+        <h2 className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+          {title}
+        </h2>
+        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 flex flex-col gap-3">
+          {children}
+        </div>
+      )}
     </div>
   )
 }

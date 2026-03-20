@@ -33,6 +33,30 @@ function useCountdown(timer?: TimerState): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
+function WiffleBall() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="11" cy="11" r="10" fill="white" stroke="rgba(0,0,0,0.2)" strokeWidth="1" />
+      <circle cx="8"  cy="9"  r="1.8" fill="rgba(0,0,0,0.18)" />
+      <circle cx="14" cy="9"  r="1.8" fill="rgba(0,0,0,0.18)" />
+      <circle cx="11" cy="14" r="1.8" fill="rgba(0,0,0,0.18)" />
+    </svg>
+  )
+}
+
+function WiffleBat() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* barrel */}
+      <rect x="9" y="1" width="5" height="12" rx="2.5" fill="#facc15" />
+      {/* handle taper */}
+      <rect x="10" y="12" width="3" height="6" rx="1.5" fill="#facc15" />
+      {/* knob */}
+      <ellipse cx="11" cy="19" rx="3" ry="2" fill="#facc15" />
+    </svg>
+  )
+}
+
 function PlayerNotch({
   name,
   type,
@@ -61,7 +85,11 @@ function PlayerNotch({
           style={{
             background: primaryColor,
             borderRadius: '0 0 12px 12px',
-            padding: '5px 18px',
+            paddingTop: 40,
+            paddingBottom: 6,
+            paddingLeft: 18,
+            paddingRight: 18,
+            marginTop: -36,
             display: 'flex',
             alignItems: 'center',
             gap: 5,
@@ -70,8 +98,8 @@ function PlayerNotch({
             originY: 0,
           }}
         >
-          <span style={{ fontSize: 20, lineHeight: 1 }}>
-            {type === 'batter' ? '🏏' : '⚾'}
+          <span style={{ lineHeight: 1 }}>
+            {type === 'batter' ? <WiffleBat /> : <WiffleBall />}
           </span>
           <span style={{
             fontFamily: 'var(--font-score)',
@@ -125,7 +153,7 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true,
       <div className="relative" style={{ flexShrink: 0 }}>
         <div
           className="flex items-center justify-between gap-2 pl-6 pr-4 rounded-l-full h-full"
-          style={{ background: awayPrimary, width: 320 }}
+          style={{ background: awayPrimary, width: 320, position: 'relative', zIndex: 1 }}
         >
           <span
             className="font-black leading-none shrink-0"
@@ -212,7 +240,7 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true,
       <div className="relative" style={{ flexShrink: 0 }}>
         <div
           className="flex items-center justify-between gap-2 pr-6 pl-4 rounded-r-full h-full"
-          style={{ background: homePrimary, width: 320 }}
+          style={{ background: homePrimary, width: 320, position: 'relative', zIndex: 1 }}
         >
           <span
             className="font-bold tracking-wide truncate leading-none shrink-0"

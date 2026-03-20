@@ -1,11 +1,20 @@
 import { useState, useRef } from 'react'
 import { ref, push, set, remove } from 'firebase/database'
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import { Link } from 'react-router-dom'
 import { db, storage } from '../firebase'
 import { useTeams } from '../hooks/useTeams'
 import { TeamPillPreview } from '../components/TeamPillPreview'
 import type { Team } from '../types'
+
+function deleteStorageLogo(url: string) {
+  try {
+    const match = url.match(/\/o\/(.+?)(\?|$)/)
+    if (!match) return
+    const path = decodeURIComponent(match[1])
+    deleteObject(storageRef(storage, path)).catch(() => {/* ignore if already gone */})
+  } catch {/* ignore */}
+}
 
 const EMPTY_TEAM: Team = {
   name: '',
@@ -42,7 +51,8 @@ export function ConfigRoute() {
     setEditingId(null)
   }
 
-  const deleteTeam = async (id: string) => {
+  const deleteTeam = async (id: string, logoUrl: string) => {
+    if (logoUrl) deleteStorageLogo(logoUrl)
     await remove(ref(db, `teams/${id}`))
   }
 
@@ -89,7 +99,7 @@ export function ConfigRoute() {
               key={id}
               team={team}
               onEdit={() => startEdit(id, team)}
-              onDelete={() => deleteTeam(id)}
+              onDelete={() => deleteTeam(id, team.logoUrl)}
             />
           )
         )}
@@ -293,6 +303,7 @@ function LogoUpload({ currentUrl, teamName, onUploaded }: {
       snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
       () => { setError('Upload failed. Check Firebase Storage rules.'); setProgress(null) },
       async () => {
+        if (currentUrl) deleteStorageLogo(currentUrl)
         const url = await getDownloadURL(task.snapshot.ref)
         onUploaded(url)
         setProgress(null)
@@ -345,7 +356,7 @@ function LogoUpload({ currentUrl, teamName, onUploaded }: {
         {currentUrl && progress === null && (
           <button
             type="button"
-            onClick={() => onUploaded('')}
+            onClick={() => { deleteStorageLogo(currentUrl); onUploaded('') }}
             className="h-11 px-3 rounded-lg text-sm font-semibold shrink-0"
             style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
           >
