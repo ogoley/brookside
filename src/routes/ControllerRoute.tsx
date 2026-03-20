@@ -27,10 +27,7 @@ export function ControllerRoute() {
   const { players } = usePlayers()
   const { matchup } = useMatchup()
 
-  const [statType, setStatType] = useState<'hitter' | 'pitcher'>('hitter')
-  const [selectedPlayer, setSelectedPlayer] = useState('')
   const [dismissDelay, setDismissDelay] = useState(5000)
-  const [hrPlayerId, setHrPlayerId] = useState('')
   const [confirmReset, setConfirmReset] = useState(false)
 
   // Auto-clear batter notch when bases or outs change
@@ -91,7 +88,7 @@ export function ControllerRoute() {
   }
 
   const triggerHomerun = () => {
-    if (!hrPlayerId) return
+    if (!matchup.batterId) return
     const battingTeam = game.isTopInning ? 'away' : 'home'
     const runsScored = 1
       + (game.bases.first ? 1 : 0)
@@ -106,7 +103,7 @@ export function ControllerRoute() {
     set(ref(db, 'overlay/homerun'), {
       active: true,
       teamSide: battingTeam,
-      playerId: hrPlayerId,
+      playerId: matchup.batterId,
       logoUrl: battingTeamObj?.logoUrl ?? '',
       runsScored,
       triggeredAt: Date.now(),
@@ -137,14 +134,14 @@ export function ControllerRoute() {
     update(ref(db, 'overlay'), { activeScene: scene })
   }
 
-  const showStatOverlay = () => {
-    if (!selectedPlayer) return
-    set(ref(db, 'overlay/statOverlay'), {
-      visible: true,
-      type: statType,
-      playerId: selectedPlayer,
-      dismissAfterMs: dismissDelay,
-    })
+  const showBatterStats = () => {
+    if (!matchup.batterId) return
+    set(ref(db, 'overlay/statOverlay'), { visible: true, type: 'hitter', playerId: matchup.batterId, dismissAfterMs: dismissDelay })
+  }
+
+  const showPitcherStats = () => {
+    if (!matchup.pitcherId) return
+    set(ref(db, 'overlay/statOverlay'), { visible: true, type: 'pitcher', playerId: matchup.pitcherId, dismissAfterMs: dismissDelay })
   }
 
   const dismissStatOverlay = () => {
@@ -156,17 +153,6 @@ export function ControllerRoute() {
 
   const battingTeamId = game.isTopInning ? game.awayTeamId : game.homeTeamId
   const battingTeamObj = game.isTopInning ? awayTeam : homeTeam
-  const battingPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === battingTeamId)
-    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
-
-  // Reset HR player selection when batting team changes
-  useEffect(() => { setHrPlayerId('') }, [battingTeamId])
-
-  const filteredPlayers = Object.entries(players).filter(([, p]) => {
-    if (statType === 'pitcher') return p.position === 'pitcher' || p.position === 'both'
-    return p.position === 'hitter' || p.position === 'both'
-  })
 
   const fieldingTeamId = game.isTopInning ? game.homeTeamId : game.awayTeamId
 
@@ -262,12 +248,14 @@ export function ControllerRoute() {
             </div>
           </Section>
 
-          {/* MATCHUP */}
-          <Section title="Matchup">
+          {/* AT BAT */}
+          <Section title="At Bat">
             <div className="flex flex-col gap-3">
+
+              {/* Batter */}
               <div className="flex flex-col gap-1">
                 <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
-                  🏏 At Bat — {battingTeamObj?.shortName ?? '...'}
+                  🏏 Batter — {battingTeamObj?.shortName ?? '...'}
                 </span>
                 <select
                   value={matchup.batterId ?? ''}
@@ -281,9 +269,33 @@ export function ControllerRoute() {
                   ))}
                 </select>
               </div>
+
+              {/* Home Run button */}
+              <button
+                onClick={triggerHomerun}
+                disabled={!matchup.batterId}
+                className="w-full h-14 rounded-xl font-black text-base uppercase tracking-widest transition-all"
+                style={{
+                  background: matchup.batterId ? 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)' : '#1c2333',
+                  color: matchup.batterId ? '#fff' : 'rgba(255,255,255,0.3)',
+                  border: matchup.batterId ? '2px solid #ef4444' : '2px solid transparent',
+                  boxShadow: matchup.batterId ? '0 0 24px rgba(239,68,68,0.35)' : 'none',
+                  fontFamily: 'var(--font-score)',
+                  letterSpacing: '0.12em',
+                  cursor: matchup.batterId ? 'pointer' : 'not-allowed',
+                }}
+                onMouseEnter={e => { if (matchup.batterId) e.currentTarget.style.boxShadow = '0 0 36px rgba(239,68,68,0.6)' }}
+                onMouseLeave={e => { if (matchup.batterId) e.currentTarget.style.boxShadow = '0 0 24px rgba(239,68,68,0.35)' }}
+              >
+                ⚾ HOME RUN
+              </button>
+
+              <div className="w-full h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
+
+              {/* Pitcher */}
               <div className="flex flex-col gap-1">
                 <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
-                  ⚾ Pitching — {(game.isTopInning ? homeTeam : awayTeam)?.shortName ?? '...'}
+                  ⚾ Pitcher — {(game.isTopInning ? homeTeam : awayTeam)?.shortName ?? '...'}
                 </span>
                 <select
                   value={matchup.pitcherId ?? ''}
@@ -297,44 +309,61 @@ export function ControllerRoute() {
                   ))}
                 </select>
               </div>
-            </div>
-          </Section>
 
-          {/* HOME RUN */}
-          <Section title="Home Run">
-            <div className="flex flex-col gap-3">
-              <select
-                value={hrPlayerId}
-                onChange={e => setHrPlayerId(e.target.value)}
-                className="w-full h-11 rounded-lg px-3 text-sm font-medium"
-                style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-              >
-                <option value="">— Select batter —</option>
-                {battingPlayers.map(([id, p]) => (
-                  <option key={id} value={id}>{p.name}</option>
+              <div className="w-full h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
+
+              {/* Stat overlay controls */}
+              <div className="flex gap-2 flex-wrap">
+                {DELAY_OPTIONS.map((ms) => (
+                  <TouchBtn
+                    key={ms}
+                    onClick={() => setDismissDelay(ms)}
+                    active={dismissDelay === ms}
+                    className="flex-1 h-10 text-sm font-semibold min-w-[48px]"
+                  >
+                    {ms / 1000}s
+                  </TouchBtn>
                 ))}
-              </select>
-              <button
-                onClick={triggerHomerun}
-                disabled={!hrPlayerId}
-                className="w-full h-16 rounded-xl font-black text-lg uppercase tracking-widest transition-all"
-                style={{
-                  background: hrPlayerId ? 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)' : '#1c2333',
-                  color: hrPlayerId ? '#fff' : 'rgba(255,255,255,0.3)',
-                  border: hrPlayerId ? '2px solid #ef4444' : '2px solid transparent',
-                  boxShadow: hrPlayerId ? '0 0 24px rgba(239,68,68,0.35)' : 'none',
-                  fontFamily: 'var(--font-score)',
-                  letterSpacing: '0.12em',
-                  cursor: hrPlayerId ? 'pointer' : 'not-allowed',
-                }}
-                onMouseEnter={e => { if (hrPlayerId) e.currentTarget.style.boxShadow = '0 0 36px rgba(239,68,68,0.6)' }}
-                onMouseLeave={e => { if (hrPlayerId) e.currentTarget.style.boxShadow = '0 0 24px rgba(239,68,68,0.35)' }}
-              >
-                ⚾ HOME RUN
-              </button>
-              <p className="text-white/25 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
-                Filtered to batting team · auto-scores bases loaded · 10s overlay
-              </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={showBatterStats}
+                  disabled={!matchup.batterId}
+                  className="flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
+                  style={{
+                    background: matchup.batterId ? '#1d4ed8' : '#1c2333',
+                    color: matchup.batterId ? '#fff' : 'rgba(255,255,255,0.3)',
+                    cursor: matchup.batterId ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Batter Stats
+                </button>
+                <button
+                  onClick={showPitcherStats}
+                  disabled={!matchup.pitcherId}
+                  className="flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
+                  style={{
+                    background: matchup.pitcherId ? '#1d4ed8' : '#1c2333',
+                    color: matchup.pitcherId ? '#fff' : 'rgba(255,255,255,0.3)',
+                    cursor: matchup.pitcherId ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Pitcher Stats
+                </button>
+                <button
+                  onClick={dismissStatOverlay}
+                  className="h-12 px-4 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
+                  style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+                >
+                  Dismiss
+                </button>
+              </div>
+              {overlay.statOverlay.visible && (
+                <p className="text-green-400 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
+                  Stat overlay is live
+                </p>
+              )}
+
             </div>
           </Section>
 
@@ -352,83 +381,6 @@ export function ControllerRoute() {
               onStop={timerStop}
               onReset={timerReset}
             />
-          </Section>
-
-          {/* STAT OVERLAY */}
-          <Section title="Stat Overlay">
-            <div className="flex flex-col gap-3">
-              <div className="flex gap-3">
-                <TouchBtn
-                  onClick={() => setStatType('hitter')}
-                  active={statType === 'hitter'}
-                  className="flex-1 h-12 text-sm font-semibold"
-                >
-                  Hitter
-                </TouchBtn>
-                <TouchBtn
-                  onClick={() => setStatType('pitcher')}
-                  active={statType === 'pitcher'}
-                  className="flex-1 h-12 text-sm font-semibold"
-                >
-                  Pitcher
-                </TouchBtn>
-              </div>
-
-              <select
-                value={selectedPlayer}
-                onChange={(e) => setSelectedPlayer(e.target.value)}
-                className="w-full h-12 rounded-lg px-3 text-sm font-medium"
-                style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-              >
-                <option value="">— Select player —</option>
-                {filteredPlayers.map(([id, p]) => (
-                  <option key={id} value={id}>
-                    {p.name} ({teams[p.teamId]?.shortName ?? p.teamId})
-                  </option>
-                ))}
-              </select>
-
-              <div className="flex gap-2 flex-wrap">
-                {DELAY_OPTIONS.map((ms) => (
-                  <TouchBtn
-                    key={ms}
-                    onClick={() => setDismissDelay(ms)}
-                    active={dismissDelay === ms}
-                    className="flex-1 h-12 text-sm font-semibold min-w-[52px]"
-                  >
-                    {ms / 1000}s
-                  </TouchBtn>
-                ))}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={showStatOverlay}
-                  disabled={!selectedPlayer}
-                  className="flex-1 h-14 rounded-xl text-white font-bold text-base uppercase tracking-wider transition-all"
-                  style={{
-                    background: selectedPlayer ? '#2563eb' : '#1c2333',
-                    color: selectedPlayer ? '#fff' : 'rgba(255,255,255,0.3)',
-                    cursor: selectedPlayer ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  ▶ Show Stats
-                </button>
-                <button
-                  onClick={dismissStatOverlay}
-                  className="h-14 px-6 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
-                  style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
-                >
-                  Dismiss
-                </button>
-              </div>
-
-              {overlay.statOverlay.visible && (
-                <p className="text-green-400 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
-                  Stat overlay is live
-                </p>
-              )}
-            </div>
           </Section>
 
           {/* DEV — SCOREBUG CONTROLS (temporary) */}

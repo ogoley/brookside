@@ -22,10 +22,11 @@ A live broadcast overlay system for a small wiffle ball league. Runs as a single
 ## Firebase data shape
 ```
 /game/meta         — GameMeta: scores, inning, outs, bases, team IDs
+/game/matchup      — MatchupState: { batterId, pitcherId, lastPitcherHome, lastPitcherAway }
 /teams/{teamId}    — Team: name, shortName, primaryColor, secondaryColor, logoUrl
-/overlay           — activeScene + statOverlay trigger state + timer state
+/overlay           — activeScene + statOverlay + timer + scoreboardBorder + scoreboardScale
 /overlay/timer     — TimerState: { durationMs, startedAt, running } — default 60 min
-/players/{id}      — Player: name, teamId, position, stats
+/players/{id}      — Player: name, teamId, position, stats: { hitting?: HittingStats, pitching?: PitchingStats }
 /gameStats/{gameId}/{atBatId}  — stretch goal at-bat log
 ```
 Full type definitions in `src/types.ts`.
@@ -39,11 +40,17 @@ Full type definitions in `src/types.ts`.
 - **`dismissAfterMs` is stored in Firebase** so it's live-adjustable from the controller without a redeploy.
 - **Scoreboard is a pill layout** — `Scoreboard.tsx` builds the layout directly (does not use `TeamBug`). Away team: left pill `[NAME | SCORE]` rounded-left, home team: right pill `[SCORE | NAME]` rounded-right, scores facing the center. `TeamBug` still exists for potential future use and accepts a `mirrored` prop, but is not used in the overlay scoreboard.
 - **Broadcast scoreboard is centered at 36% width** — `GameScene` wraps `Scoreboard` in a centered container (`width: 36%`). Do not make it full-width or reduce below ~30% or the pills will clip.
-- **Scoreboard center section uses `flex-1` cells** — inning, timer, bases, and outs each own an equal slice of the center strip via `flex-1`. Do not use `justify-center` with fixed gaps — it leaves dead space at the edges.
-- **Timer is always visible in the scoreboard** — `TimerState` lives at `/overlay/timer`. The countdown shows in the center bar at all times (displays `0:00` when expired, full duration when not yet started). Default is 60 minutes. The controller timer control is a single row: `[min input] [Set] [countdown display] [Start/Pause] [Reset]`.
+- **Scoreboard center section uses fixed-width cells** — inning, bases, and outs each use `width: 150, flexShrink: 0`. Do not use `flex-1` or `justify-center` with gaps — auto-sizing produces unequal cells and off-centers the timer notch.
+- **Timer is a notch below the center pill** — the countdown renders in an absolutely-positioned element below the center strip (`top: '100%'`), same `rgba(0,0,0,0.82)` background, rounded bottom corners. It is always visible (displays `0:00` when expired). The controller timer control is a single row: `[min input] [Set] [countdown display] [Start/Pause] [Reset]`.
 - **Inning control is two half-inning step buttons** — `InteractiveScoreboard` exposes `onAdvanceHalfInning` and `onRewindHalfInning`. Both clear outs and bases. There are no separate +1/-1 inning or top/bottom toggle buttons.
 - **Tailwind v4 cascade layers** — do not add unlayered CSS rules (e.g. `* { padding: 0 }`) after `@import "tailwindcss"` in `index.css`. Unlayered styles outrank Tailwind's `@layer utilities`, silently breaking utility classes. Tailwind's Preflight already handles box-model resets.
 - **Controller game-state controls are in `InteractiveScoreboard`** — score, inning, bases, and outs are all controlled via the visual `InteractiveScoreboard` component, not separate button sections. Inning ▲/▼ uses the same symbol as the broadcast overlay.
+- **Player stats are nested** — `Player.stats` has two optional buckets: `stats.hitting` (`HittingStats`) and `stats.pitching` (`PitchingStats`). A player can have one or both. Never read flat `stats.avg` etc. — always go through the bucket.
+- **Matchup state lives at `/game/matchup`** — `{ batterId, pitcherId, lastPitcherHome, lastPitcherAway }`. `useMatchup` hook owns this path. The controller writes it; the overlay reads it. `lastPitcherHome/Away` are used by `advanceHalfInning` to restore the correct pitcher when the half-inning flips.
+- **Batter/pitcher notches on the scorebug** — `Scoreboard.tsx` renders a `PlayerNotch` (Framer Motion spring-bounce) below each team pill. Batter notch shows under the batting team, pitcher notch under the fielding team. Batter notch is hidden while `statOverlayVisible` is true. Both show last name only.
+- **Batter auto-clears on play result** — `ControllerRoute` has a `useEffect` that writes `batterId: null` to `/game/matchup` whenever `game.outs` or any base changes. A `mountedRef` guard prevents firing on initial load.
+- **Controller "At Bat" section is the single source of truth for who is up** — one unified section handles: batter dropdown (auto-triggers 20s stat overlay on select), HOME RUN button (uses selected batter, auto-scores bases), pitcher dropdown, delay picker, Batter Stats / Pitcher Stats / Dismiss buttons. There are no separate Matchup / Home Run / Stat Overlay sections.
+- **`scoreboardBorder` and `scoreboardScale`** live in `/overlay` and are exposed as dev controls in the controller (border toggle, size slider). `showBorder` prop on `Scoreboard` gates the `-webkit-text-stroke`.
 
 ## File map
 ```
@@ -53,8 +60,9 @@ src/
   hooks/
     useGameData.ts          — /game/meta listener
     useTeams.ts             — /teams listener
-    useOverlayState.ts      — /overlay listener
+    useOverlayState.ts      — /overlay listener (includes scoreboardBorder, scoreboardScale defaults)
     usePlayers.ts           — /players listener
+    useMatchup.ts           — /game/matchup listener; default { batterId: null, pitcherId: null, lastPitcherHome: null, lastPitcherAway: null }
   components/
     Scoreboard.tsx          — broadcast overlay scoreboard; pill layout built inline (not via TeamBug); always shows countdown timer; centered at 36% width in GameScene
     TeamBug.tsx             — logo + short name + score block (not used in Scoreboard); accepts mirrored prop; available for other scenes
