@@ -117,20 +117,28 @@ export interface PlayersMap {
 
 // ── Scorekeeper / game log types ──
 
+// Active results (the only options scorekeepers can select):
+//   single | double | triple | home_run | walk | strikeout | strikeout_looking
+//   groundout  — ground out or tag out; connected-chain rule applies (lead runner leaves, batter stays on 1st)
+//   popout     — ball caught in the air; no chain rule; runners may tag and advance
+// Legacy values kept in the type so historical records still deserialize correctly:
+//   flyout | hbp | sacrifice_fly | sacrifice_bunt | fielders_choice | pitchers_poison
 export type AtBatResult =
   | 'single' | 'double' | 'triple' | 'home_run'
   | 'walk' | 'strikeout' | 'strikeout_looking'
-  | 'groundout' | 'flyout'
-  | 'hbp' | 'sacrifice_fly' | 'sacrifice_bunt'
+  | 'groundout' | 'popout'
+  | 'flyout' | 'hbp' | 'sacrifice_fly' | 'sacrifice_bunt'
   | 'fielders_choice' | 'pitchers_poison'
 
 // What happened to a runner already on base during a play.
 // If a runner was present on a base, their outcome key MUST be set.
 // Omitting a key means no runner occupied that base — never use omission to mean 'stayed'.
 export interface RunnerOutcomes {
-  first?:  'scored' | 'second' | 'third' | 'stayed' | 'out'
-  second?: 'scored' | 'third'  | 'stayed' | 'out'
-  third?:  'scored' | 'stayed' | 'out'
+  // 'sits': chain rule — runner leaves the basepath as a consequence of a ground/tag out;
+  //         not a genuine out on the runner, but counts toward outsOnPlay the same as 'out'.
+  first?:  'scored' | 'second' | 'third' | 'stayed' | 'out' | 'sits'
+  second?: 'scored' | 'third'  | 'stayed' | 'out' | 'sits'
+  third?:  'scored' | 'stayed' | 'out' | 'sits'
 }
 
 export interface RunnersState {
@@ -150,7 +158,7 @@ export interface AtBatRecord {
   runnersOnBase: RunnersState   // snapshot of who was on base BEFORE this play
   runnerOutcomes: RunnerOutcomes // what happened to each runner during this play
   runnersScored: string[]        // playerIds who scored (derived from runnerOutcomes + HR batter)
-  outsOnPlay: number             // total outs on this play: (1 if batter out) + (runners marked 'out')
+  outsOnPlay: number             // total outs on this play: (1 if batter out) + (runners marked 'out' or 'sits')
   rbiCount: number
   batterAdvancedTo: 'first' | 'second' | 'third' | 'home' | 'out' | null
   notes?: string
@@ -175,6 +183,12 @@ export interface GameRecord {
   outs: number
   homeScore: number         // cached running total — source of truth is still /gameStats
   awayScore: number
+  matchup?: {
+    pitcherId?: string | null
+    batterId?: string | null
+    lastPitcherHome?: string | null
+    lastPitcherAway?: string | null
+  }
 }
 
 // /games/{gameId}/lineups/{teamId} — ordered batting lineup

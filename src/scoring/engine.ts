@@ -16,16 +16,17 @@ import type { AtBatRecord, RunnersState, RunnerOutcomes, AtBatResult, HittingSta
 const AB_RESULTS = new Set<AtBatResult>([
   'single', 'double', 'triple', 'home_run',
   'strikeout', 'strikeout_looking',
-  'groundout', 'flyout',
-  'fielders_choice', 'pitchers_poison',
+  'groundout', 'popout',
+  // legacy
+  'flyout', 'fielders_choice', 'pitchers_poison',
 ])
 
-/** Results where the batter is out */
+/** Results where the batter is the credited out (batterAdvancedTo drives actual out counting) */
 const BATTER_OUT_RESULTS = new Set<AtBatResult>([
   'strikeout', 'strikeout_looking',
-  'groundout', 'flyout',
-  'sacrifice_fly', 'sacrifice_bunt',
-  'pitchers_poison',  // batter may stay on 1st, but is considered the out trigger — see pitchers_poison logic
+  'groundout', 'popout',
+  // legacy
+  'flyout', 'sacrifice_fly', 'sacrifice_bunt', 'pitchers_poison',
 ])
 
 export function isAtBat(result: AtBatResult): boolean {
@@ -122,6 +123,8 @@ export function applyAtBat(input: ApplyAtBatInput): ApplyAtBatResult {
       lines.push(`  → ${runnerName} (${base}): SCORED ✓ — run awarded to ${isHomeTeamBatting ? 'home' : 'away'} team. RBI credited to ${batterName}.`)
     } else if (outcome === 'out') {
       lines.push(`  → ${runnerName} (${base}): OUT on the play.`)
+    } else if (outcome === 'sits') {
+      lines.push(`  → ${runnerName} (${base}): sits down (chain rule — leaves bases, batter's out).`)
     } else {
       lines.push(`  → ${runnerName} (${base}): advanced to ${outcome}.`)
     }
@@ -150,10 +153,10 @@ export function applyAtBat(input: ApplyAtBatInput): ApplyAtBatResult {
 
   // ── outsOnPlay ─────────────────────────────────────────────────────────
   const batterIsOut = batterAdvancedTo === 'out'
-  const runnersOut = bases.filter(b => runnerOutcomes[b] === 'out').length
+  const runnersOut = bases.filter(b => runnerOutcomes[b] === 'out' || runnerOutcomes[b] === 'sits').length
   const outsOnPlay = (batterIsOut ? 1 : 0) + runnersOut
 
-  lines.push(`  outsOnPlay = ${outsOnPlay} (batter ${batterIsOut ? 'out' : 'safe'} + ${runnersOut} runner(s) out).`)
+  lines.push(`  outsOnPlay = ${outsOnPlay} (batter ${batterIsOut ? 'out' : 'safe'} + ${runnersOut} runner(s) out/sits).`)
 
   if (outsOnPlay > 3) {
     warnings.push(`⚠ outsOnPlay is ${outsOnPlay} — cannot exceed 3. Check runner outcomes.`)
@@ -251,7 +254,9 @@ export function replayHalfInning(
   return { finalRunners: runners, totalOuts, totalRuns, logLines }
 }
 
-// ── Pitcher's Poison: connected chain detection ────────────────────────────
+// ── Connected chain detection ──────────────────────────────────────────────
+// Used for the fielded-out forced-out rule: on a ground/fly out, the lead
+// runner of a consecutive chain from 1st is automatically out on the play.
 
 function getConnectedChain(runners: RunnersState): Array<'first' | 'second' | 'third'> {
   // A connected chain starts at 1st and extends outward with no gaps.
@@ -284,7 +289,7 @@ function computeNextRunners(
     const runnerId = before[base]
     if (!runnerId) continue
     const outcome = outcomes[base]
-    if (!outcome || outcome === 'out' || outcome === 'scored') continue
+    if (!outcome || outcome === 'out' || outcome === 'sits' || outcome === 'scored') continue
     if (outcome === 'stayed') {
       next[base] = runnerId
     } else if (outcome === 'second') {
@@ -314,7 +319,8 @@ export function formatResult(result: AtBatResult): string {
     walk: 'Walk',
     strikeout: 'Strikeout (K)',
     strikeout_looking: 'Strikeout Looking (ꓘ)',
-    groundout: 'Ground Out',
+    groundout: 'Ground / Tag Out',
+    popout: 'Pop Out',
     flyout: 'Fly Out',
     hbp: 'Hit By Pitch',
     sacrifice_fly: 'Sac Fly',
@@ -426,8 +432,9 @@ export function mergeHittingStats(season: HittingStats, game: HittingStats): Hit
   const singles = h - doubles - triples - hr
   const tb = singles + doubles * 2 + triples * 3 + hr * 4
   const avg = ab > 0 ? Math.round((h / ab) * 1000) / 1000 : 0
-  // OBP needs hbp + sf — not tracked in season stats currently, use approximation
-  const obp = ab > 0 ? Math.round(((h + bb) / (ab + bb)) * 1000) / 1000 : 0
+  // OBP: (H + BB) / PA — hbp and sf are not separately tracked in stored season stats,
+  // so PA is the best available denominator. Correct formula is (H+BB+HBP)/(AB+BB+HBP+SF).
+  const obp = pa > 0 ? Math.round(((h + bb) / pa) * 1000) / 1000 : 0
   const slg = ab > 0 ? Math.round((tb / ab) * 1000) / 1000 : 0
   return { gp: (season.gp ?? 0) + 1, pa, ab, h, doubles, triples, hr, r, rbi, bb, k, avg, obp, slg, ops: Math.round((obp + slg) * 1000) / 1000 }
 }

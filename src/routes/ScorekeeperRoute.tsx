@@ -21,31 +21,29 @@ import type {
 type WizardStep = 'batter' | 'result' | 'runner_outcomes' | 'confirm' | 'inning_end'
 type NewGameStep = 'teams' | 'home_lineup' | 'away_lineup' | 'confirm'
 
+// Legacy values (flyout, hbp, sacrifice_fly, sacrifice_bunt, fielders_choice, pitchers_poison)
+// are kept here only so historical records render correctly. They are not selectable.
 const RESULT_LABELS: Record<AtBatResult, string> = {
   single: 'Single', double: 'Double', triple: 'Triple', home_run: 'Home Run',
   walk: 'Walk', strikeout: 'Strikeout (K)', strikeout_looking: 'Strikeout (ꓘ)',
-  groundout: 'Ground Out', flyout: 'Fly Out',
-  hbp: 'Hit By Pitch', sacrifice_fly: 'Sac Fly', sacrifice_bunt: 'Sac Bunt',
-  fielders_choice: "Fielder's Choice", pitchers_poison: "Pitcher's Poison",
+  groundout: 'Ground / Tag Out', popout: 'Pop Out',
+  flyout: 'Fly Out', hbp: 'Hit By Pitch', sacrifice_fly: 'Sac Fly',
+  sacrifice_bunt: 'Sac Bunt', fielders_choice: "Fielder's Choice", pitchers_poison: "Pitcher's Poison",
 }
 
 const RESULTS: AtBatResult[] = [
   'single', 'double', 'triple', 'home_run',
   'walk', 'strikeout', 'strikeout_looking',
-  'groundout', 'flyout',
-  'hbp', 'sacrifice_fly', 'sacrifice_bunt',
-  'fielders_choice', 'pitchers_poison',
+  'groundout', 'popout',
 ]
 
 // What base the batter auto-advances to for each result (null = scorer decides)
+// Note: groundout with a connected chain overrides the batter advance to 'first' in handleSelectResult.
 const AUTO_BATTER_ADVANCE: Partial<Record<AtBatResult, AtBatRecord['batterAdvancedTo']>> = {
   single: 'first', double: 'second', triple: 'third', home_run: 'home',
-  walk: 'first', hbp: 'first',
+  walk: 'first',
   strikeout: 'out', strikeout_looking: 'out',
-  groundout: 'out', flyout: 'out',
-  sacrifice_fly: 'out', sacrifice_bunt: 'out',
-  // fielders_choice: null — scorer picks
-  // pitchers_poison: determined by chain detection
+  groundout: 'out', popout: 'out',
 }
 
 function lastName(name: string) {
@@ -53,7 +51,23 @@ function lastName(name: string) {
   return parts[parts.length - 1]
 }
 
-function detectPitchersPoisonChain(runners: RunnersState): Array<'first' | 'second' | 'third'> {
+/**
+ * Chain rule (ground out / tag out only — NOT pop outs):
+ * When a batter is put out on a ground ball or tag play AND there is a connected
+ * chain of runners starting at first base, the lead runner of that chain leaves
+ * the bases (takes the out) while the batter stays on 1st. Only 1 out is recorded.
+ *
+ * A "connected chain" means runners on consecutive bases with no gap:
+ *   1st only → lead is 1st
+ *   1st + 2nd → lead is 2nd
+ *   1st + 2nd + 3rd → lead is 3rd
+ *   1st + 3rd (gap at 2nd) → no chain, rule does not apply
+ *
+ * Pop outs are exempt: runners may tag up and advance freely, no chain rule.
+ *
+ * Returns the bases in the chain from first toward third, or [] if no chain.
+ */
+function getConnectedChain(runners: RunnersState): Array<'first' | 'second' | 'third'> {
   const chain: Array<'first' | 'second' | 'third'> = []
   if (runners.first) {
     chain.push('first')
@@ -677,6 +691,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
   const [confirmAbandon, setConfirmAbandon] = useState(false)
   const [nextPitcherId, setNextPitcherId] = useState('')
   const [showLog, setShowLog] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [showPlayLog, setShowPlayLog] = useState(false)
   const [showGameCompletePrompt, setShowGameCompletePrompt] = useState(false)
   const [gameCompleteReason, setGameCompleteReason] = useState<'innings' | 'time' | null>(null)
@@ -697,6 +712,21 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
   // Dev play log (in-memory only)
   const [playLog, setPlayLog] = useState<PlayLogEntry[]>([])
 
+  // Pre-fill pitcher from Firebase matchup on load/refresh
+  useEffect(() => {
+    if (!gameLoading && game?.matchup?.pitcherId && !pitcherId) {
+      setPitcherId(game.matchup.pitcherId)
+    }
+  }, [gameLoading])
+
+  // Persist pitcher selection to Firebase so it survives a page refresh.
+  // advanceHalfInning also writes this, but only at inning boundaries — writing
+  // here covers mid-inning refreshes (e.g. the very first inning before it ends).
+  useEffect(() => {
+    if (!gameId || !pitcherId) return
+    update(ref(db), { [`games/${gameId}/matchup/pitcherId`]: pitcherId })
+  }, [pitcherId, gameId])
+
   // Pre-fill batter from lineup position
   useEffect(() => {
     const regularLineup = battingLineup.filter(e => !e.isSub)
@@ -705,6 +735,18 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       setBatterId(regularLineup[pos]?.playerId ?? '')
     }
   }, [lineupPosition, battingLineup])
+
+  // If the page is refreshed mid-inning-end (outs >= 3), restore the interstitial.
+  // isTopInning and the matchup fields are included in deps to avoid stale closure.
+  useEffect(() => {
+    if (outs >= 3 && step === 'batter' && !gameLoading) {
+      setStep('inning_end')
+      const lastPitcher = isTopInning
+        ? game?.matchup?.lastPitcherAway
+        : game?.matchup?.lastPitcherHome
+      setNextPitcherId(lastPitcher ?? '')
+    }
+  }, [outs, gameLoading, isTopInning, game?.matchup?.lastPitcherAway, game?.matchup?.lastPitcherHome])
 
   const resetWizard = () => {
     setStep('batter')
@@ -729,25 +771,6 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
     const autoAdv = AUTO_BATTER_ADVANCE[r] ?? null
     setBatterAdvancedTo(autoAdv)
 
-    // Pitcher's Poison: auto-detect chain and pre-fill runner outcomes
-    if (r === 'pitchers_poison') {
-      const chain = detectPitchersPoisonChain(liveRunners)
-      const preFilledOutcomes: RunnerOutcomes = {}
-      if (chain.length > 0) {
-        const leadBase = chain[chain.length - 1]
-        // All runners in chain stay except the lead runner who is out
-        for (const base of chain) {
-          preFilledOutcomes[base] = base === leadBase ? 'out' : 'stayed'
-        }
-        setBatterAdvancedTo('first')
-      } else {
-        setBatterAdvancedTo('out')
-      }
-      setRunnerOutcomes(preFilledOutcomes)
-      setStep(hasRunners ? 'runner_outcomes' : 'confirm')
-      return
-    }
-
     // Home run: all runners score
     if (r === 'home_run') {
       const allScored: RunnerOutcomes = {}
@@ -756,6 +779,37 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       if (liveRunners.third) allScored.third = 'scored'
       setRunnerOutcomes(allScored)
       setStep('confirm')
+      return
+    }
+
+    // Strikeout: runners cannot advance — auto-fill all as 'stayed' and skip to confirm.
+    if (r === 'strikeout' || r === 'strikeout_looking') {
+      const allStayed: RunnerOutcomes = {}
+      if (liveRunners.first)  allStayed.first  = 'stayed'
+      if (liveRunners.second) allStayed.second = 'stayed'
+      if (liveRunners.third)  allStayed.third  = 'stayed'
+      setRunnerOutcomes(allStayed)
+      setStep('confirm')
+      return
+    }
+
+    // Ground / tag out: connected-chain rule applies.
+    // With a chain: lead runner leaves the bases (out), batter stays on 1st — 1 out total.
+    // Without a chain: batter is simply out (AUTO_BATTER_ADVANCE already set 'out' above).
+    if (r === 'groundout') {
+      const chain = getConnectedChain(liveRunners)
+      if (chain.length > 0) {
+        const leadBase = chain[chain.length - 1]
+        const preFilledOutcomes: RunnerOutcomes = {}
+        for (const base of chain) {
+          preFilledOutcomes[base] = base === leadBase ? 'sits' : 'stayed'
+        }
+        setRunnerOutcomes(preFilledOutcomes)
+        setBatterAdvancedTo('first')  // batter stays on 1st; lead runner takes the out
+      } else {
+        setRunnerOutcomes({})
+      }
+      setStep(hasRunners ? 'runner_outcomes' : 'confirm')
       return
     }
 
@@ -794,10 +848,10 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       .filter(Boolean)
 
     const batterIsOut = batterAdvancedTo === 'out'
-    const runnersOut = bases.filter(b => runnerOutcomes[b as keyof RunnerOutcomes] === 'out').length
+    const runnersOut = bases.filter(b => runnerOutcomes[b as keyof RunnerOutcomes] === 'out' || runnerOutcomes[b as keyof RunnerOutcomes] === 'sits').length
     const outsOnPlay = (batterIsOut ? 1 : 0) + runnersOut
 
-    const noRbiResults: AtBatResult[] = ['strikeout', 'strikeout_looking', 'pitchers_poison']
+    const noRbiResults: AtBatResult[] = ['strikeout', 'strikeout_looking']
     const rawRbi = runnersScored.length + (result === 'home_run' ? 1 : 0)
     const rbiCount = noRbiResults.includes(result) ? 0 : rawRbi
 
@@ -842,7 +896,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
 
     const updates: Record<string, unknown> = {
       [`liveRunners/${gameId}`]: engineResult.nextRunners,
-      [`games/${gameId}/outs`]: newOuts >= 3 ? 0 : newOuts,  // half-inning advance will handle properly
+      [`games/${gameId}/outs`]: newOuts,  // intentionally not reset to 0 here — advanceHalfInning owns that
       [`games/${gameId}/homeScore`]: newHomeScore,
       [`games/${gameId}/awayScore`]: newAwayScore,
     }
@@ -858,7 +912,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
 
     // Mirror to /game/meta if streamed
     if (game?.isStreamed) {
-      updates[`game/meta/outs`] = newOuts >= 3 ? 0 : newOuts
+      updates[`game/meta/outs`] = newOuts
       updates[`game/meta/homeScore`] = newHomeScore
       updates[`game/meta/awayScore`] = newAwayScore
       updates[`game/meta/bases`] = {
@@ -877,10 +931,14 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
     // If 3+ outs, flip to inning-end interstitial instead of resetting wizard
     if (newOuts >= 3) {
       setStep('inning_end')
-      // Pre-fill next pitcher from last pitcher for that side
-      // fieldingTeamId becomes the NEW batting team after the flip, so the
-      // current batting team's pitcher was the fielder — pre-fill from pitcherId
-      setNextPitcherId(pitcherId)
+      // Pre-fill the pitcher for the INCOMING half-inning.
+      // isTopInning = current half that just ended.
+      // If top just ended → bottom coming → away team fields → use lastPitcherAway.
+      // If bottom just ended → top coming → home team fields → use lastPitcherHome.
+      const lastPitcher = isTopInning
+        ? game?.matchup?.lastPitcherAway
+        : game?.matchup?.lastPitcherHome
+      setNextPitcherId(lastPitcher ?? pitcherId ?? '')
     } else {
       resetWizard()
     }
@@ -900,9 +958,12 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       [`liveRunners/${gameId}`]: { first: null, second: null, third: null },
     }
 
-    // Store last pitcher so we can pre-fill when this side bats again
+    // Store the incoming pitcher under the correct side so we can pre-fill next time.
+    // nextPitcherId is the pitcher who will pitch the INCOMING half:
+    //   top just ended → away team pitches next → lastPitcherAway
+    //   bottom just ended → home team pitches next → lastPitcherHome
     if (nextPitcherId) {
-      const side = isTopInning ? 'lastPitcherHome' : 'lastPitcherAway'
+      const side = isTopInning ? 'lastPitcherAway' : 'lastPitcherHome'
       updates[`games/${gameId}/matchup/${side}`] = nextPitcherId
     }
 
@@ -922,6 +983,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
     }
 
     await update(ref(db), updates)
+    setPitcherId(nextPitcherId)
     setNextPitcherId('')
     resetWizard()
   }
@@ -970,6 +1032,16 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       [`games/${gameId}/awayScore`]: newAwayScore,
     }
 
+    // Rewind lineup position if the deleted at-bat was not a sub
+    const deletedAb = atBats[atBatId]
+    if (deletedAb && !deletedAb.isSub) {
+      const regularLineup = battingLineup.filter(e => !e.isSub)
+      if (regularLineup.length > 0) {
+        const prevPos = (lineupPosition - 1 + regularLineup.length) % regularLineup.length
+        updates[`games/${gameId}/lineupPosition/${battingTeamId}`] = prevPos
+      }
+    }
+
     if (game.isStreamed) {
       updates['game/meta/outs'] = Math.min(replay.totalOuts, 2)
       updates['game/meta/homeScore'] = newHomeScore
@@ -977,6 +1049,26 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
     }
 
     await update(ref(db), updates)
+
+    // If we were showing the inning-end interstitial (outs >= 3) but after
+    // deletion the outs drop back below 3, return to the batter step.
+    if (step === 'inning_end' && replay.totalOuts < 3) {
+      setStep('batter')
+      setNextPitcherId('')
+    }
+  }
+
+  const undoLastAtBat = async () => {
+    if (!lastAtBatId) return
+    const ab = atBats[lastAtBatId]
+    if (!ab) return
+    // Pre-fill wizard with the undone at-bat's data so they can correct and re-submit
+    setBatterId(ab.batterId)
+    setPitcherId(ab.pitcherId)
+    setResult(ab.result)
+    setRunnerOutcomes(ab.runnerOutcomes ?? {})
+    setBatterAdvancedTo(ab.batterAdvancedTo)
+    await deleteAtBat(lastAtBatId)
   }
 
   const startEdit = (atBatId: string) => {
@@ -1126,6 +1218,27 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
         </div>
       </div>
 
+      {/* Undo last play */}
+      {step === 'batter' && lastAtBatId && (() => {
+        const lastAb = atBats[lastAtBatId]
+        if (!lastAb) return null
+        return (
+          <div className="flex items-center justify-between rounded-xl px-4 py-3 mb-3"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span className="text-white/40 text-sm">
+              ↩ {players[lastAb.batterId]?.name ?? lastAb.batterId} — {RESULT_LABELS[lastAb.result] ?? lastAb.result}
+            </span>
+            <button
+              onClick={undoLastAtBat}
+              className="text-xs font-bold px-3 h-8 rounded-lg"
+              style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+            >
+              Undo
+            </button>
+          </div>
+        )
+      })()}
+
       {/* Wizard card */}
       <div className="rounded-2xl p-4 mb-4" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
 
@@ -1227,13 +1340,11 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
               <BackBtn onClick={() => setStep('result')} />
             </div>
 
-            {result === 'pitchers_poison' && (
+            {result === 'groundout' && getConnectedChain(liveRunners).length > 0 && (
               <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
-                <p className="text-yellow-400 font-semibold mb-1">Pitcher's Poison</p>
+                <p className="text-yellow-400 font-semibold mb-1">Chain Rule</p>
                 <p className="text-yellow-300/70 text-xs">
-                  {detectPitchersPoisonChain(liveRunners).length > 0
-                    ? `Connected chain detected — lead runner is out, batter stays on 1st. Adjust below if needed.`
-                    : `No connected chain — batter is out, runners stay. Adjust below if needed.`}
+                  Connected chain — batter is out, lead runner sits down and leaves the bases as a result. Batter stays on 1st. 1 out total. Adjust below if needed.
                 </p>
               </div>
             )}
@@ -1272,6 +1383,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
                   ...advanceOptions,
                   ...(!stayedBlocked ? [{ label: 'Stayed', value: 'stayed' as const }] : []),
                   { label: 'Out', value: 'out' as const },
+                  { label: 'Sits', value: 'sits' as const },
                 ]
 
                 // If the currently selected outcome is now invalid (batter took that base), clear it
@@ -1297,7 +1409,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
                           className="h-9 px-3 rounded-lg text-xs font-semibold transition-all"
                           style={{
                             background: outcome === opt.value
-                              ? opt.value === 'out' ? 'rgba(239,68,68,0.4)' : opt.value === 'scored' ? 'rgba(22,163,74,0.4)' : 'rgba(37,99,235,0.5)'
+                              ? opt.value === 'out' ? 'rgba(239,68,68,0.4)' : opt.value === 'sits' ? 'rgba(234,179,8,0.35)' : opt.value === 'scored' ? 'rgba(22,163,74,0.4)' : 'rgba(37,99,235,0.5)'
                               : 'rgba(255,255,255,0.08)',
                             color: outcome === opt.value ? '#fff' : 'rgba(255,255,255,0.6)',
                             border: outcome === opt.value ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.08)',
@@ -1311,32 +1423,6 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
                 )
               })}
             </div>
-
-            {/* Batter base override for Fielder's Choice */}
-            {result === 'fielders_choice' && (
-              <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <p className="text-white font-semibold text-sm mb-2">
-                  {playerName(batterId)}
-                  <span className="text-white/40 text-xs ml-2">batter — where did they end up?</span>
-                </p>
-                <div className="flex gap-2">
-                  {(['first', 'second', 'third'] as const).map(base => (
-                    <button
-                      key={base}
-                      onClick={() => setBatterAdvancedTo(base)}
-                      className="h-9 px-3 rounded-lg text-xs font-semibold transition-all"
-                      style={{
-                        background: batterAdvancedTo === base ? 'rgba(37,99,235,0.5)' : 'rgba(255,255,255,0.08)',
-                        color: batterAdvancedTo === base ? '#fff' : 'rgba(255,255,255,0.6)',
-                        border: batterAdvancedTo === base ? '1px solid rgba(96,165,250,0.3)' : '1px solid rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      {base === 'first' ? '1st' : base === 'second' ? '2nd' : '3rd'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <SkBtn
               onClick={() => setStep('confirm')}
@@ -1375,12 +1461,13 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
                     const runnerId = liveRunners[base]
                     if (!outcome || !runnerId) return null
                     const outcomeColors: Record<string, string> = {
-                      scored: '#4ade80', out: '#f87171', stayed: 'rgba(255,255,255,0.4)',
+                      scored: '#4ade80', out: '#f87171', sits: '#facc15',
+                      stayed: 'rgba(255,255,255,0.4)',
                       second: '#93c5fd', third: '#93c5fd',
                     }
                     const outcomeLabels: Record<string, string> = {
-                      scored: 'Scored ✓', out: 'Out', stayed: 'Stayed',
-                      second: '→ 2nd', third: '→ 3rd',
+                      scored: 'Scored ✓', out: 'Out', sits: 'Sits (chain)',
+                      stayed: 'Stayed', second: '→ 2nd', third: '→ 3rd',
                     }
                     return (
                       <p key={base} className="text-sm" style={{ color: outcomeColors[outcome] ?? 'rgba(255,255,255,0.5)' }}>
@@ -1402,10 +1489,10 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {(() => {
                   const batterIsOut = batterAdvancedTo === 'out'
-                  const runnersOut = (['first', 'second', 'third'] as const).filter(b => runnerOutcomes[b] === 'out').length
+                  const runnersOut = (['first', 'second', 'third'] as const).filter(b => runnerOutcomes[b] === 'out' || runnerOutcomes[b] === 'sits').length
                   const outsThisPlay = (batterIsOut ? 1 : 0) + runnersOut
                   const runnersScored = (['first', 'second', 'third'] as const).filter(b => runnerOutcomes[b] === 'scored').length
-                  const noRbi = ['strikeout', 'strikeout_looking', 'pitchers_poison'].includes(result)
+                  const noRbi = ['strikeout', 'strikeout_looking'].includes(result)
                   const rbi = noRbi ? 0 : runnersScored + (result === 'home_run' ? 1 : 0)
                   return (
                     <>
@@ -1515,6 +1602,76 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
           </div>
         )}
       </div>
+
+      {/* Live stats */}
+      {(() => {
+        // Tally per-batter stats from this game's at-bats
+        const tally: Record<string, { ab: number; h: number; rbi: number; hr: number; o: number }> = {}
+        for (const ab of Object.values(atBats)) {
+          if (!tally[ab.batterId]) tally[ab.batterId] = { ab: 0, h: 0, rbi: 0, hr: 0, o: 0 }
+          const s = tally[ab.batterId]
+          if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) s.ab++
+          if (['single', 'double', 'triple', 'home_run'].includes(ab.result)) s.h++
+          s.rbi += ab.rbiCount
+          if (ab.result === 'home_run') s.hr++
+          if (['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) s.o++
+        }
+
+        const homeId = game?.homeTeamId ?? ''
+        const awayId = game?.awayTeamId ?? ''
+        const cols = ['AB', 'H', 'RBI', 'HR', 'O'] as const
+        const statKeys: Array<keyof typeof tally[string]> = ['ab', 'h', 'rbi', 'hr', 'o']
+
+        const renderSide = (teamId: string) => {
+          const rows = Object.entries(tally)
+            .filter(([id]) => players[id]?.teamId === teamId)
+            .sort(([, a], [, b]) => b.ab - a.ab)
+          if (rows.length === 0) return <p className="text-white/20 text-xs text-center py-2">No at-bats yet</p>
+          return (
+            <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th className="text-left pb-1 text-white/30 font-semibold" style={{ fontFamily: 'var(--font-score)' }}>
+                    {teams[teamId]?.shortName ?? teamId}
+                  </th>
+                  {cols.map(c => (
+                    <th key={c} className="pb-1 text-white/30 font-semibold text-right" style={{ fontFamily: 'var(--font-score)', paddingLeft: 6 }}>{c}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(([id, s]) => (
+                  <tr key={id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <td className="py-1 text-white/70 truncate" style={{ maxWidth: 60 }}>{lastName(players[id]?.name ?? id)}</td>
+                    {statKeys.map(k => (
+                      <td key={k} className="py-1 text-right font-semibold" style={{ fontFamily: 'var(--font-score)', paddingLeft: 6, color: s[k] > 0 ? '#fff' : 'rgba(255,255,255,0.25)' }}>
+                        {s[k]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        }
+
+        return (
+          <div className="rounded-2xl overflow-hidden mb-4" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <button onClick={() => setShowStats(v => !v)} className="w-full flex items-center justify-between px-4 py-3">
+              <span className="text-white/40 text-xs font-semibold uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                Game Stats
+              </span>
+              <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{showStats ? '▲' : '▼'}</span>
+            </button>
+            {showStats && (
+              <div className="grid grid-cols-2 gap-px mb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="px-3 pt-3">{renderSide(awayId)}</div>
+                <div className="px-3 pt-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.06)' }}>{renderSide(homeId)}</div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Dev play log */}
       {import.meta.env.DEV && (
@@ -1789,6 +1946,7 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
     setSaving(true)
     try {
       await set(ref(db, `games/${gameId}/lineups/${teamId}`), localLineup)
+      onBack()
     } finally {
       setSaving(false)
     }
