@@ -17,10 +17,11 @@ const SCENES: { id: SceneName; label: string }[] = [
   { id: 'game', label: 'Game' },
   { id: 'statCard', label: 'Stat Card' },
   { id: 'matchup', label: 'Matchup' },
+  { id: 'standings', label: 'Standings' },
+  { id: 'leaderboard', label: 'Leaders' },
   { id: 'idle', label: 'Idle' },
 ]
 
-const DELAY_OPTIONS = [3000, 5000, 8000, 10000, 15000]
 
 export function ControllerRoute() {
   const { game } = useGameData()
@@ -30,7 +31,7 @@ export function ControllerRoute() {
   const { matchup } = useMatchup()
   const { games } = useGames()
 
-  const [dismissDelay, setDismissDelay] = useState(5000)
+  const [dismissDelay, setDismissDelay] = useState(20000)
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
@@ -40,6 +41,38 @@ export function ControllerRoute() {
   const [devResetting, setDevResetting] = useState(false)
   const [forceInning, setForceInning] = useState(1)
   const [forceIsTop, setForceIsTop] = useState(true)
+
+  // Stat reminder — nudge the broadcaster if a batter has been set for 30s without showing stats
+  const [statReminderBatterId, setStatReminderBatterId] = useState<string | null>(null)
+  const statReminderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Tracks whether stats were shown for the CURRENT at-bat only — cleared when batter changes
+  const statsShownThisAtBatRef = useRef<boolean>(false)
+
+  useEffect(() => {
+    // New batter — reset the shown flag and clear any pending reminder
+    if (statReminderTimerRef.current) clearTimeout(statReminderTimerRef.current)
+    setStatReminderBatterId(null)
+    statsShownThisAtBatRef.current = false
+
+    if (!matchup.batterId) return
+    // If stats were already shown this at-bat, don't start the timer
+    if (statsShownThisAtBatRef.current) return
+
+    const id = matchup.batterId
+    statReminderTimerRef.current = setTimeout(() => {
+      if (!statsShownThisAtBatRef.current) setStatReminderBatterId(id)
+    }, 30000)
+    return () => { if (statReminderTimerRef.current) clearTimeout(statReminderTimerRef.current) }
+  }, [matchup.batterId])
+
+  useEffect(() => {
+    // Stats shown for this at-bat — cancel the reminder for the rest of this at-bat only
+    if (overlay.statOverlay.visible && overlay.statOverlay.playerId === matchup.batterId) {
+      statsShownThisAtBatRef.current = true
+      if (statReminderTimerRef.current) clearTimeout(statReminderTimerRef.current)
+      setStatReminderBatterId(null)
+    }
+  }, [overlay.statOverlay.visible, overlay.statOverlay.playerId])
 
   // Auto-clear batter notch when bases or outs change.
   // Skip when a scorekeeper game is linked — the scorekeeper owns batter state in that case
@@ -491,28 +524,56 @@ export function ControllerRoute() {
 
               <div className="w-full h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
-              {/* Stat overlay controls */}
-              <div className="flex gap-2 flex-wrap">
-                {DELAY_OPTIONS.map((ms) => (
-                  <TouchBtn
-                    key={ms}
-                    onClick={() => setDismissDelay(ms)}
-                    active={dismissDelay === ms}
-                    className="flex-1 h-10 text-sm font-semibold min-w-[48px]"
+              {/* Stat reminder nudge */}
+              {statReminderBatterId && statReminderBatterId === matchup.batterId && (
+                <div
+                  className="stat-reminder-flash rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
+                  style={{ border: '1px solid' }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontSize: 16 }}>📺</span>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider" style={{ fontFamily: 'var(--font-score)', color: '#000' }}>
+                        Stats not shown yet
+                      </p>
+                      <p className="text-xs font-semibold" style={{ color: 'rgba(0,0,0,0.7)' }}>
+                        {players[statReminderBatterId]?.name ?? 'Batter'} is up — show their stats?
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setStatReminderBatterId(null)}
+                    style={{ color: 'rgba(0,0,0,0.5)', fontSize: 16, lineHeight: 1, flexShrink: 0 }}
                   >
-                    {ms / 1000}s
-                  </TouchBtn>
-                ))}
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Stat overlay controls */}
+              <div className="flex items-center gap-2">
+                <span className="text-white/40 text-xs uppercase tracking-widest shrink-0" style={{ fontFamily: 'var(--font-score)' }}>Dismiss after</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={dismissDelay / 1000}
+                  onChange={e => setDismissDelay(Math.max(1, Number(e.target.value)) * 1000)}
+                  className="w-16 h-9 rounded-lg px-2 text-center text-sm font-bold"
+                  style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                />
+                <span className="text-white/40 text-xs shrink-0">sec</span>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={showBatterStats}
                   disabled={!matchup.batterId}
-                  className="flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider transition-all"
+                  className={`flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider transition-all ${statReminderBatterId === matchup.batterId ? 'stat-reminder-flash' : ''}`}
                   style={{
-                    background: matchup.batterId ? '#1d4ed8' : '#1c2333',
+                    background: statReminderBatterId === matchup.batterId ? undefined : matchup.batterId ? '#1d4ed8' : '#1c2333',
                     color: matchup.batterId ? '#fff' : 'rgba(255,255,255,0.3)',
                     cursor: matchup.batterId ? 'pointer' : 'not-allowed',
+                    border: statReminderBatterId === matchup.batterId ? undefined : '1px solid transparent',
                   }}
                 >
                   Batter Stats

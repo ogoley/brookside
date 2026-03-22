@@ -180,7 +180,7 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true,
       <div className="relative">
         <div
           className="flex items-stretch h-full"
-          style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(4px)' }}
+          style={{ background: 'rgba(0,0,0,0.88)' }}
         >
           {/* Inning */}
           <div className="flex items-center justify-center gap-2" style={{ width: 150, flexShrink: 0, fontFamily: 'var(--font-score)', lineHeight: 1 }}>
@@ -221,8 +221,7 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true,
         {/* Timer notch */}
         <div className="absolute left-0 right-0 flex justify-center" style={{ top: '100%' }}>
           <div style={{
-            background: 'rgba(0,0,0,0.82)',
-            backdropFilter: 'blur(4px)',
+            background: 'rgba(0,0,0,0.88)',
             borderRadius: '0 0 8px 8px',
             padding: '3px 14px',
           }}>

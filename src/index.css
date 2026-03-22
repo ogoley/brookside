@@ -22,3 +22,21 @@ body {
 body.overlay-mode {
   background: transparent !important;
 }
+
+/* Stat reminder alert — hard solid red ↔ yellow, unignorable even in peripheral vision */
+@keyframes stat-reminder-flash {
+  0%, 100% {
+    background: #dc2626;
+    border-color: #ef4444;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.7), 0 0 40px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    background: #ca8a04;
+    border-color: #facc15;
+    box-shadow: 0 0 20px rgba(250, 204, 21, 0.7), 0 0 40px rgba(250, 204, 21, 0.3);
+  }
+}
+
+.stat-reminder-flash {
+  animation: stat-reminder-flash 0.6s ease-in-out infinite;
+}

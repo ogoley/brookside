@@ -10,7 +10,9 @@
       "WebFetch(domain:www.platecrate.com)",
       "WebFetch(domain:www.mlb.com)",
       "Skill(keybindings-help)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(node -e \"const s = require\\(''./firebase-snapshot.json''\\); console.log\\(Object.keys\\(s.teams || {}\\)\\)\")",
+      "Bash(node -e \"const s = require\\(''./firebase-snapshot.json''\\); Object.entries\\(s.teams\\).forEach\\(\\([id,t]\\) => console.log\\(id, t.shortName, t.primaryColor\\)\\)\")"
     ]
   }
 }

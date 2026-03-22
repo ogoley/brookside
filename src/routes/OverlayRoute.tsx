@@ -5,7 +5,7 @@ import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
-import { GameScene, StatCardScene, MatchupScene, IdleScene } from '../scenes'
+import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene } from '../scenes'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
 
 function OverlayContent() {
@@ -54,10 +54,34 @@ function OverlayContent() {
             className="absolute inset-0"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            exit={{ opacity: 1 }}
+            transition={{ duration: 0.25 }}
           >
-            <MatchupScene game={game} teams={teams} players={players} />
+            <MatchupScene game={game} teams={teams} players={players} matchup={matchup} />
+          </motion.div>
+        )}
+        {sceneKey === 'leaderboard' && (
+          <motion.div
+            key="leaderboard"
+            className="absolute inset-0"
+            initial={{ y: '-100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+          >
+            <LeaderboardScene teams={teams} players={players} />
+          </motion.div>
+        )}
+        {sceneKey === 'standings' && (
+          <motion.div
+            key="standings"
+            className="absolute inset-0"
+            initial={{ y: '-100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+          >
+            <StandingsScene teams={teams} />
           </motion.div>
         )}
         {sceneKey === 'idle' && (

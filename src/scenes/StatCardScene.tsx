@@ -143,7 +143,7 @@ function TeamColumn({
           <motion.div
             key={id}
             className="grid grid-cols-4 items-center px-4 py-3 rounded-xl"
-            style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(4px)' }}
+            style={{ background: 'rgba(255,255,255,0.11)' }}
             initial={{ x: rowXBase, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ type: 'spring', damping: 20, stiffness: 260, delay: 0.5 + i * 0.06 }}

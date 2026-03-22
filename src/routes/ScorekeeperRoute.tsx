@@ -734,6 +734,15 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
     }
   }, [lineupPosition, battingLineup])
 
+  // Sync current batter to game/matchup/batterId so the scorebug notch and controller
+  // always reflect who is currently at the plate — not who came up after the last play.
+  // Clears when the inning ends (step === 'inning_end').
+  useEffect(() => {
+    if (!gameId || !game?.isStreamed) return
+    const nextBatterId = (step === 'inning_end' || !batterId) ? null : batterId
+    update(ref(db), { 'game/matchup/batterId': nextBatterId })
+  }, [batterId, step, gameId, game?.isStreamed])
+
   // If the page is refreshed mid-inning-end (outs >= 3), restore the interstitial.
   // isTopInning and the matchup fields are included in deps to avoid stale closure.
   useEffect(() => {
@@ -922,25 +931,9 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
         updates[`game/matchup/pitcherId`] = pitcherId
       }
 
-      // Auto-advance batter on the overlay: compute the next batter from the lineup
-      // so the scorebug notch and stat card trigger without the controller operator
-      // having to manually select. Only set when the inning is not ending (newOuts < 3).
-      let nextOverlayBatterId: string | null = null
-      if (newOuts < 3) {
-        const regularLineup = battingLineup.filter(e => !e.isSub)
-        if (regularLineup.length > 0) {
-          // Subs don't advance the lineup position — use current pos; regulars use next pos.
-          const nextPos = isSub
-            ? lineupPosition % regularLineup.length
-            : (lineupPosition + 1) % regularLineup.length
-          nextOverlayBatterId = regularLineup[nextPos]?.playerId ?? null
-        }
-      }
-      updates[`game/matchup/batterId`] = nextOverlayBatterId
-
-      // Note: overlay/statOverlay is intentionally NOT auto-triggered here.
-      // batterId is set above so the scorebug notch updates, but the broadcaster
-      // manually fires the stat card from the controller when the moment is right.
+      // Note: game/matchup/batterId is kept in sync by a useEffect on batterId/step,
+      // so no manual write needed here. The notch updates automatically as the
+      // lineup pre-fill effect fires after lineupPosition advances in Firebase.
 
       // Trigger home run overlay animation
       if (result === 'home_run') {

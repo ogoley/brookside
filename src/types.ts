@@ -58,8 +58,18 @@ export interface MatchupState {
   lastPitcherAway: string | null
 }
 
+export interface TeamStanding {
+  teamId: string
+  w: number
+  l: number
+  streak: string  // e.g. "W3" or "L1"
+}
+
+// /standings — ordered array, index 0 = first place
+export type StandingsData = TeamStanding[]
+
 export interface OverlayState {
-  activeScene: 'game' | 'statCard' | 'matchup' | 'idle'
+  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'idle'
   statOverlay: StatOverlayState
   timer: TimerState
   homerun: HomrunState
@@ -67,7 +77,7 @@ export interface OverlayState {
   scoreboardScale: number
 }
 
-export type SceneName = 'game' | 'statCard' | 'matchup' | 'idle'
+export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'idle'
 
 export interface HittingStats {
   gp?: number       // games played

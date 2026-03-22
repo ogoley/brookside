@@ -68,7 +68,7 @@ export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
           {/* Dark base */}
           <div
             className="absolute inset-0"
-            style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)' }}
+            style={{ background: 'rgba(0,0,0,0.96)' }}
           />
 
           {/* Team color left wash */}
