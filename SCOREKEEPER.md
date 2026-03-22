@@ -580,16 +580,14 @@ Planned scope (when ready):
 - [x] Visual base diamond (`RunnerDiamond`) — shows runner initials on rotated base squares with out dots
 
 ### Controller
-- [ ] Remove score +/− buttons (score is now derived) — in InteractiveScoreboard
-- [ ] Remove inning advance/rewind buttons (scorekeeper owns inning state) — in InteractiveScoreboard
-- [x] Add "Live Game" selector — picks which active game feeds the scorebug (writes `/game/meta.currentGameId`)
-- [ ] Keep: scene switcher, stat overlay triggers, timer, scorebug dev controls, Finalize Game
+- [x] Remove score +/− buttons (score is now derived) — InteractiveScoreboard now shows score read-only
+- [x] Add "Live Game" selector — picks active game, sets `isStreamed: true`, syncs state to `/game/meta` immediately
 
 ### Stats & finalization
 - [x] Write `/gameSummaries/{gameId}/{playerId}` on finalization (per-game box score)
 - [x] Remove `error` from all RBI/AB computation branches
 - [x] Pitcher W/L — implement; rule confirmed: minimum 3 complete innings pitched to qualify for win/loss
-- [ ] Season reset: add an "Admin: Wipe Season Stats" action (auth-gated) that clears `/players/{id}/stats` for all players
+- [x] Season reset: "Wipe Season Stats" in controller Dev Tools — double-confirm, clears `/players/*/stats`, preserves at-bat records
 - [ ] Verify finalization handles two simultaneous same-day games correctly (both can be finalized independently)
 
 ### Auth *(late-stage — do not start until everything else is complete)*
@@ -611,13 +609,13 @@ Planned scope (when ready):
 - [x] Game ID uses Eastern Time
 - [x] `computeRbi` respects result type — no RBI on strikeout, strikeout_looking, pitchers_poison
 - [x] At-bat log — only last entry editable/deletable (locked indicator on older entries)
-- [ ] `finalizeGame` root `update(ref(db), updates)` — verify mixed-depth paths work or switch to batched `update` calls per subtree
+- [x] `finalizeGame` multi-path `update(ref(db), updates)` — no ancestor-path conflicts; all paths are leaves at different subtrees (players/*/stats/hitting, gameSummaries/*/*, games/*/finalized)
 - [x] Half-inning advance — auto-triggers at 3 outs, interstitial with pitcher prompt
 - [x] `RunnerDiamond` component — shows runner initials on rotated base squares, replaces text runner badges
 - [x] Half-inning recalc on edit/delete — wired to `replayHalfInning()`, rewrites liveRunners + outs + score
-- [ ] Score on scorebug still manually controlled from controller — remove +/- from InteractiveScoreboard
-- [x] Finalization must skip at-bats where `isSub: true` for season stats, include in `gameSummaries`
+- [x] Score on scorebug is now read-only in controller — +/- removed, driven by scorekeeper
+- [x] Finalization skips `isSub: true` at-bats for season stats, includes in `gameSummaries`
 - [x] Visual base diamond built (`RunnerDiamond`)
-- [ ] Lineup edit screen mid-game not yet built
+- [x] Lineup edit screen — accessible from wizard header "Lineup" button; edit batting order, add/remove players/subs, save writes to Firebase
 - [x] Game complete prompt (7 innings / 90 min) — modal in scorekeeper, directs user to controller to finalize
 - [ ] Post-launch: full half-inning replay recalc for editing completed (past) half-innings

@@ -61,12 +61,47 @@ export function ControllerRoute() {
     update(ref(db, 'game/meta'), { [key]: teamId })
   }
 
-  const newGame = () => {
-    update(ref(db, 'game/meta'), {
-      homeScore: 0, awayScore: 0,
-      inning: 1, isTopInning: true, outs: 0,
-    })
-    update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+  const selectLiveGame = async (newGameId: string | null) => {
+    const prevGameId = game.currentGameId ?? null
+
+    // Flip isStreamed flags
+    const flagUpdates: Record<string, unknown> = {
+      'game/meta/currentGameId': newGameId,
+    }
+    if (prevGameId && prevGameId !== newGameId) {
+      flagUpdates[`games/${prevGameId}/isStreamed`] = false
+    }
+    if (newGameId) {
+      flagUpdates[`games/${newGameId}/isStreamed`] = true
+    }
+    await update(ref(db), flagUpdates)
+
+    // Immediately sync new game's state to /game/meta so scorebug reflects it
+    if (newGameId) {
+      const [gameSnap, runnersSnap] = await Promise.all([
+        get(ref(db, `games/${newGameId}`)),
+        get(ref(db, `liveRunners/${newGameId}`)),
+      ])
+      if (gameSnap.exists()) {
+        const g = gameSnap.val()
+        const runners = runnersSnap.exists() ? runnersSnap.val() : { first: null, second: null, third: null }
+        await update(ref(db, 'game/meta'), {
+          homeTeamId: g.homeTeamId,
+          awayTeamId: g.awayTeamId,
+          homeScore: g.homeScore ?? 0,
+          awayScore: g.awayScore ?? 0,
+          inning: g.inning ?? 1,
+          isTopInning: g.isTopInning ?? true,
+          outs: g.outs ?? 0,
+          isActive: true,
+        })
+        await update(ref(db, 'game/meta/bases'), {
+          first: !!runners.first,
+          second: !!runners.second,
+          third: !!runners.third,
+        })
+      }
+    }
   }
 
   const advanceHalfInning = () => {
@@ -497,7 +532,7 @@ export function ControllerRoute() {
                 </span>
                 <select
                   value={game.currentGameId ?? ''}
-                  onChange={e => update(ref(db, 'game/meta'), { currentGameId: e.target.value || null })}
+                  onChange={e => selectLiveGame(e.target.value || null)}
                   className="w-full h-11 rounded-lg px-3 text-sm font-medium"
                   style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
                 >
@@ -791,7 +826,11 @@ export function ControllerRoute() {
             </p>
             <div className="flex gap-3">
               <button
-                onClick={() => { newGame(); setConfirmReset(false) }}
+                onClick={() => {
+                  update(ref(db, 'game/meta'), { homeScore: 0, awayScore: 0, inning: 1, isTopInning: true, outs: 0 })
+                  update(ref(db, 'game/meta/bases'), { first: false, second: false, third: false })
+                  setConfirmReset(false)
+                }}
                 className="flex-1 h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
                 style={{ background: '#b91c1c', color: '#fff', border: '1px solid #ef4444' }}
               >

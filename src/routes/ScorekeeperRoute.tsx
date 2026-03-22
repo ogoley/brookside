@@ -682,8 +682,11 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
   const [gameCompleteReason, setGameCompleteReason] = useState<'innings' | 'time' | null>(null)
 
   // Game complete detection — 7 innings or 90 min
+  // Uses sessionStorage to suppress after dismissal (survives page reload within same session)
   useEffect(() => {
-    if (!game || game.finalized || showGameCompletePrompt) return
+    if (!game || game.finalized) return
+    const storageKey = `game-complete-shown-${gameId}`
+    if (sessionStorage.getItem(storageKey)) return
     const elapsed = Date.now() - (game.startedAt ?? Date.now())
     const over90min = elapsed >= 90 * 60 * 1000
     const over7innings = game.inning > 7 || (game.inning === 7 && !game.isTopInning && game.outs === 0)
@@ -1026,14 +1029,20 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
             </p>
             <div className="flex gap-3">
               <button
-                onClick={() => setShowGameCompletePrompt(false)}
+                onClick={() => {
+                  sessionStorage.setItem(`game-complete-shown-${gameId}`, '1')
+                  setShowGameCompletePrompt(false)
+                }}
                 className="flex-1 py-3 rounded-xl font-bold text-sm"
                 style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}
               >
                 Keep Playing
               </button>
               <button
-                onClick={() => setShowGameCompletePrompt(false)}
+                onClick={() => {
+                  sessionStorage.setItem(`game-complete-shown-${gameId}`, '1')
+                  setShowGameCompletePrompt(false)
+                }}
                 className="flex-1 py-3 rounded-xl font-black text-sm"
                 style={{ background: '#22c55e', color: '#000' }}
               >
