@@ -281,8 +281,7 @@ function GameRow({ gameId, game, teams, onSelect }: {
         <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 18 }}>›</span>
       </button>
 
-      {import.meta.env.DEV && (
-        <div className="px-4 pb-3 flex justify-end">
+      <div className="px-4 pb-3 flex justify-end">
           {!confirmDelete ? (
             <button
               onClick={e => { e.stopPropagation(); setConfirmDelete(true) }}
@@ -311,7 +310,6 @@ function GameRow({ gameId, game, teams, onSelect }: {
             </div>
           )}
         </div>
-      )}
     </div>
   )
 }
