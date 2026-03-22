@@ -921,7 +921,40 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       if (pitcherId) {
         updates[`game/matchup/pitcherId`] = pitcherId
       }
-      updates[`game/matchup/batterId`] = null  // clear batter after play
+
+      // Auto-advance batter on the overlay: compute the next batter from the lineup
+      // so the scorebug notch and stat card trigger without the controller operator
+      // having to manually select. Only set when the inning is not ending (newOuts < 3).
+      let nextOverlayBatterId: string | null = null
+      if (newOuts < 3) {
+        const regularLineup = battingLineup.filter(e => !e.isSub)
+        if (regularLineup.length > 0) {
+          // Subs don't advance the lineup position — use current pos; regulars use next pos.
+          const nextPos = isSub
+            ? lineupPosition % regularLineup.length
+            : (lineupPosition + 1) % regularLineup.length
+          nextOverlayBatterId = regularLineup[nextPos]?.playerId ?? null
+        }
+      }
+      updates[`game/matchup/batterId`] = nextOverlayBatterId
+
+      // Note: overlay/statOverlay is intentionally NOT auto-triggered here.
+      // batterId is set above so the scorebug notch updates, but the broadcaster
+      // manually fires the stat card from the controller when the moment is right.
+
+      // Trigger home run overlay animation
+      if (result === 'home_run') {
+        const battingTeam = isTopInning ? 'away' : 'home'
+        const battingTeamId = isTopInning ? game.awayTeamId : game.homeTeamId
+        updates[`overlay/homerun`] = {
+          active: true,
+          teamSide: battingTeam,
+          playerId: batterId,
+          logoUrl: teams[battingTeamId]?.logoUrl ?? '',
+          runsScored: engineResult.runsScored,
+          triggeredAt: Date.now(),
+        }
+      }
     }
 
     await update(ref(db), updates)

@@ -41,10 +41,13 @@ export function ControllerRoute() {
   const [forceInning, setForceInning] = useState(1)
   const [forceIsTop, setForceIsTop] = useState(true)
 
-  // Auto-clear batter notch when bases or outs change
+  // Auto-clear batter notch when bases or outs change.
+  // Skip when a scorekeeper game is linked — the scorekeeper owns batter state in that case
+  // and will set the next batter itself after each play.
   const mountedRef = useRef(false)
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return }
+    if (game.currentGameId) return  // scorekeeper is driving — don't interfere
     if (matchup.batterId) update(ref(db, 'game/matchup'), { batterId: null })
   }, [game.outs, game.bases.first, game.bases.second, game.bases.third])
 
@@ -372,6 +375,7 @@ export function ControllerRoute() {
           onAdvanceHalfInning={advanceHalfInning}
           onRewindHalfInning={rewindHalfInning}
           onSetTeam={setTeam}
+          readOnly={!!game.currentGameId}
         />
       </div>
 
@@ -401,63 +405,89 @@ export function ControllerRoute() {
           <Section title="At Bat">
             <div className="flex flex-col gap-3">
 
-              {/* Batter */}
-              <div className="flex flex-col gap-1">
-                <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
-                  🏏 Batter — {battingTeamObj?.shortName ?? '...'}
-                </span>
-                <select
-                  value={matchup.batterId ?? ''}
-                  onChange={e => selectBatter(e.target.value)}
-                  className="w-full h-11 rounded-lg px-3 text-sm font-medium"
-                  style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-                >
-                  <option value="">— Select batter —</option>
-                  {matchupBatterPlayers.map(([id, p]) => (
-                    <option key={id} value={id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+              {game.currentGameId ? (
+                /* Scorekeeper-managed mode — batter + pitcher are read-only */
+                <>
+                  <p className="text-white/30 text-xs text-center uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                    Managed by scorekeeper
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg px-3 py-2 flex flex-col gap-0.5" style={{ background: '#1c2333', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Batter</span>
+                      <span className="text-white font-semibold text-sm truncate">
+                        {matchup.batterId ? (players[matchup.batterId]?.name ?? matchup.batterId) : '—'}
+                      </span>
+                    </div>
+                    <div className="rounded-lg px-3 py-2 flex flex-col gap-0.5" style={{ background: '#1c2333', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Pitcher</span>
+                      <span className="text-white font-semibold text-sm truncate">
+                        {matchup.pitcherId ? (players[matchup.pitcherId]?.name ?? matchup.pitcherId) : '—'}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Manual mode — dropdowns for non-scorekeeper games */
+                <>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                      🏏 Batter — {battingTeamObj?.shortName ?? '...'}
+                    </span>
+                    <select
+                      value={matchup.batterId ?? ''}
+                      onChange={e => selectBatter(e.target.value)}
+                      className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                      style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                    >
+                      <option value="">— Select batter —</option>
+                      {matchupBatterPlayers.map(([id, p]) => (
+                        <option key={id} value={id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                      ⚾ Pitcher — {(game.isTopInning ? homeTeam : awayTeam)?.shortName ?? '...'}
+                    </span>
+                    <select
+                      value={matchup.pitcherId ?? ''}
+                      onChange={e => selectPitcher(e.target.value)}
+                      className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                      style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                    >
+                      <option value="">— Select pitcher —</option>
+                      {matchupPitcherPlayers.map(([id, p]) => (
+                        <option key={id} value={id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
 
-              {/* Home Run button */}
-              <button
-                onClick={triggerHomerun}
-                disabled={!matchup.batterId}
-                className="w-full h-14 rounded-xl font-black text-base uppercase tracking-widest transition-all"
-                style={{
-                  background: matchup.batterId ? 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)' : '#1c2333',
-                  color: matchup.batterId ? '#fff' : 'rgba(255,255,255,0.3)',
-                  border: matchup.batterId ? '2px solid #ef4444' : '2px solid transparent',
-                  boxShadow: matchup.batterId ? '0 0 24px rgba(239,68,68,0.35)' : 'none',
-                  fontFamily: 'var(--font-score)',
-                  letterSpacing: '0.12em',
-                  cursor: matchup.batterId ? 'pointer' : 'not-allowed',
-                }}
-                onMouseEnter={e => { if (matchup.batterId) e.currentTarget.style.boxShadow = '0 0 36px rgba(239,68,68,0.6)' }}
-                onMouseLeave={e => { if (matchup.batterId) e.currentTarget.style.boxShadow = '0 0 24px rgba(239,68,68,0.35)' }}
-              >
-                ⚾ HOME RUN
-              </button>
+              {/* Home Run button — only shown when no scorekeeper is managing the game.
+                  When a scorekeeper is linked, home runs are triggered automatically on submit. */}
+              {!game.currentGameId && (
+                <button
+                  onClick={triggerHomerun}
+                  disabled={!matchup.batterId}
+                  className="w-full h-14 rounded-xl font-black text-base uppercase tracking-widest transition-all"
+                  style={{
+                    background: matchup.batterId ? 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%)' : '#1c2333',
+                    color: matchup.batterId ? '#fff' : 'rgba(255,255,255,0.3)',
+                    border: matchup.batterId ? '2px solid #ef4444' : '2px solid transparent',
+                    boxShadow: matchup.batterId ? '0 0 24px rgba(239,68,68,0.35)' : 'none',
+                    fontFamily: 'var(--font-score)',
+                    letterSpacing: '0.12em',
+                    cursor: matchup.batterId ? 'pointer' : 'not-allowed',
+                  }}
+                  onMouseEnter={e => { if (matchup.batterId) e.currentTarget.style.boxShadow = '0 0 36px rgba(239,68,68,0.6)' }}
+                  onMouseLeave={e => { if (matchup.batterId) e.currentTarget.style.boxShadow = '0 0 24px rgba(239,68,68,0.35)' }}
+                >
+                  ⚾ HOME RUN
+                </button>
+              )}
 
               <div className="w-full h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
-
-              {/* Pitcher */}
-              <div className="flex flex-col gap-1">
-                <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
-                  ⚾ Pitcher — {(game.isTopInning ? homeTeam : awayTeam)?.shortName ?? '...'}
-                </span>
-                <select
-                  value={matchup.pitcherId ?? ''}
-                  onChange={e => selectPitcher(e.target.value)}
-                  className="w-full h-11 rounded-lg px-3 text-sm font-medium"
-                  style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
-                >
-                  <option value="">— Select pitcher —</option>
-                  {matchupPitcherPlayers.map(([id, p]) => (
-                    <option key={id} value={id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
 
               <div className="w-full h-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
 

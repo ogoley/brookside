@@ -376,13 +376,14 @@ export function computeGameStats(
       if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') k++
       if (ab.result === 'hbp') hbp++
       if (ab.result === 'sacrifice_fly') sf++
-      rbi += ab.rbiCount
+      rbi += ab.rbiCount ?? 0
       // Count run if batter scored (home run or advanced to home)
       if (ab.batterAdvancedTo === 'home') runs++
     }
 
     // Count runs scored by this player as a runner on base
-    if (ab.runnersScored.includes(playerId)) runs++
+    // Guard against missing runnersScored on older/pre-scorekeeper records
+    if ((ab.runnersScored ?? []).includes(playerId)) runs++
 
     // Pitching
     if (ab.pitcherId === playerId) {
@@ -391,7 +392,7 @@ export function computeGameStats(
       if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') pitchK++
       if (ab.result === 'walk' || ab.result === 'hbp') pitchBb++
       // Runs allowed: all runners who scored + batter if they scored
-      runsAllowed += ab.runnersScored.length
+      runsAllowed += (ab.runnersScored ?? []).length
       if (ab.batterAdvancedTo === 'home') runsAllowed++
     }
   }

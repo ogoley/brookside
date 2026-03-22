@@ -11,12 +11,14 @@ interface Props {
   onAdvanceHalfInning: () => void
   onRewindHalfInning: () => void
   onSetTeam: (side: 'home' | 'away', teamId: string) => void
+  readOnly?: boolean
 }
 
 export function InteractiveScoreboard({
   game, homeTeam, awayTeam, teams,
   onSetOuts, onToggleBase,
   onAdvanceHalfInning, onRewindHalfInning, onSetTeam,
+  readOnly = false,
 }: Props) {
   const homePrimary = 'var(--team-home-primary)'
   const homeSecondary = 'var(--team-home-secondary)'
@@ -29,6 +31,22 @@ export function InteractiveScoreboard({
       style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
     >
       <TeamColorInjector homeTeam={homeTeam} awayTeam={awayTeam} />
+
+      {readOnly && (
+        <div
+          className="flex items-center justify-center gap-2 px-4 py-1.5"
+          style={{ background: 'rgba(234,179,8,0.12)', borderBottom: '1px solid rgba(234,179,8,0.25)' }}
+        >
+          <span style={{ color: '#facc15', fontSize: 11 }}>🔒</span>
+          <span
+            className="text-xs font-semibold uppercase tracking-widest"
+            style={{ color: '#facc15', fontFamily: 'var(--font-score)' }}
+          >
+            Scorekeeper controlled — live read only
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-stretch">
 
         {/* ── AWAY ── */}
@@ -41,6 +59,7 @@ export function InteractiveScoreboard({
           secondary={awaySecondary}
           side="away"
           onSetTeam={onSetTeam}
+          readOnly={readOnly}
         />
 
         {/* ── CENTER: inning / bases / outs ── */}
@@ -48,14 +67,14 @@ export function InteractiveScoreboard({
 
           {/* Inning */}
           <div className="flex items-center gap-2">
-            <HalfInningBtn onClick={onRewindHalfInning} direction="back" />
+            {!readOnly && <HalfInningBtn onClick={onRewindHalfInning} direction="back" />}
             <div className="flex items-center gap-1 select-none" style={{ fontFamily: 'var(--font-score)' }}>
               <span className="text-white font-black leading-none" style={{ fontSize: 36 }}>{game.inning}</span>
               <span style={{ fontSize: 20, color: '#facc15', lineHeight: 1 }}>
                 {game.isTopInning ? '▲' : '▼'}
               </span>
             </div>
-            <HalfInningBtn onClick={onAdvanceHalfInning} direction="forward" />
+            {!readOnly && <HalfInningBtn onClick={onAdvanceHalfInning} direction="forward" />}
           </div>
 
           <Divider />
@@ -66,11 +85,11 @@ export function InteractiveScoreboard({
             style={{ width: 72, height: 72, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.05)' }}
           >
             <div className="flex justify-center">
-              <TapBase active={game.bases.second} onClick={() => onToggleBase('second')} />
+              <TapBase active={game.bases.second} onClick={() => onToggleBase('second')} readOnly={readOnly} />
             </div>
             <div className="flex justify-between w-full">
-              <TapBase active={game.bases.third} onClick={() => onToggleBase('third')} />
-              <TapBase active={game.bases.first} onClick={() => onToggleBase('first')} />
+              <TapBase active={game.bases.third} onClick={() => onToggleBase('third')} readOnly={readOnly} />
+              <TapBase active={game.bases.first} onClick={() => onToggleBase('first')} readOnly={readOnly} />
             </div>
           </div>
 
@@ -85,8 +104,9 @@ export function InteractiveScoreboard({
               {[0, 1].map((i) => (
                 <button
                   key={i}
-                  onClick={() => onSetOuts(game.outs === i + 1 ? i : i + 1)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full select-none transition-colors hover:bg-white/10"
+                  onClick={() => !readOnly && onSetOuts(game.outs === i + 1 ? i : i + 1)}
+                  className="w-9 h-9 flex items-center justify-center rounded-full select-none"
+                  style={{ cursor: readOnly ? 'default' : undefined }}
                 >
                   <div
                     className="w-5 h-5 rounded-full border-2 transition-colors duration-150 pointer-events-none"
@@ -98,19 +118,21 @@ export function InteractiveScoreboard({
                 </button>
               ))}
             </div>
-            <button
-              onClick={onAdvanceHalfInning}
-              className="uppercase tracking-widest transition-all hover:bg-white/10"
-              style={{
-                fontFamily: 'var(--font-score)', fontSize: 9,
-                color: 'rgba(255,255,255,0.55)', lineHeight: 1,
-                background: 'rgba(255,255,255,0.07)',
-                border: '1px solid rgba(255,255,255,0.15)',
-                borderRadius: 6, padding: '4px 10px',
-              }}
-            >
-              Advance
-            </button>
+            {!readOnly && (
+              <button
+                onClick={onAdvanceHalfInning}
+                className="uppercase tracking-widest transition-all hover:bg-white/10"
+                style={{
+                  fontFamily: 'var(--font-score)', fontSize: 9,
+                  color: 'rgba(255,255,255,0.55)', lineHeight: 1,
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: 6, padding: '4px 10px',
+                }}
+              >
+                Advance
+              </button>
+            )}
           </div>
 
         </div>
@@ -126,6 +148,7 @@ export function InteractiveScoreboard({
           side="home"
           mirrored
           onSetTeam={onSetTeam}
+          readOnly={readOnly}
         />
 
       </div>
@@ -135,7 +158,7 @@ export function InteractiveScoreboard({
 
 /* ── Sub-components ── */
 
-function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, mirrored, onSetTeam }: {
+function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, mirrored, onSetTeam, readOnly }: {
   team?: Team
   teamId: string
   teams: TeamsMap
@@ -145,6 +168,7 @@ function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, 
   side: 'home' | 'away'
   mirrored?: boolean
   onSetTeam: (side: 'home' | 'away', teamId: string) => void
+  readOnly?: boolean
 }) {
   const colorBlock = (
     <div className="w-12 shrink-0 flex items-center justify-center self-stretch" style={{ background: primary }}>
@@ -158,7 +182,13 @@ function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, 
     </div>
   )
 
-  const nameBlock = (
+  const nameBlock = readOnly ? (
+    <div className="flex items-center self-stretch px-3" style={{ background: primary }}>
+      <span style={{ fontFamily: 'var(--font-score)', fontSize: 15, fontWeight: 700, color: secondary }}>
+        {team?.shortName ?? '?'}
+      </span>
+    </div>
+  ) : (
     <div className="flex items-center self-stretch relative" style={{ background: primary }}>
       <select
         value={teamId}
@@ -202,9 +232,13 @@ function TeamScorePanel({ team, teamId, teams, score, primary, secondary, side, 
   )
 }
 
-function TapBase({ active, onClick }: { active: boolean; onClick: () => void }) {
+function TapBase({ active, onClick, readOnly }: { active: boolean; onClick: () => void; readOnly?: boolean }) {
   return (
-    <button onClick={onClick} className="w-8 h-8 flex items-center justify-center select-none" style={{ background: 'transparent', border: 'none' }}>
+    <button
+      onClick={readOnly ? undefined : onClick}
+      className="w-8 h-8 flex items-center justify-center select-none"
+      style={{ background: 'transparent', border: 'none', cursor: readOnly ? 'default' : 'pointer' }}
+    >
       <div
         className="w-5 h-5 rotate-45 border-2 transition-colors duration-150 pointer-events-none"
         style={{ background: active ? '#facc15' : 'transparent', borderColor: active ? '#facc15' : 'rgba(255,255,255,0.45)' }}
