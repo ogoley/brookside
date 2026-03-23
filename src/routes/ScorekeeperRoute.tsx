@@ -820,6 +820,29 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       return
     }
 
+    // Walk: runners are forced to advance only when every base between them and home is occupied.
+    // Batter takes 1st → runner on 1st forced to 2nd → runner on 2nd forced to 3rd (if 1st occupied)
+    // → runner on 3rd forced to score (if 1st AND 2nd occupied). Unforced runners stay.
+    if (r === 'walk') {
+      const forced: RunnerOutcomes = {}
+      if (liveRunners.first) {
+        forced.first = 'second'
+        if (liveRunners.second) {
+          forced.second = 'third'
+          if (liveRunners.third) {
+            forced.third = 'scored'   // bases loaded — runner scores, batter gets RBI
+          }
+        }
+      }
+      // Runners not in the forced chain stay where they are
+      if (liveRunners.first  && !forced.first)  forced.first  = 'stayed'
+      if (liveRunners.second && !forced.second) forced.second = 'stayed'
+      if (liveRunners.third  && !forced.third)  forced.third  = 'stayed'
+      setRunnerOutcomes(forced)
+      setStep('confirm')
+      return
+    }
+
     // All other results with runners: go to runner outcomes step
     if (hasRunners) {
       setRunnerOutcomes({})
