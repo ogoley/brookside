@@ -4,6 +4,7 @@ import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject }
 import { Link } from 'react-router-dom'
 import { db, storage } from '../firebase'
 import { useTeams } from '../hooks/useTeams'
+import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { TeamPillPreview } from '../components/TeamPillPreview'
 import type { Team } from '../types'
 
@@ -26,6 +27,7 @@ const EMPTY_TEAM: Team = {
 
 export function ConfigRoute() {
   const { teams } = useTeams()
+  const { config } = useLeagueConfig()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<Team>(EMPTY_TEAM)
 
@@ -80,6 +82,28 @@ export function ConfigRoute() {
         >
           ← Controller
         </Link>
+      </div>
+
+      {/* ── League Assets ── */}
+      <div className="flex flex-col gap-3 mb-8" style={{ maxWidth: 640 }}>
+        <h2
+          className="text-white/50 text-xs uppercase tracking-widest"
+          style={{ fontFamily: 'var(--font-score)' }}
+        >
+          League Assets
+        </h2>
+        <div
+          className="rounded-2xl p-4 flex flex-col gap-3"
+          style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <Field label="League Logo">
+            <LogoUpload
+              currentUrl={config.leagueLogo}
+              teamName="league-logo"
+              onUploaded={url => set(ref(db, 'config/leagueLogo'), url)}
+            />
+          </Field>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3" style={{ maxWidth: 640 }}>

@@ -5,6 +5,7 @@ import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
+import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene } from '../scenes'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
 
@@ -14,6 +15,7 @@ function OverlayContent() {
   const { overlay } = useOverlayState()
   const { players } = usePlayers()
   const { matchup } = useMatchup()
+  const { config } = useLeagueConfig()
 
   // Mark body as overlay mode so CSS can set transparent background
   useEffect(() => {
@@ -33,6 +35,25 @@ function OverlayContent() {
       <div className="absolute inset-0">
         <GameScene game={game} overlay={overlay} teams={teams} players={players} matchup={matchup} />
       </div>
+
+      {/* League logo bug — bottom-right corner, always on top */}
+      {config.leagueLogo && (
+        <img
+          src={config.leagueLogo}
+          alt=""
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            right: 32,
+            width: 96,
+            height: 96,
+            objectFit: 'contain',
+            opacity: 0.7,
+            pointerEvents: 'none',
+            zIndex: 50,
+          }}
+        />
+      )}
 
       {/* Overlay scenes — rendered on top, animated in/out */}
       <AnimatePresence mode="wait">
