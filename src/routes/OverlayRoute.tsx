@@ -36,25 +36,6 @@ function OverlayContent() {
         <GameScene game={game} overlay={overlay} teams={teams} players={players} matchup={matchup} />
       </div>
 
-      {/* League logo bug — bottom-right corner, always on top */}
-      {config.leagueLogo && (
-        <img
-          src={config.leagueLogo}
-          alt=""
-          style={{
-            position: 'absolute',
-            bottom: 24,
-            right: 32,
-            width: 96,
-            height: 96,
-            objectFit: 'contain',
-            opacity: 0.7,
-            pointerEvents: 'none',
-            zIndex: 50,
-          }}
-        />
-      )}
-
       {/* Overlay scenes — rendered on top, animated in/out */}
       <AnimatePresence mode="wait">
         {sceneKey === 'statCard' && (
@@ -118,6 +99,24 @@ function OverlayContent() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* League logo bug — rendered last so it sits above all scenes */}
+      {config.leagueLogo && (
+        <img
+          src={config.leagueLogo}
+          alt=""
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            right: 32,
+            width: 96,
+            height: 96,
+            objectFit: 'contain',
+            opacity: 0.7,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
     </div>
   )
 }
