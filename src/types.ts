@@ -223,4 +223,7 @@ export interface GameSummary {
   bb: number
   k: number
   inningsPitched: number
+  pitchingK?: number
+  pitchingBb?: number
+  runsAllowed?: number
 }

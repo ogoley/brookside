@@ -4,7 +4,7 @@ import type { TeamsMap, PlayersMap, StandingsData, Team, Player } from '../types
 // ── Qualification constants ───────────────────────────────────────────────────
 const MIN_AB        = 10    // minimum at-bats to qualify for batting leaderboard
 const MIN_IP_PCTG   = 0.30  // pitcher must have thrown in ≥30% of team's games
-const GAME_INNINGS  = 6     // average innings per game — used to compute min IP
+const GAME_INNINGS  = 7     // innings per game — used to compute min IP
 
 // ── Stub standings (used when no live standings prop is passed) ───────────────
 const STUB_STANDINGS: StandingsData = [

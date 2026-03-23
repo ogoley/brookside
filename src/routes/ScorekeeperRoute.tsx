@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ref, push, set, update, remove, onValue } from 'firebase/database'
+import { ref, push, set, update, remove, onValue, get } from 'firebase/database'
 import { db } from '../firebase'
 import { usePlayers } from '../hooks/usePlayers'
 import { useTeams } from '../hooks/useTeams'
@@ -9,11 +9,12 @@ import { useGames } from '../hooks/useGames'
 import { useGameRecord } from '../hooks/useGameRecord'
 import { useGameLineup } from '../hooks/useGameLineup'
 import { applyAtBat, replayHalfInning, type PlayLogEntry } from '../scoring/engine'
+import { computeFinalization } from '../scoring/finalization'
 import { generateGameId, getEasternDateString } from '../scoring/gameId'
 import { RunnerDiamond } from '../components/RunnerDiamond'
 import type {
   AtBatResult, AtBatRecord, RunnersState, RunnerOutcomes,
-  PlayersMap, LineupEntry, GameLineup, TeamsMap,
+  PlayersMap, LineupEntry, GameLineup, TeamsMap, GameSummary,
 } from '../types'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -93,6 +94,20 @@ export function ScorekeeperRoute() {
 
   const playerName = (id: string) => players[id]?.name ?? id
 
+  const activeGameRecord = activeGameId ? games.find(g => g.gameId === activeGameId) : null
+
+  if (activeGameId && activeGameRecord?.game.finalized) {
+    return (
+      <GameSummaryView
+        gameId={activeGameId}
+        game={activeGameRecord.game}
+        teams={teams}
+        players={players}
+        onBack={() => setActiveGameId(null)}
+      />
+    )
+  }
+
   if (activeGameId && showLineupEditor) {
     return (
       <LineupEditScreen
@@ -148,9 +163,8 @@ function GameSelectorScreen({
   onCloseNewGameModal: () => void
   onGameCreated: (id: string) => void
 }) {
-  const today = getEasternDateString()
-  const todaysGames = games.filter(({ game }) => game.date === today)
-  const otherGames = games.filter(({ game }) => game.date !== today && !game.finalized)
+  const liveGames = games.filter(({ game }) => !game.finalized)
+  const completedGames = games.filter(({ game }) => game.finalized)
 
   return (
     <div className="min-h-screen px-4 py-4" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
@@ -170,36 +184,24 @@ function GameSelectorScreen({
 
       {loading ? (
         <p className="text-white/30 text-sm text-center py-12">Loading games…</p>
-      ) : todaysGames.length === 0 && otherGames.length === 0 ? (
+      ) : liveGames.length === 0 && completedGames.length === 0 ? (
         <div className="rounded-2xl px-6 py-10 text-center" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <p className="text-white/40 text-sm mb-1">No games today</p>
+          <p className="text-white/40 text-sm mb-1">No games yet</p>
           <p className="text-white/25 text-xs">Tap + New Game to get started</p>
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          {todaysGames.length > 0 && (
-            <Section label={`Today — ${today}`}>
-              {todaysGames.map(({ gameId, game }) => (
-                <GameRow
-                  key={gameId}
-                  gameId={gameId}
-                  game={game}
-                  teams={teams}
-                  onSelect={onSelectGame}
-                />
+          {liveGames.length > 0 && (
+            <Section label="Live">
+              {liveGames.map(({ gameId, game }) => (
+                <GameRow key={gameId} gameId={gameId} game={game} teams={teams} onSelect={onSelectGame} />
               ))}
             </Section>
           )}
-          {otherGames.length > 0 && (
-            <Section label="In Progress">
-              {otherGames.map(({ gameId, game }) => (
-                <GameRow
-                  key={gameId}
-                  gameId={gameId}
-                  game={game}
-                  teams={teams}
-                  onSelect={onSelectGame}
-                />
+          {completedGames.length > 0 && (
+            <Section label="Completed">
+              {completedGames.map(({ gameId, game }) => (
+                <CompletedGameRow key={gameId} gameId={gameId} game={game} teams={teams} onSelect={onSelectGame} />
               ))}
             </Section>
           )}
@@ -311,6 +313,51 @@ function GameRow({ gameId, game, teams, onSelect }: {
           )}
         </div>
     </div>
+  )
+}
+
+// ── Completed game row (read-only, no delete) ────────────────────────────────
+
+function CompletedGameRow({ gameId, game, teams, onSelect }: {
+  gameId: string
+  game: ReturnType<typeof useGames>['games'][number]['game']
+  teams: TeamsMap
+  onSelect: (id: string) => void
+}) {
+  const home = teams[game.homeTeamId]
+  const away = teams[game.awayTeamId]
+  const winner = game.homeScore > game.awayScore ? home : game.awayScore > game.homeScore ? away : null
+
+  return (
+    <button
+      onClick={() => onSelect(gameId)}
+      className="w-full rounded-2xl px-4 py-4 flex items-center justify-between text-left"
+      style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)' }}
+    >
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span className="text-white/60 font-bold text-base">{away?.shortName ?? game.awayTeamId}</span>
+          <span className="text-white/20 text-sm">@</span>
+          <span className="text-white/60 font-bold text-base">{home?.shortName ?? game.homeTeamId}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="font-black text-base" style={{ fontFamily: 'var(--font-score)', color: 'rgba(255,255,255,0.5)' }}>
+            {game.awayScore} – {game.homeScore}
+          </span>
+          {winner && (
+            <span className="text-xs text-white/30">{winner.shortName} win</span>
+          )}
+          <span className="text-xs text-white/25">{game.date}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-black px-2 py-1 rounded uppercase tracking-widest"
+          style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.25)', fontFamily: 'var(--font-score)' }}>
+          Final
+        </span>
+        <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: 18 }}>›</span>
+      </div>
+    </button>
   )
 }
 
@@ -693,6 +740,8 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
   const [showPlayLog, setShowPlayLog] = useState(false)
   const [showGameCompletePrompt, setShowGameCompletePrompt] = useState(false)
   const [gameCompleteReason, setGameCompleteReason] = useState<'innings' | 'time' | null>(null)
+  const [finalizing, setFinalizing] = useState(false)
+  const [confirmFinalize, setConfirmFinalize] = useState(false)
 
   // Game complete detection — 7 innings or 90 min
   // Uses sessionStorage to suppress after dismissal (survives page reload within same session)
@@ -1003,6 +1052,57 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
 
   // ── Half-inning advance ───────────────────────────────────────────────────
 
+  const finalizeGame = async () => {
+    if (!gameId || !game) return
+    setFinalizing(true)
+    try {
+      const gamesSnap = await get(ref(db, 'games'))
+      const allGames: Record<string, { finalized: boolean; homeTeamId: string; awayTeamId: string; homeScore: number; awayScore: number; inning: number; isTopInning: boolean; outs: number; date: string; isStreamed: boolean; startedAt: number }> = gamesSnap.exists() ? gamesSnap.val() : {}
+      const thisGame = allGames[gameId]
+      if (!thisGame) return
+
+      const prevGameIds = Object.entries(allGames)
+        .filter(([id, g]) => g.finalized && id !== gameId)
+        .map(([id]) => id)
+
+      const previousAtBats: Array<AtBatRecord & { gameId: string }> = []
+      for (const gId of prevGameIds) {
+        const snap = await get(ref(db, `gameStats/${gId}`))
+        if (snap.exists()) {
+          for (const ab of Object.values(snap.val() as Record<string, AtBatRecord>)) {
+            previousAtBats.push({ ...ab, gameId: gId })
+          }
+        }
+      }
+
+      const currentSnap = await get(ref(db, `gameStats/${gameId}`))
+      const currentGameAtBats: AtBatRecord[] = currentSnap.exists()
+        ? Object.values(currentSnap.val() as Record<string, AtBatRecord>)
+        : []
+
+      const { updates, summary } = computeFinalization({
+        gameId,
+        game: { ...thisGame, finalized: false, finalizedAt: undefined },
+        currentGameAtBats,
+        previousAtBats,
+        players,
+      })
+
+      if (import.meta.env.DEV) {
+        console.group('[Finalization]')
+        summary.forEach(line => console.log(line))
+        console.groupEnd()
+      }
+
+      await update(ref(db), updates)
+      setShowGameCompletePrompt(false)
+      setConfirmFinalize(false)
+      onBack()
+    } finally {
+      setFinalizing(false)
+    }
+  }
+
   const advanceHalfInning = async () => {
     if (!gameId || !game) return
 
@@ -1165,37 +1265,44 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
   return (
     <div className="min-h-screen px-4 py-4" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
 
-      {/* Game complete banner */}
-      {showGameCompletePrompt && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
-          <div className="w-full max-w-md rounded-2xl p-6 text-center" style={{ background: '#1a1f2e', border: '1px solid rgba(255,255,255,0.12)' }}>
-            <p className="text-3xl mb-2">🏁</p>
-            <h2 className="text-white text-xl font-black mb-1">Game Over?</h2>
-            <p className="text-white/50 text-sm mb-6">
-              {gameCompleteReason === 'innings'
-                ? '7 innings complete. Ready to finalize?'
-                : '90 minutes have elapsed. Ready to finalize?'}
+      {/* Finalize confirmation modal — triggered by End Game button or auto game-complete prompt */}
+      {(confirmFinalize || showGameCompletePrompt) && !game?.finalized && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 text-center" style={{ background: '#1a1f2e', border: '1px solid rgba(239,68,68,0.3)' }}>
+            <p className="text-4xl mb-3">🏁</p>
+            <h2 className="text-white text-2xl font-black mb-1 uppercase tracking-wide" style={{ fontFamily: 'var(--font-score)' }}>
+              Finalize Game?
+            </h2>
+            <p className="text-white/50 text-sm mb-2">
+              {showGameCompletePrompt && gameCompleteReason === 'innings' && '7 innings complete.'}
+              {gameCompleteReason === 'time' && '90 minutes elapsed.'}
             </p>
-            <div className="flex gap-3">
+            <p className="text-red-400/70 text-xs mb-6">
+              This will lock the game and update season stats. It cannot be undone.
+            </p>
+            <div className="flex flex-col gap-3">
               <button
                 onClick={() => {
                   sessionStorage.setItem(`game-complete-shown-${gameId}`, '1')
-                  setShowGameCompletePrompt(false)
+                  finalizeGame()
                 }}
-                className="flex-1 py-3 rounded-xl font-bold text-sm"
-                style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}
+                disabled={finalizing}
+                className="w-full py-4 rounded-xl font-black text-base uppercase tracking-wider"
+                style={{ background: finalizing ? '#7f1d1d' : '#b91c1c', color: '#fff' }}
               >
-                Keep Playing
+                {finalizing ? 'Saving Stats…' : 'Yes, Finalize Game'}
               </button>
               <button
                 onClick={() => {
                   sessionStorage.setItem(`game-complete-shown-${gameId}`, '1')
                   setShowGameCompletePrompt(false)
+                  setConfirmFinalize(false)
                 }}
-                className="flex-1 py-3 rounded-xl font-black text-sm"
-                style={{ background: '#22c55e', color: '#000' }}
+                disabled={finalizing}
+                className="w-full py-3 rounded-xl font-bold text-sm"
+                style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}
               >
-                Go to Controller to Finalize
+                Keep Playing
               </button>
             </div>
           </div>
@@ -1228,6 +1335,20 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
           >
             Reset
           </button>
+          {game?.finalized ? (
+            <span className="text-xs font-black px-3 py-1.5 rounded-lg uppercase tracking-widest"
+              style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)' }}>
+              Final
+            </span>
+          ) : (
+            <button
+              onClick={() => setConfirmFinalize(true)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+              style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+            >
+              End Game
+            </button>
+          )}
         </div>
       </div>
 
@@ -1663,21 +1784,23 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       {/* Live stats */}
       {(() => {
         // Tally per-batter stats from this game's at-bats
-        const tally: Record<string, { ab: number; h: number; rbi: number; hr: number; o: number }> = {}
+        const tally: Record<string, { ab: number; r: number; h: number; rbi: number; hr: number; o: number }> = {}
+        const ensure = (id: string) => { if (!tally[id]) tally[id] = { ab: 0, r: 0, h: 0, rbi: 0, hr: 0, o: 0 }; return tally[id] }
         for (const ab of Object.values(atBats)) {
-          if (!tally[ab.batterId]) tally[ab.batterId] = { ab: 0, h: 0, rbi: 0, hr: 0, o: 0 }
-          const s = tally[ab.batterId]
+          const s = ensure(ab.batterId)
           if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) s.ab++
           if (['single', 'double', 'triple', 'home_run'].includes(ab.result)) s.h++
           s.rbi += ab.rbiCount
           if (ab.result === 'home_run') s.hr++
           if (['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) s.o++
+          if (ab.batterAdvancedTo === 'home') s.r++
+          for (const runnerId of (ab.runnersScored ?? [])) { ensure(runnerId).r++ }
         }
 
         const homeId = game?.homeTeamId ?? ''
         const awayId = game?.awayTeamId ?? ''
-        const cols = ['AB', 'H', 'RBI', 'HR', 'O'] as const
-        const statKeys: Array<keyof typeof tally[string]> = ['ab', 'h', 'rbi', 'hr', 'o']
+        const cols = ['AB', 'R', 'H', 'RBI', 'HR', 'O'] as const
+        const statKeys: Array<keyof typeof tally[string]> = ['ab', 'r', 'h', 'rbi', 'hr', 'o']
 
         const renderSide = (teamId: string) => {
           const rows = Object.entries(tally)
@@ -2129,6 +2252,189 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ── Game Summary View (read-only, finalized games) ───────────────────────────
+
+function GameSummaryView({ gameId, game, teams, players, onBack }: {
+  gameId: string
+  game: ReturnType<typeof useGames>['games'][number]['game']
+  teams: TeamsMap
+  players: PlayersMap
+  onBack: () => void
+}) {
+  const [summaries, setSummaries] = useState<Record<string, GameSummary>>({})
+  const [pitcherKs, setPitcherKs] = useState<Record<string, number>>({})
+  const [pitcherBbs, setPitcherBbs] = useState<Record<string, number>>({})
+  const [pitcherRuns, setPitcherRuns] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, `gameSummaries/${gameId}`), snap => {
+      setSummaries(snap.exists() ? snap.val() : {})
+      setLoading(false)
+    })
+    return () => unsub()
+  }, [gameId])
+
+  // Compute pitcher K/BB directly from raw at-bats — summaries written before
+  // the pitchingK/pitchingBb fields existed will have 0; this is always accurate.
+  useEffect(() => {
+    get(ref(db, `gameStats/${gameId}`)).then(snap => {
+      const ks: Record<string, number> = {}
+      const bbs: Record<string, number> = {}
+      const runs: Record<string, number> = {}
+      if (snap.exists()) {
+        for (const ab of Object.values(snap.val()) as AtBatRecord[]) {
+          if (!ab.pitcherId) continue
+          if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') ks[ab.pitcherId] = (ks[ab.pitcherId] ?? 0) + 1
+          if (ab.result === 'walk' || ab.result === 'hbp') bbs[ab.pitcherId] = (bbs[ab.pitcherId] ?? 0) + 1
+          runs[ab.pitcherId] = (runs[ab.pitcherId] ?? 0) + (ab.runnersScored ?? []).length + (ab.batterAdvancedTo === 'home' ? 1 : 0)
+        }
+      }
+      setPitcherKs(ks)
+      setPitcherBbs(bbs)
+      setPitcherRuns(runs)
+    })
+  }, [gameId])
+
+  const homeTeam = teams[game.homeTeamId]
+  const awayTeam = teams[game.awayTeamId]
+
+  const allStats = Object.values(summaries)
+  const awayBatting = allStats
+    .filter(s => s.teamId === game.awayTeamId && s.ab > 0)
+    .sort((a, b) => (players[a.playerId]?.name ?? '').localeCompare(players[b.playerId]?.name ?? ''))
+  const homeBatting = allStats
+    .filter(s => s.teamId === game.homeTeamId && s.ab > 0)
+    .sort((a, b) => (players[a.playerId]?.name ?? '').localeCompare(players[b.playerId]?.name ?? ''))
+  const pitchers = allStats
+    .filter(s => s.inningsPitched > 0)
+    .sort((a, b) => b.inningsPitched - a.inningsPitched)
+    .map(s => ({ ...s, pitchingK: pitcherKs[s.playerId] ?? 0, pitchingBb: pitcherBbs[s.playerId] ?? 0, runsAllowed: pitcherRuns[s.playerId] ?? 0 }))
+
+  return (
+    <div className="min-h-screen px-4 py-4 pb-16" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
+      {/* Nav */}
+      <div className="flex items-center justify-between mb-5">
+        <button onClick={onBack} className="flex items-center gap-2" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <span style={{ fontSize: 22 }}>‹</span>
+          <span className="text-sm font-semibold">Games</span>
+        </button>
+        <span
+          className="text-xs font-black px-2.5 py-1 rounded-lg uppercase tracking-widest"
+          style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)', fontFamily: 'var(--font-score)' }}
+        >
+          Final
+        </span>
+      </div>
+
+      {/* Score card */}
+      <div className="rounded-2xl p-5 mb-5" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <p className="text-white/25 text-xs text-center mb-4 uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+          {game.date}
+        </p>
+        <div className="flex items-center justify-between px-4">
+          <div className="flex flex-col items-center gap-2">
+            {awayTeam?.logoUrl && <img src={awayTeam.logoUrl} style={{ width: 52, height: 52, objectFit: 'contain' }} alt="" />}
+            <span className="text-white/50 text-xs font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+              {awayTeam?.shortName ?? game.awayTeamId}
+            </span>
+            <span className="font-black" style={{ fontFamily: 'var(--font-score)', fontSize: 52, lineHeight: 1, color: game.awayScore > game.homeScore ? '#ffffff' : 'rgba(255,255,255,0.4)' }}>
+              {game.awayScore}
+            </span>
+          </div>
+          <span style={{ color: 'rgba(255,255,255,0.1)', fontSize: 28 }}>—</span>
+          <div className="flex flex-col items-center gap-2">
+            {homeTeam?.logoUrl && <img src={homeTeam.logoUrl} style={{ width: 52, height: 52, objectFit: 'contain' }} alt="" />}
+            <span className="text-white/50 text-xs font-bold uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+              {homeTeam?.shortName ?? game.homeTeamId}
+            </span>
+            <span className="font-black" style={{ fontFamily: 'var(--font-score)', fontSize: 52, lineHeight: 1, color: game.homeScore > game.awayScore ? '#ffffff' : 'rgba(255,255,255,0.4)' }}>
+              {game.homeScore}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-white/30 text-sm text-center py-8">Loading stats…</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <BattingTable title={awayTeam?.name ?? 'Away'} rows={awayBatting} players={players} />
+          <BattingTable title={homeTeam?.name ?? 'Home'} rows={homeBatting} players={players} />
+          {pitchers.length > 0 && <PitchingTable rows={pitchers} players={players} teams={teams} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BattingTable({ title, rows, players }: {
+  title: string
+  rows: GameSummary[]
+  players: PlayersMap
+}) {
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="px-4 py-2.5" style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <span className="text-white/50 text-xs font-black uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+          {title} — Batting
+        </span>
+      </div>
+      <div className="grid px-4 py-1.5" style={{ gridTemplateColumns: '1fr 38px 38px 38px 38px 38px 38px' }}>
+        {['', 'AB', 'R', 'H', 'HR', 'RBI', 'BB'].map(h => (
+          <span key={h} className="text-center text-xs font-bold uppercase" style={{ color: 'rgba(255,255,255,0.2)', fontFamily: 'var(--font-score)', letterSpacing: '0.1em' }}>{h}</span>
+        ))}
+      </div>
+      {rows.map(s => (
+        <div key={s.playerId} className="grid items-center px-4 py-2.5" style={{ gridTemplateColumns: '1fr 38px 38px 38px 38px 38px 38px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <span className="text-white/80 text-sm font-semibold truncate">{players[s.playerId]?.name ?? s.playerId}</span>
+          {[s.ab, s.r, s.h, s.hr, s.rbi, s.bb].map((val, i) => (
+            <span key={i} className="text-center text-sm font-bold tabular-nums" style={{ fontFamily: 'var(--font-score)', color: val > 0 ? '#ffffff' : 'rgba(255,255,255,0.2)' }}>
+              {val}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PitchingTable({ rows, players, teams }: {
+  rows: GameSummary[]
+  players: PlayersMap
+  teams: TeamsMap
+}) {
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="px-4 py-2.5" style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <span className="text-white/50 text-xs font-black uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Pitching</span>
+      </div>
+      <div className="grid px-4 py-1.5" style={{ gridTemplateColumns: '1fr 48px 52px 38px 38px' }}>
+        {['', 'IP', 'ERA', 'K', 'BB'].map(h => (
+          <span key={h} className="text-center text-xs font-bold uppercase" style={{ color: 'rgba(255,255,255,0.2)', fontFamily: 'var(--font-score)', letterSpacing: '0.1em' }}>{h}</span>
+        ))}
+      </div>
+      {rows.map(s => {
+        const ip = s.inningsPitched
+        const era = ip > 0 ? Math.round(((s.runsAllowed ?? 0) / ip) * 7 * 100) / 100 : 0
+        return (
+          <div key={s.playerId} className="grid items-center px-4 py-2.5" style={{ gridTemplateColumns: '1fr 48px 52px 38px 38px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div>
+              <span className="text-white/80 text-sm font-semibold">{players[s.playerId]?.name ?? s.playerId}</span>
+              <span className="text-white/25 text-xs ml-2">{teams[players[s.playerId]?.teamId ?? '']?.shortName ?? ''}</span>
+            </div>
+            <span className="text-center text-sm font-bold tabular-nums" style={{ fontFamily: 'var(--font-score)', color: '#ffffff' }}>{Math.floor(ip)}</span>
+            <span className="text-center text-sm font-bold tabular-nums" style={{ fontFamily: 'var(--font-score)', color: '#ffffff' }}>{era.toFixed(2)}</span>
+            <span className="text-center text-sm font-bold tabular-nums" style={{ fontFamily: 'var(--font-score)', color: (s.pitchingK ?? 0) > 0 ? '#ffffff' : 'rgba(255,255,255,0.2)' }}>{s.pitchingK ?? 0}</span>
+            <span className="text-center text-sm font-bold tabular-nums" style={{ fontFamily: 'var(--font-score)', color: (s.pitchingBb ?? 0) > 0 ? '#ffffff' : 'rgba(255,255,255,0.2)' }}>{s.pitchingBb ?? 0}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -77,7 +77,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     // Skip sub at-bats for season stats
     if (ab.isSub) continue
 
-    const { batterId, pitcherId, result, runnersScored, rbiCount, batterAdvancedTo, outsOnPlay } = ab
+    const { batterId, pitcherId, result, runnersScored = [], rbiCount, batterAdvancedTo, outsOnPlay } = ab
 
     // ── Hitting ─────────────────────────────────────────────────────────
     if (!batting[batterId]) batting[batterId] = { pa: 0, ab: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, games: new Set() }
@@ -96,7 +96,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     b.rbi += rbiCount
     if (batterAdvancedTo === 'home') runs[batterId] = (runs[batterId] ?? 0) + 1
 
-    for (const runnerId of runnersScored) {
+    for (const runnerId of (runnersScored ?? [])) {
       runs[runnerId] = (runs[runnerId] ?? 0) + 1
     }
 
@@ -109,7 +109,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
       if (result === 'strikeout' || result === 'strikeout_looking') p.k++
       if (result === 'walk' || result === 'hbp') p.bb++
       // All runs allowed (no earned/unearned distinction in wiffle ball)
-      p.runs += runnersScored.length
+      p.runs += (runnersScored ?? []).length
       if (batterAdvancedTo === 'home') p.runs++
     }
   }
@@ -159,7 +159,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
   // (from all previously-finalized games) and add this game's result on top.
   for (const [playerId, p] of Object.entries(pitching)) {
     const ip = Math.round((p.outs / 3) * 100) / 100
-    const era = p.outs > 0 ? Math.round((p.runs / (p.outs / 3)) * 9 * 100) / 100 : 0
+    const era = p.outs > 0 ? Math.round((p.runs / (p.outs / 3)) * 7 * 100) / 100 : 0
     const priorW = players[playerId]?.stats?.pitching?.w ?? 0
     const priorL = players[playerId]?.stats?.pitching?.l ?? 0
     const ps: PitchingStats = {
@@ -255,7 +255,7 @@ function computeGameSummaries(
     b.rbi += ab.rbiCount
     if (ab.batterAdvancedTo === 'home') b.r++
 
-    for (const runnerId of ab.runnersScored) {
+    for (const runnerId of (ab.runnersScored ?? [])) {
       const s = ensureBatter(runnerId)
       s.r++
     }
@@ -265,6 +265,9 @@ function computeGameSummaries(
       ps.inningsPitched = Math.round((
         (ps.inningsPitched * 3 + ab.outsOnPlay) / 3
       ) * 100) / 100
+      if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') ps.pitchingK = (ps.pitchingK ?? 0) + 1
+      if (ab.result === 'walk' || ab.result === 'hbp') ps.pitchingBb = (ps.pitchingBb ?? 0) + 1
+      ps.runsAllowed = (ps.runsAllowed ?? 0) + (ab.runnersScored ?? []).length + (ab.batterAdvancedTo === 'home' ? 1 : 0)
     }
   }
 
