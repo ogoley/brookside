@@ -954,9 +954,19 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
         updates[`game/matchup/pitcherId`] = pitcherId
       }
 
-      // Note: game/matchup/batterId is kept in sync by a useEffect on batterId/step,
-      // so no manual write needed here. The notch updates automatically as the
-      // lineup pre-fill effect fires after lineupPosition advances in Firebase.
+      // Write the next batter directly so the notch updates atomically with the play.
+      // Avoids the 3-hop delay: Firebase lineupPosition → listener → pre-fill effect → sync effect.
+      if (newOuts < 3) {
+        const regularLineup = battingLineup.filter(e => !e.isSub)
+        if (regularLineup.length > 0) {
+          const nextPos = isSub
+            ? lineupPosition % regularLineup.length
+            : (lineupPosition + 1) % regularLineup.length
+          updates['game/matchup/batterId'] = regularLineup[nextPos]?.playerId ?? null
+        }
+      } else {
+        updates['game/matchup/batterId'] = null  // inning ending — clear the notch
+      }
 
       // Trigger home run overlay animation
       if (result === 'home_run') {
