@@ -62,6 +62,7 @@ export interface TeamStanding {
   teamId: string
   w: number
   l: number
+  t: number       // ties
   streak: string  // e.g. "W3" or "L1"
 }
 

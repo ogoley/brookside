@@ -11,14 +11,14 @@ interface Props {
 // ── Stub data — replace with useStandings() hook when /standings is in Firebase ──
 // 8-team league: top 2 get playoff bye, bottom 2 are in elimination zone.
 const STUB_STANDINGS: StandingsData = [
-  { teamId: 'swing_mafia',      w: 11, l: 3,  streak: 'W3' },
-  { teamId: 'gamecocks',        w: 10, l: 4,  streak: 'W1' },
-  { teamId: 'trash_pandas',     w: 8,  l: 6,  streak: 'L1' },
-  { teamId: 'wiffle_whalers',   w: 7,  l: 7,  streak: 'W2' },
-  { teamId: 'nuke_squad',       w: 7,  l: 7,  streak: 'L2' },
-  { teamId: 'yellow_bat_yetis', w: 6,  l: 8,  streak: 'W1' },
-  { teamId: 'base_invaders',    w: 4,  l: 10, streak: 'L4' },
-  { teamId: 'moose_knucklers',  w: 3,  l: 11, streak: 'L3' },
+  { teamId: 'swing_mafia',      w: 11, l: 3,  t: 0, streak: 'W3' },
+  { teamId: 'gamecocks',        w: 10, l: 4,  t: 0, streak: 'W1' },
+  { teamId: 'trash_pandas',     w: 8,  l: 6,  t: 0, streak: 'L1' },
+  { teamId: 'wiffle_whalers',   w: 7,  l: 7,  t: 0, streak: 'W2' },
+  { teamId: 'nuke_squad',       w: 7,  l: 7,  t: 0, streak: 'L2' },
+  { teamId: 'yellow_bat_yetis', w: 6,  l: 8,  t: 0, streak: 'W1' },
+  { teamId: 'base_invaders',    w: 4,  l: 10, t: 0, streak: 'L4' },
+  { teamId: 'moose_knucklers',  w: 3,  l: 11, t: 0, streak: 'L3' },
 ]
 
 // Playoff structure constants
@@ -27,14 +27,15 @@ const PLAYOFF_COUNT  = 6   // top N teams make the playoffs (rest are eliminated
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function pct(w: number, l: number): string {
-  const total = w + l
+function pct(w: number, l: number, t: number): string {
+  const total = w + l + t
   if (total === 0) return '.000'
-  return (w / total).toFixed(3).replace(/^0\./, '.')
+  return ((w + t * 0.5) / total).toFixed(3).replace(/^0\./, '.')
 }
 
-function gb(leaderW: number, leaderL: number, w: number, l: number): string {
-  const diff = (leaderW - w + l - leaderL) / 2
+function gb(leaderW: number, leaderL: number, leaderT: number, w: number, l: number, t: number): string {
+  // Games behind = ((leaderW - W) + (L - leaderL) + (T - leaderT) * 0.5) / 2
+  const diff = ((leaderW - w) + (l - leaderL) + (t - leaderT) * 0.5) / 2
   if (diff === 0) return '—'
   return diff % 1 === 0 ? String(diff) : diff.toFixed(1)
 }
@@ -81,15 +82,17 @@ function StandingRow({
   teams,
   leaderW,
   leaderL,
+  leaderT,
   zone,
   delay,
 }: {
   rank: number
   teamId: string
-  standing: { w: number; l: number; streak: string }
+  standing: { w: number; l: number; t: number; streak: string }
   teams: TeamsMap
   leaderW: number
   leaderL: number
+  leaderT: number
   zone: 'bye' | 'playoff' | 'eliminated'
   delay: number
 }) {
@@ -219,11 +222,14 @@ function StandingRow({
       {/* L */}
       <StatCell label="L" value={String(standing.l)} eliminated={zone === 'eliminated'} />
 
+      {/* T */}
+      <StatCell label="T" value={String(standing.t)} eliminated={zone === 'eliminated'} />
+
       {/* PCT */}
-      <StatCell label="PCT" value={pct(standing.w, standing.l)} highlight={zone === 'bye'} eliminated={zone === 'eliminated'} wide />
+      <StatCell label="PCT" value={pct(standing.w, standing.l, standing.t)} highlight={zone === 'bye'} eliminated={zone === 'eliminated'} wide />
 
       {/* GB */}
-      <StatCell label="GB" value={gb(leaderW, leaderL, standing.w, standing.l)} eliminated={zone === 'eliminated'} />
+      <StatCell label="GB" value={gb(leaderW, leaderL, leaderT, standing.w, standing.l, standing.t)} eliminated={zone === 'eliminated'} />
 
       {/* Streak */}
       <div style={{ width: 100, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingRight: 24 }}>
@@ -343,7 +349,7 @@ export function StandingsScene({ teams, standings }: Props) {
 
           {/* Column headers */}
           <div className="flex items-center" style={{ paddingBottom: 4 }}>
-            {(['W', 'L', 'PCT', 'GB', 'STK'] as const).map((h) => (
+            {(['W', 'L', 'T', 'PCT', 'GB', 'STK'] as const).map((h) => (
               <div
                 key={h}
                 style={{
@@ -382,6 +388,7 @@ export function StandingsScene({ teams, standings }: Props) {
               teams={teams}
               leaderW={leader?.w ?? 0}
               leaderL={leader?.l ?? 0}
+              leaderT={leader?.t ?? 0}
               zone={item.zone}
               delay={delays[i]}
             />

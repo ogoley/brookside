@@ -15,7 +15,7 @@ import { computeFinalization } from '../scoring/finalization'
 
 const SCENES: { id: SceneName; label: string }[] = [
   { id: 'game', label: 'Game' },
-  { id: 'statCard', label: 'Stat Card' },
+  { id: 'statCard', label: 'Team Stats' },
   { id: 'matchup', label: 'Matchup' },
   { id: 'standings', label: 'Standings' },
   { id: 'leaderboard', label: 'Leaders' },

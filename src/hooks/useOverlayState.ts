@@ -25,7 +25,7 @@ const DEFAULT_OVERLAY: OverlayState = {
     triggeredAt: 0,
   },
   scoreboardBorder: true,
-  scoreboardScale: 1,
+  scoreboardScale: 0.75,
 }
 
 export function useOverlayState() {

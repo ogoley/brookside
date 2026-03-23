@@ -8,14 +8,14 @@ const GAME_INNINGS  = 6     // average innings per game — used to compute min 
 
 // ── Stub standings (used when no live standings prop is passed) ───────────────
 const STUB_STANDINGS: StandingsData = [
-  { teamId: 'swing_mafia',      w: 11, l: 3,  streak: 'W3' },
-  { teamId: 'gamecocks',        w: 10, l: 4,  streak: 'W1' },
-  { teamId: 'trash_pandas',     w: 8,  l: 6,  streak: 'L1' },
-  { teamId: 'wiffle_whalers',   w: 7,  l: 7,  streak: 'W2' },
-  { teamId: 'nuke_squad',       w: 7,  l: 7,  streak: 'L2' },
-  { teamId: 'yellow_bat_yetis', w: 6,  l: 8,  streak: 'W1' },
-  { teamId: 'base_invaders',    w: 4,  l: 10, streak: 'L4' },
-  { teamId: 'moose_knucklers',  w: 3,  l: 11, streak: 'L3' },
+  { teamId: 'swing_mafia',      w: 11, l: 3,  t: 0, streak: 'W3' },
+  { teamId: 'gamecocks',        w: 10, l: 4,  t: 0, streak: 'W1' },
+  { teamId: 'trash_pandas',     w: 8,  l: 6,  t: 0, streak: 'L1' },
+  { teamId: 'wiffle_whalers',   w: 7,  l: 7,  t: 0, streak: 'W2' },
+  { teamId: 'nuke_squad',       w: 7,  l: 7,  t: 0, streak: 'L2' },
+  { teamId: 'yellow_bat_yetis', w: 6,  l: 8,  t: 0, streak: 'W1' },
+  { teamId: 'base_invaders',    w: 4,  l: 10, t: 0, streak: 'L4' },
+  { teamId: 'moose_knucklers',  w: 3,  l: 11, t: 0, streak: 'L3' },
 ]
 
 interface Props {
@@ -206,7 +206,7 @@ export function LeaderboardScene({ teams, players, standings }: Props) {
 
   // Build team games map: teamId → total games played
   const teamGamesMap: Record<string, number> = {}
-  standingsData.forEach(s => { teamGamesMap[s.teamId] = s.w + s.l })
+  standingsData.forEach(s => { teamGamesMap[s.teamId] = s.w + s.l + s.t })
 
   // Top 10 batters — min AB, sorted by AVG desc
   const topBatters = Object.entries(players)
