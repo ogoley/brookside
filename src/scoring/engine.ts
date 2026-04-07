@@ -348,7 +348,7 @@ export function computeGameStats(
 ): GameStatsResult {
   // Hitting accumulator
   let pa = 0, atBatCount = 0, h = 0, doubles = 0, triples = 0, hr = 0
-  let rbi = 0, bb = 0, k = 0, hbp = 0, sf = 0, runs = 0
+  let rbi = 0, bb = 0, k = 0, runs = 0
   let hasBatted = false
 
   // Pitching accumulator
@@ -374,8 +374,6 @@ export function computeGameStats(
       }
       if (ab.result === 'walk') bb++
       if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') k++
-      if (ab.result === 'hbp') hbp++
-      if (ab.result === 'sacrifice_fly') sf++
       rbi += ab.rbiCount ?? 0
       // Count run if batter scored (home run or advanced to home)
       if (ab.batterAdvancedTo === 'home') runs++
@@ -402,17 +400,15 @@ export function computeGameStats(
     const singles = h - doubles - triples - hr
     const tb = singles + doubles * 2 + triples * 3 + hr * 4
     const avg = ab > 0 ? Math.round((h / ab) * 1000) / 1000 : 0
-    const obpNum = h + bb + hbp
-    const obpDen = ab + bb + hbp + sf
-    const obp = obpDen > 0 ? Math.round((obpNum / obpDen) * 1000) / 1000 : 0
+    const obp = pa > 0 ? Math.round(((h + bb) / pa) * 1000) / 1000 : 0
     const slg = ab > 0 ? Math.round((tb / ab) * 1000) / 1000 : 0
     return { gp: 1, pa, ab, h, doubles, triples, hr, r: runs, rbi, bb, k, avg, obp, slg, ops: Math.round((obp + slg) * 1000) / 1000 }
   })() : null
 
   const pitching: PitchingStats | null = hasPitched ? (() => {
     const ip = Math.round((pitchOuts / 3) * 100) / 100
-    const era = ip > 0 ? Math.round((runsAllowed / (pitchOuts / 3)) * 9 * 100) / 100 : 0
-    return { gp: 1, k: pitchK, bb: pitchBb, inningsPitched: ip, era }
+    const era = ip > 0 ? Math.round((runsAllowed / (pitchOuts / 3)) * 7 * 100) / 100 : 0
+    return { gp: 1, k: pitchK, bb: pitchBb, inningsPitched: ip, era, runsAllowed }
   })() : null
 
   return { hitting, pitching, runsScored: runs }
@@ -444,17 +440,18 @@ export function mergeHittingStats(season: HittingStats, game: HittingStats): Hit
 export function mergePitchingStats(season: PitchingStats, game: PitchingStats): PitchingStats {
   const totalOuts = Math.round(((season.inningsPitched ?? 0) + (game.inningsPitched ?? 0)) * 3)
   const ip = Math.round((totalOuts / 3) * 100) / 100
-  // ERA recomputed by approximating runs from ERA * IP / 9 (we don't store raw run counts)
-  const seasonRuns = ((season.era ?? 0) * (season.inningsPitched ?? 0)) / 9
-  const gameRuns   = ((game.era   ?? 0) * (game.inningsPitched   ?? 0)) / 9
+  // Use raw runsAllowed when available; fall back to ERA-based approximation for old stored stats
+  const seasonRuns = season.runsAllowed ?? ((season.era ?? 0) * (season.inningsPitched ?? 0)) / 7
+  const gameRuns   = game.runsAllowed   ?? ((game.era   ?? 0) * (game.inningsPitched   ?? 0)) / 7
   const combinedRuns = seasonRuns + gameRuns
-  const era = ip > 0 ? Math.round((combinedRuns / ip) * 9 * 100) / 100 : 0
+  const era = ip > 0 ? Math.round((combinedRuns / ip) * 7 * 100) / 100 : 0
   return {
     gp: (season.gp ?? 0) + 1,
     k:  (season.k  ?? 0) + (game.k  ?? 0),
     bb: (season.bb ?? 0) + (game.bb ?? 0),
     inningsPitched: ip,
     era,
+    runsAllowed: Math.round(combinedRuns * 100) / 100,
     w: (season.w ?? 0) + (game.w ?? 0),
     l: (season.l ?? 0) + (game.l ?? 0),
   }

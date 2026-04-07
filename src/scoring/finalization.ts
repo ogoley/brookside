@@ -24,6 +24,8 @@ export interface FinalizeInput {
   currentGameAtBats: AtBatRecord[]
   /** All at-bats from previously-finalized games */
   previousAtBats: Array<AtBatRecord & { gameId: string }>
+  /** Game records for previously-finalized games — used for W/L derivation */
+  previousGames: Record<string, GameRecord>
   /** Full players map — used for teamId lookups */
   players: PlayersMap
 }
@@ -40,7 +42,7 @@ export interface FinalizeOutput {
 interface BatAcc {
   pa: number; ab: number; h: number
   doubles: number; triples: number; hr: number
-  rbi: number; bb: number; k: number; hbp: number; sf: number
+  rbi: number; bb: number; k: number
   games: Set<string>
 }
 
@@ -56,7 +58,7 @@ interface PitchAcc {
 // ── Main export ────────────────────────────────────────────────────────────
 
 export function computeFinalization(input: FinalizeInput): FinalizeOutput {
-  const { gameId, game, currentGameAtBats, previousAtBats, players } = input
+  const { gameId, game, currentGameAtBats, previousAtBats, previousGames, players } = input
   const summary: string[] = []
 
   // All at-bats across all games (prev finalized + current)
@@ -80,7 +82,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     const { batterId, pitcherId, result, runnersScored = [], rbiCount, batterAdvancedTo, outsOnPlay } = ab
 
     // ── Hitting ─────────────────────────────────────────────────────────
-    if (!batting[batterId]) batting[batterId] = { pa: 0, ab: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, games: new Set() }
+    if (!batting[batterId]) batting[batterId] = { pa: 0, ab: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, games: new Set() }
     const b = batting[batterId]
     b.games.add(ab.gameId)
     b.pa++
@@ -91,8 +93,6 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     if (result === 'home_run') b.hr++
     if (result === 'walk') b.bb++
     if (result === 'strikeout' || result === 'strikeout_looking') b.k++
-    if (result === 'hbp') b.hbp++
-    if (result === 'sacrifice_fly') b.sf++
     b.rbi += rbiCount
     if (batterAdvancedTo === 'home') runs[batterId] = (runs[batterId] ?? 0) + 1
 
@@ -114,15 +114,39 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     }
   }
 
-  // ── W/L determination ─────────────────────────────────────────────────────
-  // Only assign W/L if game has a clear winner.
-  // Pitcher with most outs for their team gets W or L (minimum 9 outs = 3 innings to qualify).
+  // ── W/L determination (fully event-sourced across all games) ────────────────
+  // For each game (previous + current), determine the W/L pitcher from that game's
+  // at-bats and scores. This makes W/L safe to recompute on re-finalization.
+  const wlTally: Record<string, { w: number; l: number }> = {}
+
+  // Group previous at-bats by gameId for per-game W/L computation
+  const prevAtBatsByGame: Record<string, AtBatRecord[]> = {}
+  for (const ab of previousAtBats) {
+    if (!prevAtBatsByGame[ab.gameId]) prevAtBatsByGame[ab.gameId] = []
+    prevAtBatsByGame[ab.gameId].push(ab)
+  }
+
+  // Compute W/L for each previously-finalized game
+  for (const [gId, gRecord] of Object.entries(previousGames) as [string, GameRecord][]) {
+    const gAtBats = prevAtBatsByGame[gId] ?? []
+    const gWinner = gRecord.homeScore > gRecord.awayScore ? gRecord.homeTeamId
+      : gRecord.awayScore > gRecord.homeScore ? gRecord.awayTeamId : null
+    if (!gWinner) continue
+    const gLoserTeam = gWinner === gRecord.homeTeamId ? gRecord.awayTeamId : gRecord.homeTeamId
+    const gW = findWinningPitcher(gAtBats, gWinner, players)
+    const gL = findWinningPitcher(gAtBats, gLoserTeam, players)
+    if (gW) { if (!wlTally[gW]) wlTally[gW] = { w: 0, l: 0 }; wlTally[gW].w++ }
+    if (gL) { if (!wlTally[gL]) wlTally[gL] = { w: 0, l: 0 }; wlTally[gL].l++ }
+  }
+
+  // Compute W/L for the current game
   const { homeScore, awayScore, homeTeamId, awayTeamId } = game
   const winnerTeamId = homeScore > awayScore ? homeTeamId : homeScore < awayScore ? awayTeamId : null
-
   const wPitcherId = winnerTeamId ? findWinningPitcher(currentGameAtBats, winnerTeamId, players) : null
   const loserTeamId = winnerTeamId === homeTeamId ? awayTeamId : winnerTeamId === awayTeamId ? homeTeamId : null
   const lPitcherId = loserTeamId ? findWinningPitcher(currentGameAtBats, loserTeamId, players) : null
+  if (wPitcherId) { if (!wlTally[wPitcherId]) wlTally[wPitcherId] = { w: 0, l: 0 }; wlTally[wPitcherId].w++ }
+  if (lPitcherId) { if (!wlTally[lPitcherId]) wlTally[lPitcherId] = { w: 0, l: 0 }; wlTally[lPitcherId].l++ }
 
   if (wPitcherId) summary.push(`  W → ${players[wPitcherId]?.name ?? wPitcherId}`)
   if (lPitcherId) summary.push(`  L → ${players[lPitcherId]?.name ?? lPitcherId}`)
@@ -140,9 +164,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     const singles = b.h - b.doubles - b.triples - b.hr
     const tb = singles + b.doubles * 2 + b.triples * 3 + b.hr * 4
     const avg = b.ab > 0 ? Math.round((b.h / b.ab) * 1000) / 1000 : 0
-    const obpNum = b.h + b.bb + b.hbp
-    const obpDen = b.ab + b.bb + b.hbp + b.sf
-    const obp = obpDen > 0 ? Math.round((obpNum / obpDen) * 1000) / 1000 : 0
+    const obp = b.pa > 0 ? Math.round(((b.h + b.bb) / b.pa) * 1000) / 1000 : 0
     const slg = b.ab > 0 ? Math.round((tb / b.ab) * 1000) / 1000 : 0
     const hs: HittingStats = {
       gp: b.games.size, pa: b.pa, ab: b.ab, h: b.h,
@@ -154,21 +176,19 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     summary.push(`  Hitting → ${players[playerId]?.name ?? playerId}: ${b.ab}AB ${b.h}H .${String(Math.round(avg * 1000)).padStart(3, '0')}`)
   }
 
-  // Season pitching stats
-  // W/L is game-level — not re-derivable from at-bats — so we take the prior stored value
-  // (from all previously-finalized games) and add this game's result on top.
+  // Season pitching stats — W/L is fully event-sourced from wlTally
   for (const [playerId, p] of Object.entries(pitching)) {
     const ip = Math.round((p.outs / 3) * 100) / 100
     const era = p.outs > 0 ? Math.round((p.runs / (p.outs / 3)) * 7 * 100) / 100 : 0
-    const priorW = players[playerId]?.stats?.pitching?.w ?? 0
-    const priorL = players[playerId]?.stats?.pitching?.l ?? 0
+    const wl = wlTally[playerId] ?? { w: 0, l: 0 }
     const ps: PitchingStats = {
       gp: p.games.size, k: p.k, bb: p.bb, inningsPitched: ip, era,
-      w: priorW + (playerId === wPitcherId ? 1 : 0),
-      l: priorL + (playerId === lPitcherId ? 1 : 0),
+      runsAllowed: p.runs,
+      w: wl.w,
+      l: wl.l,
     }
     updates[`players/${playerId}/stats/pitching`] = ps
-    summary.push(`  Pitching → ${players[playerId]?.name ?? playerId}: ${ip}IP ${era}ERA ${p.k}K`)
+    summary.push(`  Pitching → ${players[playerId]?.name ?? playerId}: ${ip}IP ${era}ERA ${p.k}K ${wl.w}W-${wl.l}L`)
   }
 
   // Game summaries

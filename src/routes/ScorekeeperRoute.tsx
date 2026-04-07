@@ -92,8 +92,6 @@ export function ScorekeeperRoute() {
   const [showNewGameModal, setShowNewGameModal] = useState(false)
   const [showLineupEditor, setShowLineupEditor] = useState(false)
 
-  const playerName = (id: string) => players[id]?.name ?? id
-
   const activeGameRecord = activeGameId ? games.find(g => g.gameId === activeGameId) : null
 
   if (activeGameId && activeGameRecord?.game.finalized) {
@@ -125,7 +123,6 @@ export function ScorekeeperRoute() {
         gameId={activeGameId}
         players={players}
         teams={teams}
-        playerName={playerName}
         onBack={() => setActiveGameId(null)}
         onEditLineup={() => setShowLineupEditor(true)}
       />
@@ -489,9 +486,12 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
                 lineup={homeLineup}
                 onChange={setHomeLineup}
               />
-              <SkBtn onClick={() => setStep('away_lineup')} primary>
+              <SkBtn onClick={() => setStep('away_lineup')} primary disabled={homeLineup.filter(e => !e.isSub).length < 4}>
                 Next — {teams[awayTeamId]?.shortName ?? 'Away'} Lineup →
               </SkBtn>
+              {homeLineup.filter(e => !e.isSub).length < 4 && (
+                <p className="text-yellow-400/60 text-xs text-center">Need at least 4 starters</p>
+              )}
               <SkBtn onClick={() => setStep('teams')}>← Back</SkBtn>
             </>
           )}
@@ -505,9 +505,12 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
                 lineup={awayLineup}
                 onChange={setAwayLineup}
               />
-              <SkBtn onClick={() => setStep('confirm')} primary>
+              <SkBtn onClick={() => setStep('confirm')} primary disabled={awayLineup.filter(e => !e.isSub).length < 4}>
                 Next — Confirm →
               </SkBtn>
+              {awayLineup.filter(e => !e.isSub).length < 4 && (
+                <p className="text-yellow-400/60 text-xs text-center">Need at least 4 starters</p>
+              )}
               <SkBtn onClick={() => setStep('home_lineup')}>← Back</SkBtn>
             </>
           )}
@@ -577,6 +580,9 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
   lineup: LineupEntry[]
   onChange: (lineup: LineupEntry[]) => void
 }) {
+  const [customSubName, setCustomSubName] = useState('')
+  const [showCustomSub, setShowCustomSub] = useState(false)
+
   const teamPlayers = Object.entries(players)
     .filter(([, p]) => p.teamId === teamId)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
@@ -586,6 +592,14 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
 
   const addToLineup = (playerId: string, isSub = false) => {
     onChange([...lineup, { playerId, isSub }])
+  }
+
+  const addCustomSub = () => {
+    const name = customSubName.trim()
+    if (!name) return
+    onChange([...lineup, { playerId: `sub_${Date.now()}`, isSub: true, subName: name }])
+    setCustomSubName('')
+    setShowCustomSub(false)
   }
 
   const remove = (playerId: string) => {
@@ -624,7 +638,7 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
                 {entry.isSub ? 'S' : i + 1}
               </span>
               <span className="text-white text-sm font-semibold flex-1">
-                {players[entry.playerId]?.name ?? entry.playerId}
+                {entry.subName ?? players[entry.playerId]?.name ?? entry.playerId}
               </span>
               <div className="flex items-center gap-1">
                 {!entry.isSub && (
@@ -666,6 +680,45 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
           ))}
         </div>
       )}
+
+      {/* Custom sub (someone not on the roster) */}
+      {!showCustomSub ? (
+        <button
+          onClick={() => setShowCustomSub(true)}
+          className="w-full h-11 rounded-xl text-sm font-semibold"
+          style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.35)', border: '1px dashed rgba(255,255,255,0.12)' }}
+        >
+          + Custom Sub (not on roster)
+        </button>
+      ) : (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={customSubName}
+            onChange={e => setCustomSubName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addCustomSub()}
+            placeholder="Sub name…"
+            autoFocus
+            className="flex-1 h-11 rounded-xl px-3 text-sm font-semibold"
+            style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+          />
+          <button
+            onClick={addCustomSub}
+            disabled={!customSubName.trim()}
+            className="h-11 px-4 rounded-xl text-xs font-bold"
+            style={{ background: customSubName.trim() ? '#2563eb' : '#1c2333', color: customSubName.trim() ? '#fff' : 'rgba(255,255,255,0.3)' }}
+          >
+            Add
+          </button>
+          <button
+            onClick={() => { setShowCustomSub(false); setCustomSubName('') }}
+            className="h-11 px-3 rounded-xl text-xs font-semibold"
+            style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -683,7 +736,7 @@ function LineupSummary({ label, lineup, players }: { label: string; lineup: Game
       <div className="flex flex-col gap-0.5">
         {lineup.map((entry, i) => (
           <p key={entry.playerId} className="text-white/70 text-xs">
-            {entry.isSub ? 'S' : `${i + 1}.`} {players[entry.playerId]?.name ?? entry.playerId}
+            {entry.isSub ? 'S' : `${i + 1}.`} {entry.subName ?? players[entry.playerId]?.name ?? entry.playerId}
             {entry.isSub && <span className="text-white/30 ml-1">(sub)</span>}
           </p>
         ))}
@@ -694,11 +747,10 @@ function LineupSummary({ label, lineup, players }: { label: string; lineup: Game
 
 // ── Game Wizard ─────────────────────────────────────────────────────────────
 
-function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }: {
+function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   gameId: string
   players: PlayersMap
   teams: TeamsMap
-  playerName: (id: string) => string
   onBack: () => void
   onEditLineup: () => void
 }) {
@@ -714,7 +766,15 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
   const fieldingTeamId = isTopInning ? (game?.homeTeamId ?? '') : (game?.awayTeamId ?? '')
 
   const { lineup: battingLineup } = useGameLineup(gameId, battingTeamId)
-  useGameLineup(gameId, fieldingTeamId)  // prefetch fielding lineup (used in inning-end pitcher picker)
+  const { lineup: fieldingLineup } = useGameLineup(gameId, fieldingTeamId)
+
+  // Resolve player name: checks real players first, then lineup subName entries
+  const resolvePlayerName = (id: string) => {
+    if (players[id]?.name) return players[id].name
+    const entry = [...battingLineup, ...fieldingLineup].find(e => e.playerId === id)
+    if (entry?.subName) return entry.subName
+    return id
+  }
 
   // Lineup position for batting team (persisted in Firebase)
   const [lineupPosition, setLineupPosition] = useState(0)
@@ -858,10 +918,16 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
         const leadBase = chain[chain.length - 1]
         const preFilledOutcomes: RunnerOutcomes = {}
         for (const base of chain) {
-          preFilledOutcomes[base] = base === leadBase ? 'sits' : 'stayed'
+          if (base === leadBase) {
+            preFilledOutcomes[base] = 'sits'
+          } else if (base === 'first') {
+            preFilledOutcomes.first = 'second'
+          } else if (base === 'second') {
+            preFilledOutcomes.second = 'third'
+          }
         }
         setRunnerOutcomes(preFilledOutcomes)
-        setBatterAdvancedTo('first')  // batter stays on 1st; lead runner takes the out
+        setBatterAdvancedTo('first')  // batter is recorded as out but stays on 1st
       } else {
         setRunnerOutcomes({})
       }
@@ -916,9 +982,11 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       }
     }
 
-    // Determine isSub
-    const regularEntry = battingLineup.find(e => e.playerId === batterId && !e.isSub)
+    // Determine isSub + subName for anonymous subs
+    const lineupEntry = battingLineup.find(e => e.playerId === batterId)
+    const regularEntry = lineupEntry && !lineupEntry.isSub ? lineupEntry : null
     const isSub = !regularEntry
+    const subName = lineupEntry?.subName
 
     // Compute derived fields
     const runnersScored = bases
@@ -948,14 +1016,15 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       outsOnPlay,
       rbiCount,
       batterAdvancedTo,
+      ...(subName ? { subName } : {}),
     }
 
     // Run through engine for narrated log + next runner state
     const engineResult = applyAtBat({
       record,
       currentRunners: liveRunners,
-      batterName: playerName(batterId),
-      getPlayerName: playerName,
+      batterName: resolvePlayerName(batterId),
+      getPlayerName: resolvePlayerName,
       homeScore: game?.homeScore ?? 0,
       awayScore: game?.awayScore ?? 0,
       isHomeTeamBatting: !isTopInning,
@@ -1061,12 +1130,13 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       const thisGame = allGames[gameId]
       if (!thisGame) return
 
-      const prevGameIds = Object.entries(allGames)
+      const prevGameEntries = Object.entries(allGames)
         .filter(([id, g]) => g.finalized && id !== gameId)
-        .map(([id]) => id)
 
+      const previousGames: Record<string, typeof thisGame & { finalized: boolean }> = {}
       const previousAtBats: Array<AtBatRecord & { gameId: string }> = []
-      for (const gId of prevGameIds) {
+      for (const [gId, gRecord] of prevGameEntries) {
+        previousGames[gId] = gRecord
         const snap = await get(ref(db, `gameStats/${gId}`))
         if (snap.exists()) {
           for (const ab of Object.values(snap.val() as Record<string, AtBatRecord>)) {
@@ -1085,6 +1155,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
         game: { ...thisGame, finalized: false, finalizedAt: undefined },
         currentGameAtBats,
         previousAtBats,
+        previousGames: previousGames as Record<string, import('../types').GameRecord>,
         players,
       })
 
@@ -1093,6 +1164,9 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
         summary.forEach(line => console.log(line))
         console.groupEnd()
       }
+
+      // If this was the active streamed game, disconnect it from the controller
+      if (thisGame.isStreamed) updates['game/meta/currentGameId'] = null
 
       await update(ref(db), updates)
       setShowGameCompletePrompt(false)
@@ -1177,7 +1251,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
       else startAwayScore += runs
     }
 
-    const replay = replayHalfInning(currentHalfAbs, playerName, isHomeTeamBatting, startHomeScore, startAwayScore)
+    const replay = replayHalfInning(currentHalfAbs, resolvePlayerName, isHomeTeamBatting, startHomeScore, startAwayScore)
 
     const newHomeScore = startHomeScore + (isHomeTeamBatting ? replay.totalRuns : 0)
     const newAwayScore = startAwayScore + (!isHomeTeamBatting ? replay.totalRuns : 0)
@@ -1228,15 +1302,17 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
     await deleteAtBat(lastAtBatId)
   }
 
-  const startEdit = (atBatId: string) => {
+  const startEdit = async (atBatId: string) => {
     if (atBatId !== lastAtBatId) return  // only last at-bat is editable
     const ab = atBats[atBatId]
     if (!ab) return
+    // Pre-fill wizard with the at-bat's data, then delete the old record (same as undo)
     setBatterId(ab.batterId)
     setPitcherId(ab.pitcherId)
     setResult(ab.result)
     setRunnerOutcomes(ab.runnerOutcomes ?? {})
     setBatterAdvancedTo(ab.batterAdvancedTo)
+    await deleteAtBat(atBatId)
     setStep('confirm')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -1378,7 +1454,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
 
       {/* Base diamond + outs */}
       <div className="flex items-center justify-between mb-4 px-1">
-        <RunnerDiamond runners={liveRunners} getPlayerName={playerName} size={100} />
+        <RunnerDiamond runners={liveRunners} getPlayerName={resolvePlayerName} size={100} />
         <div className="flex flex-col items-center gap-1">
           <span className="text-white/30 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Outs</span>
           <div className="flex gap-2">
@@ -1404,7 +1480,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
           <div className="flex items-center justify-between rounded-xl px-4 py-3 mb-3"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <span className="text-white/40 text-sm">
-              ↩ {players[lastAb.batterId]?.name ?? lastAb.batterId} — {RESULT_LABELS[lastAb.result] ?? lastAb.result}
+              ↩ {lastAb.subName ?? players[lastAb.batterId]?.name ?? lastAb.batterId} — {RESULT_LABELS[lastAb.result] ?? lastAb.result}
             </span>
             <button
               onClick={undoLastAtBat}
@@ -1448,7 +1524,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
                     {subBatters.length > 0 && (
                       <optgroup label="Subs">
                         {subBatters.map(id => (
-                          <option key={id} value={id}>{players[id]?.name ?? id} (sub)</option>
+                          <option key={id} value={id}>{resolvePlayerName(id)} (sub)</option>
                         ))}
                       </optgroup>
                     )}
@@ -1522,7 +1598,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
               <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
                 <p className="text-yellow-400 font-semibold mb-1">Chain Rule</p>
                 <p className="text-yellow-300/70 text-xs">
-                  Connected chain — batter is out, lead runner sits down and leaves the bases as a result. Batter stays on 1st. 1 out total. Adjust below if needed.
+                  Connected chain — batter is recorded as out but stays on 1st. Lead runner sits down and leaves the bases. 1 out total. Adjust below if needed.
                 </p>
               </div>
             )}
@@ -1576,7 +1652,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
                 return (
                   <div key={base} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                     <p className="text-white font-semibold text-sm mb-2">
-                      {playerName(runnerId)}
+                      {resolvePlayerName(runnerId)}
                       <span className="text-white/40 text-xs ml-2">{base === 'first' ? '1st' : base === 'second' ? '2nd' : '3rd'}</span>
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -1622,7 +1698,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
 
             <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <div className="flex items-baseline gap-3">
-                <span className="text-white font-bold text-lg">{playerName(batterId)}</span>
+                <span className="text-white font-bold text-lg">{resolvePlayerName(batterId)}</span>
                 <span className="text-white/60 text-sm font-semibold" style={{ fontFamily: 'var(--font-score)' }}>
                   {isTopInning ? '▲' : '▼'}{inning}
                 </span>
@@ -1649,7 +1725,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
                     }
                     return (
                       <p key={base} className="text-sm" style={{ color: outcomeColors[outcome] ?? 'rgba(255,255,255,0.5)' }}>
-                        {lastName(playerName(runnerId))} — {outcomeLabels[outcome] ?? outcome}
+                        {lastName(resolvePlayerName(runnerId))} — {outcomeLabels[outcome] ?? outcome}
                       </p>
                     )
                   })}
@@ -1659,7 +1735,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
               {/* Batter placement */}
               {batterAdvancedTo && batterAdvancedTo !== 'out' && (
                 <p className="text-white/50 text-sm">
-                  {lastName(playerName(batterId))} → {batterAdvancedTo === 'home' ? 'scores' : batterAdvancedTo}
+                  {lastName(resolvePlayerName(batterId))} → {batterAdvancedTo === 'home' ? 'scores' : batterAdvancedTo}
                 </p>
               )}
 
@@ -1822,7 +1898,7 @@ function GameWizard({ gameId, players, teams, playerName, onBack, onEditLineup }
               <tbody>
                 {rows.map(([id, s]) => (
                   <tr key={id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <td className="py-1 text-white/70 truncate" style={{ maxWidth: 60 }}>{lastName(players[id]?.name ?? id)}</td>
+                    <td className="py-1 text-white/70 truncate" style={{ maxWidth: 60 }}>{lastName(resolvePlayerName(id))}</td>
                     {statKeys.map(k => (
                       <td key={k} className="py-1 text-right font-semibold" style={{ fontFamily: 'var(--font-score)', paddingLeft: 6, color: s[k] > 0 ? '#fff' : 'rgba(255,255,255,0.25)' }}>
                         {s[k]}
@@ -1963,7 +2039,7 @@ function AtBatRow({ atBatId, ab, players, isEditable, onEdit, onDelete }: {
     <div className="px-4 py-3 flex items-center justify-between gap-3">
       <div className="flex flex-col gap-0.5 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-white font-semibold text-sm truncate">{batter?.name ?? ab.batterId}</span>
+          <span className="text-white font-semibold text-sm truncate">{ab.subName ?? batter?.name ?? ab.batterId}</span>
           <span className="text-white/60 text-xs font-semibold shrink-0" style={{ fontFamily: 'var(--font-score)' }}>
             {ab.isTopInning ? '▲' : '▼'}{ab.inning}
           </span>

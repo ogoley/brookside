@@ -12,7 +12,9 @@
       "Skill(keybindings-help)",
       "Bash(npx vite:*)",
       "Bash(node -e \"const s = require\\(''./firebase-snapshot.json''\\); console.log\\(Object.keys\\(s.teams || {}\\)\\)\")",
-      "Bash(node -e \"const s = require\\(''./firebase-snapshot.json''\\); Object.entries\\(s.teams\\).forEach\\(\\([id,t]\\) => console.log\\(id, t.shortName, t.primaryColor\\)\\)\")"
+      "Bash(node -e \"const s = require\\(''./firebase-snapshot.json''\\); Object.entries\\(s.teams\\).forEach\\(\\([id,t]\\) => console.log\\(id, t.shortName, t.primaryColor\\)\\)\")",
+      "Bash(gh api:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

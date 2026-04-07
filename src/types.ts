@@ -108,6 +108,7 @@ export interface PitchingStats {
   l?: number
   cg?: number
   sv?: number
+  runsAllowed?: number
 }
 
 export interface PlayerStats {
@@ -173,12 +174,14 @@ export interface AtBatRecord {
   rbiCount: number
   batterAdvancedTo: 'first' | 'second' | 'third' | 'home' | 'out' | null
   notes?: string
+  subName?: string
 }
 
 // One entry in a team's batting lineup
 export interface LineupEntry {
   playerId: string
   isSub: boolean
+  subName?: string
 }
 
 export interface GameRecord {

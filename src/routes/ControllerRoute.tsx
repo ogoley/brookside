@@ -175,12 +175,13 @@ export function ControllerRoute() {
       if (!thisGame) return
 
       // Read at-bats from all previously-finalized games
-      const prevGameIds = Object.entries(allGames)
+      const prevGameEntries = Object.entries(allGames)
         .filter(([id, g]) => g.finalized && id !== gameId)
-        .map(([id]) => id)
 
+      const previousGames: Record<string, typeof thisGame & { finalized: boolean }> = {}
       const previousAtBats: Array<AtBatRecord & { gameId: string }> = []
-      for (const gId of prevGameIds) {
+      for (const [gId, gRecord] of prevGameEntries) {
+        previousGames[gId] = gRecord
         const snap = await get(ref(db, `gameStats/${gId}`))
         if (snap.exists()) {
           const records = snap.val() as Record<string, AtBatRecord>
@@ -202,6 +203,7 @@ export function ControllerRoute() {
         game: { ...thisGame, finalized: false, finalizedAt: undefined },
         currentGameAtBats,
         previousAtBats,
+        previousGames: previousGames as Record<string, import('../types').GameRecord>,
         players,
       })
 

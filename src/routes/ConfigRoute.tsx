@@ -4,9 +4,10 @@ import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject }
 import { Link } from 'react-router-dom'
 import { db, storage } from '../firebase'
 import { useTeams } from '../hooks/useTeams'
+import { usePlayers } from '../hooks/usePlayers'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { TeamPillPreview } from '../components/TeamPillPreview'
-import type { Team } from '../types'
+import type { Team, Player } from '../types'
 
 function deleteStorageLogo(url: string) {
   try {
@@ -27,9 +28,11 @@ const EMPTY_TEAM: Team = {
 
 export function ConfigRoute() {
   const { teams } = useTeams()
+  const { players } = usePlayers()
   const { config } = useLeagueConfig()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<Team>(EMPTY_TEAM)
+  const [rosterTeamId, setRosterTeamId] = useState<string | null>(null)
 
   const startEdit = (id: string, team: Team) => {
     setEditingId(id)
@@ -124,6 +127,7 @@ export function ConfigRoute() {
               team={team}
               onEdit={() => startEdit(id, team)}
               onDelete={() => deleteTeam(id, team.logoUrl)}
+              onRoster={() => setRosterTeamId(id)}
             />
           )
         )}
@@ -154,13 +158,23 @@ export function ConfigRoute() {
           </button>
         )}
       </div>
+
+      {/* Roster modal */}
+      {rosterTeamId && (
+        <RosterModal
+          teamId={rosterTeamId}
+          teamName={teams[rosterTeamId]?.name ?? rosterTeamId}
+          players={players}
+          onClose={() => setRosterTeamId(null)}
+        />
+      )}
     </div>
   )
 }
 
 /* ── Team card (list view) ── */
 
-function TeamCard({ team, onEdit, onDelete }: { team: Team; onEdit: () => void; onDelete: () => void }) {
+function TeamCard({ team, onEdit, onDelete, onRoster }: { team: Team; onEdit: () => void; onDelete: () => void; onRoster: () => void }) {
   return (
     <div
       className="flex items-center gap-4 rounded-2xl px-4 py-3"
@@ -173,6 +187,13 @@ function TeamCard({ team, onEdit, onDelete }: { team: Team; onEdit: () => void; 
           {team.shortName}
         </p>
       </div>
+      <button
+        onClick={onRoster}
+        className="h-9 px-4 rounded-lg text-sm font-semibold shrink-0"
+        style={{ background: 'rgba(37,99,235,0.15)', color: '#60a5fa', border: '1px solid rgba(37,99,235,0.3)' }}
+      >
+        Roster
+      </button>
       <button
         onClick={onEdit}
         className="h-9 px-4 rounded-lg text-sm font-semibold shrink-0"
@@ -400,6 +421,235 @@ function LogoUpload({ currentUrl, teamName, onUploaded }: {
         className="hidden"
         onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
       />
+    </div>
+  )
+}
+
+/* ── Roster modal ── */
+
+const EMPTY_PLAYER: Omit<Player, 'stats'> = { name: '', teamId: '', jerseyNumber: '' }
+
+function RosterModal({ teamId, teamName, players, onClose }: {
+  teamId: string
+  teamName: string
+  players: Record<string, Player>
+  onClose: () => void
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<Omit<Player, 'stats'>>({ ...EMPTY_PLAYER, teamId })
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  const teamPlayers = Object.entries(players)
+    .filter(([, p]) => p.teamId === teamId)
+    .sort((a, b) => a[1].name.localeCompare(b[1].name))
+
+  const startNew = () => {
+    setEditingId('__new__')
+    setForm({ ...EMPTY_PLAYER, teamId })
+  }
+
+  const startEdit = (id: string, player: Player) => {
+    setEditingId(id)
+    setForm({ name: player.name, teamId: player.teamId, jerseyNumber: player.jerseyNumber ?? '' })
+  }
+
+  const cancel = () => { setEditingId(null); setConfirmDelete(null) }
+
+  const save = async () => {
+    if (!form.name.trim()) return
+    if (editingId === '__new__') {
+      await push(ref(db, 'players'), { ...form, stats: {} })
+    } else if (editingId) {
+      // Preserve existing stats when editing
+      const existing = players[editingId]
+      await set(ref(db, `players/${editingId}`), { ...existing, name: form.name, jerseyNumber: form.jerseyNumber })
+    }
+    setEditingId(null)
+  }
+
+  const deletePlayer = async (id: string) => {
+    await remove(ref(db, `players/${id}`))
+    setConfirmDelete(null)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className="rounded-2xl p-5 flex flex-col gap-4"
+        style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.15)', width: 480, maxHeight: '80vh', overflow: 'auto' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h2
+            className="text-white text-lg font-black uppercase tracking-widest"
+            style={{ fontFamily: 'var(--font-score)' }}
+          >
+            {teamName} Roster
+          </h2>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 rounded-lg text-sm font-semibold"
+            style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Player count */}
+        <p className="text-white/40 text-xs" style={{ fontFamily: 'var(--font-ui)' }}>
+          {teamPlayers.length} player{teamPlayers.length !== 1 ? 's' : ''}
+        </p>
+
+        {/* Player list */}
+        {teamPlayers.map(([id, player]) =>
+          editingId === id ? (
+            <PlayerForm key={id} form={form} onChange={setForm} onSave={save} onCancel={cancel} />
+          ) : (
+            <div
+              key={id}
+              className="flex items-center gap-3 rounded-xl px-3 py-2"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              {/* Jersey number */}
+              {player.jerseyNumber && (
+                <span
+                  className="text-white/30 text-sm font-bold shrink-0"
+                  style={{ fontFamily: 'var(--font-score)', width: 28, textAlign: 'center' }}
+                >
+                  #{player.jerseyNumber}
+                </span>
+              )}
+              <span className="flex-1 text-white text-sm font-medium truncate">{player.name}</span>
+
+              {confirmDelete === id ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-red-400 text-xs">Delete?</span>
+                  <button
+                    onClick={() => deletePlayer(id)}
+                    className="h-7 px-3 rounded-md text-xs font-semibold"
+                    style={{ background: '#7f1d1d', color: '#f87171' }}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(null)}
+                    className="h-7 px-3 rounded-md text-xs font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}
+                  >
+                    No
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => startEdit(id, player)}
+                    className="h-7 px-3 rounded-md text-xs font-semibold shrink-0"
+                    style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(id)}
+                    className="h-7 px-2 rounded-md text-xs font-semibold shrink-0"
+                    style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
+            </div>
+          )
+        )}
+
+        {/* New player form or Add button */}
+        {editingId === '__new__' ? (
+          <PlayerForm form={form} onChange={setForm} onSave={save} onCancel={cancel} />
+        ) : (
+          <button
+            onClick={startNew}
+            className="w-full h-11 rounded-xl text-sm font-bold uppercase tracking-wider transition-colors"
+            style={{
+              background: 'transparent',
+              color: 'rgba(255,255,255,0.35)',
+              border: '2px dashed rgba(255,255,255,0.15)',
+              fontFamily: 'var(--font-score)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'rgba(255,255,255,0.65)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'rgba(255,255,255,0.35)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'
+            }}
+          >
+            + Add Player
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── Player form (inline add/edit) ── */
+
+function PlayerForm({ form, onChange, onSave, onCancel }: {
+  form: Omit<Player, 'stats'>
+  onChange: (f: Omit<Player, 'stats'>) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  const canSave = form.name.trim().length > 0
+
+  return (
+    <div
+      className="rounded-xl p-3 flex flex-col gap-3"
+      style={{ background: 'rgba(37,99,235,0.08)', border: '1px solid rgba(37,99,235,0.2)' }}
+    >
+      <div className="grid grid-cols-[1fr_80px] gap-2">
+        <input
+          type="text"
+          value={form.name}
+          onChange={e => onChange({ ...form, name: e.target.value })}
+          placeholder="Player name"
+          autoFocus
+          className="h-10 rounded-lg px-3 text-sm"
+          style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+        />
+        <input
+          type="text"
+          value={form.jerseyNumber ?? ''}
+          onChange={e => onChange({ ...form, jerseyNumber: e.target.value.slice(0, 3) })}
+          placeholder="#"
+          className="h-10 rounded-lg px-3 text-sm text-center font-bold"
+          style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', fontFamily: 'var(--font-score)' }}
+        />
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={onSave}
+          disabled={!canSave}
+          className="flex-1 h-9 rounded-lg font-bold text-sm uppercase tracking-wider"
+          style={{
+            background: canSave ? '#2563eb' : '#1c2333',
+            color: canSave ? '#fff' : 'rgba(255,255,255,0.3)',
+            cursor: canSave ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Save
+        </button>
+        <button
+          onClick={onCancel}
+          className="h-9 px-4 rounded-lg text-sm font-semibold"
+          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
