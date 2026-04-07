@@ -11,7 +11,13 @@ export function usePlayers() {
     const playersRef = ref(db, 'players')
     const unsub = onValue(playersRef, (snap) => {
       if (snap.exists()) {
-        setPlayers(snap.val())
+        const raw = snap.val() as Record<string, Record<string, unknown>>
+        // Ensure every player has a `stats` object — Firebase omits it when empty
+        const normalized: PlayersMap = {}
+        for (const [id, data] of Object.entries(raw)) {
+          normalized[id] = { ...data, stats: data.stats ?? {} } as PlayersMap[string]
+        }
+        setPlayers(normalized)
       }
       setLoading(false)
     })

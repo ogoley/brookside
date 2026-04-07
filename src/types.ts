@@ -69,16 +69,26 @@ export interface TeamStanding {
 // /standings — ordered array, index 0 = first place
 export type StandingsData = TeamStanding[]
 
+export interface InsightsState {
+  title: string
+  point1: string
+  point2: string
+  point3: string
+  point4: string
+  visibleCount: number // 0–4: how many points are currently revealed
+}
+
 export interface OverlayState {
-  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'idle'
+  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'idle'
   statOverlay: StatOverlayState
   timer: TimerState
   homerun: HomrunState
+  insights: InsightsState
   scoreboardBorder: boolean
   scoreboardScale: number
 }
 
-export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'idle'
+export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'idle'
 
 export interface HittingStats {
   gp?: number       // games played

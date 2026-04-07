@@ -24,6 +24,14 @@ const DEFAULT_OVERLAY: OverlayState = {
     runsScored: 1,
     triggeredAt: 0,
   },
+  insights: {
+    title: 'Game Insights',
+    point1: '',
+    point2: '',
+    point3: '',
+    point4: '',
+    visibleCount: 0,
+  },
   scoreboardBorder: true,
   scoreboardScale: 0.75,
 }
@@ -50,6 +58,10 @@ export function useOverlayState() {
           homerun: {
             ...DEFAULT_OVERLAY.homerun,
             ...(data.homerun ?? {}),
+          },
+          insights: {
+            ...DEFAULT_OVERLAY.insights,
+            ...(data.insights ?? {}),
           },
           scoreboardBorder: data.scoreboardBorder ?? DEFAULT_OVERLAY.scoreboardBorder,
           scoreboardScale: data.scoreboardScale ?? DEFAULT_OVERLAY.scoreboardScale,

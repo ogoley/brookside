@@ -6,7 +6,7 @@ import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
-import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene } from '../scenes'
+import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene } from '../scenes'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
 
 function OverlayContent() {
@@ -84,6 +84,18 @@ function OverlayContent() {
             transition={{ type: 'spring', damping: 28, stiffness: 220 }}
           >
             <StandingsScene teams={teams} />
+          </motion.div>
+        )}
+        {sceneKey === 'insights' && (
+          <motion.div
+            key="insights"
+            className="absolute inset-0"
+            initial={{ y: '-100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+          >
+            <InsightsScene insights={overlay.insights} />
           </motion.div>
         )}
         {sceneKey === 'idle' && (

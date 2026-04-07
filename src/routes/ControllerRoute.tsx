@@ -41,6 +41,10 @@ export function ControllerRoute() {
   const [devResetting, setDevResetting] = useState(false)
   const [forceInning, setForceInning] = useState(1)
   const [forceIsTop, setForceIsTop] = useState(true)
+  const [insightsModalOpen, setInsightsModalOpen] = useState(false)
+  const [insightsExpanded, setInsightsExpanded] = useState(false)
+  const [insightsTitle, setInsightsTitle] = useState('')
+  const [insightsPoints, setInsightsPoints] = useState(['', '', '', ''])
 
   // Stat reminder — nudge the broadcaster if a batter has been set for 30s without showing stats
   const [statReminderBatterId, setStatReminderBatterId] = useState<string | null>(null)
@@ -426,14 +430,107 @@ export function ControllerRoute() {
               {SCENES.map((s) => (
                 <TouchBtn
                   key={s.id}
-                  onClick={() => setScene(s.id)}
+                  onClick={() => { setScene(s.id); setInsightsExpanded(false) }}
                   active={overlay.activeScene === s.id}
                   className="h-16 text-base font-bold"
                 >
                   {s.label}
                 </TouchBtn>
               ))}
+              {/* Insights — toggles staging panel instead of switching scene directly */}
+              <TouchBtn
+                onClick={() => setInsightsExpanded(prev => !prev)}
+                active={insightsExpanded || overlay.activeScene === 'insights'}
+                className="h-16 text-base font-bold"
+              >
+                Insights
+              </TouchBtn>
             </div>
+
+            {/* Insights staging panel */}
+            {insightsExpanded && (() => {
+              const isLive = overlay.activeScene === 'insights'
+              const totalPoints = [overlay.insights?.point1, overlay.insights?.point2, overlay.insights?.point3, overlay.insights?.point4]
+                .filter(p => p && p.trim() !== '').length
+              const shown = overlay.insights?.visibleCount ?? 0
+              return (
+                <div
+                  className="rounded-xl p-3 flex flex-col gap-3 mt-1"
+                  style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)' }}
+                >
+                  {/* Show / Hide */}
+                  <div className="flex gap-2">
+                    {!isLive ? (
+                      <button
+                        onClick={() => {
+                          update(ref(db, 'overlay/insights'), { visibleCount: 0 })
+                          update(ref(db, 'overlay'), { activeScene: 'insights' })
+                        }}
+                        className="flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider"
+                        style={{ background: '#16a34a', color: '#fff' }}
+                      >
+                        Show Insights
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => update(ref(db, 'overlay'), { activeScene: 'game' })}
+                        className="flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider"
+                        style={{ background: '#b91c1c', color: '#fff' }}
+                      >
+                        Hide Insights
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setInsightsTitle(overlay.insights?.title ?? 'Game Insights')
+                        setInsightsPoints([
+                          overlay.insights?.point1 ?? '',
+                          overlay.insights?.point2 ?? '',
+                          overlay.insights?.point3 ?? '',
+                          overlay.insights?.point4 ?? '',
+                        ])
+                        setInsightsModalOpen(true)
+                      }}
+                      className="h-12 px-4 rounded-xl font-semibold text-sm uppercase tracking-wider"
+                      style={{ background: 'rgba(96,165,250,0.15)', color: 'rgba(96,165,250,0.9)', border: '1px solid rgba(96,165,250,0.3)' }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+
+                  {/* Point controls — only when live */}
+                  {isLive && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => update(ref(db, 'overlay/insights'), { visibleCount: Math.min(shown + 1, totalPoints) })}
+                        disabled={shown >= totalPoints}
+                        className="flex-1 h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
+                        style={{
+                          background: shown < totalPoints ? '#1d4ed8' : '#1c2333',
+                          color: shown < totalPoints ? '#fff' : 'rgba(255,255,255,0.3)',
+                          cursor: shown < totalPoints ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        Next Point ({shown}/{totalPoints})
+                      </button>
+                      <button
+                        onClick={() => update(ref(db, 'overlay/insights'), { visibleCount: 0 })}
+                        className="h-11 px-4 rounded-xl font-bold text-sm uppercase tracking-wider"
+                        style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  )}
+
+                  {isLive && (
+                    <p className="text-green-400 text-xs text-center" style={{ fontFamily: 'var(--font-ui)' }}>
+                      Insights scene is live
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
           </Section>
 
           {/* AT BAT */}
@@ -940,6 +1037,88 @@ export function ControllerRoute() {
           </div>
         )}
       </div>
+
+      {/* ── INSIGHTS MODAL ── */}
+      {insightsModalOpen && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50"
+          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setInsightsModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-5 flex flex-col gap-4"
+            style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.12)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h2
+              className="text-white text-sm font-bold uppercase tracking-widest"
+              style={{ fontFamily: 'var(--font-score)' }}
+            >
+              Edit Insights
+            </h2>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                Title
+              </label>
+              <input
+                type="text"
+                value={insightsTitle}
+                onChange={e => setInsightsTitle(e.target.value)}
+                placeholder="Game Insights"
+                className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+              />
+            </div>
+
+            {insightsPoints.map((point, i) => (
+              <div key={i} className="flex flex-col gap-1">
+                <label className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+                  Point {i + 1}
+                </label>
+                <input
+                  type="text"
+                  value={point}
+                  onChange={e => {
+                    const next = [...insightsPoints]
+                    next[i] = e.target.value
+                    setInsightsPoints(next)
+                  }}
+                  placeholder={`Bullet point ${i + 1}`}
+                  className="w-full h-11 rounded-lg px-3 text-sm font-medium"
+                  style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                />
+              </div>
+            ))}
+
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => {
+                  update(ref(db, 'overlay/insights'), {
+                    title: insightsTitle,
+                    point1: insightsPoints[0],
+                    point2: insightsPoints[1],
+                    point3: insightsPoints[2],
+                    point4: insightsPoints[3],
+                  })
+                  setInsightsModalOpen(false)
+                }}
+                className="flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider"
+                style={{ background: '#1d4ed8', color: '#fff' }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setInsightsModalOpen(false)}
+                className="flex-1 h-12 rounded-xl font-semibold text-sm uppercase tracking-wider"
+                style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
