@@ -11,6 +11,7 @@
  * What gets captured:
  *   /teams    — all team definitions (colors, names, logos)
  *   /players  — all player records with stats
+ *   /config   — league logo and other config (if set)
  *
  * What gets reset to clean defaults (not read from Firebase):
  *   /game/meta     — inning 1, top, 0 outs, 0-0, no currentGameId
@@ -98,11 +99,12 @@ const CLEAN_DEFAULTS = {
 }
 
 async function main() {
-  console.log('Reading /teams and /players from Firebase...\n')
+  console.log('Reading /teams, /players, and /config from Firebase...\n')
 
-  const [teamsSnap, playersSnap] = await Promise.all([
+  const [teamsSnap, playersSnap, configSnap] = await Promise.all([
     get(ref(db, 'teams')),
     get(ref(db, 'players')),
+    get(ref(db, 'config')),
   ])
 
   if (!teamsSnap.exists()) {
@@ -118,6 +120,7 @@ async function main() {
     ...CLEAN_DEFAULTS,
     teams:   teamsSnap.val(),
     players: playersSnap.val(),
+    ...(configSnap.exists() ? { config: configSnap.val() } : {}),
   }
 
   const outPath = new URL('../firebase-snapshot.json', import.meta.url)
