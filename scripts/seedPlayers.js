@@ -137,7 +137,7 @@ const RAW_PLAYERS = [
   { Name: 'Keith Venancio',     Team: 'Indians',       number: '8',  GP:'9',  PA:'55', AB:'54', H:'27', '2B':'0', '3B':'0', HR:'1',  R:'12', RBI:'11', BB:'1',  K:'7',  AVG:'0.5',   OBP:'0.509', SLG:'0.556', OPS:'1.065' },
   { Name: 'Casey Edgar',        Team: 'Indians',       number: '',   GP:'6',  PA:'29', AB:'24', H:'10', '2B':'0', '3B':'0', HR:'0',  R:'7',  RBI:'5',  BB:'5',  K:'3',  AVG:'0.417', OBP:'0.517', SLG:'0.417', OPS:'0.934' },
   { Name: 'Jordan Pitzer',      Team: 'Indians',       number: '',   GP:'6',  PA:'34', AB:'30', H:'12', '2B':'0', '3B':'0', HR:'2',  R:'8',  RBI:'10', BB:'4',  K:'5',  AVG:'0.4',   OBP:'0.471', SLG:'0.6',   OPS:'1.071' },
-  { Name: 'Dennis Nelson',      Team: 'Indians',       number: '',   GP:'9',  PA:'44', AB:'43', H:'12', '2B':'0', '3B':'0', HR:'1',  R:'12', RBI:'12', BB:'1',  K:'14', AVG:'0.279', OBP:'0.295', SLG:'0.349', OPS:'0.644' },
+  { Name: 'Dennis Nelson',      Team: 'Indians',       number: '15', GP:'9',  PA:'44', AB:'43', H:'12', '2B':'0', '3B':'0', HR:'1',  R:'12', RBI:'12', BB:'1',  K:'14', AVG:'0.279', OBP:'0.295', SLG:'0.349', OPS:'0.644' },
   { Name: 'Brian Stromwall',    Team: 'Indians',       number: '',   GP:'4',  PA:'20', AB:'18', H:'4',  '2B':'0', '3B':'0', HR:'1',  R:'3',  RBI:'4',  BB:'2',  K:'3',  AVG:'0.222', OBP:'0.3',   SLG:'0.389', OPS:'0.689' },
 
   // ── Base Invaders (ex-Padres) ── 6 players

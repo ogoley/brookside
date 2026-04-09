@@ -6,7 +6,7 @@ import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
 import { useGames } from '../hooks/useGames'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
-import type { GameSummary, PlayersMap, TeamsMap } from '../types'
+import type { GameSummary, GameRecord, PlayersMap, TeamsMap } from '../types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ interface ColDef<R> {
   minWidth?: number
 }
 
-type Tab = 'hitting' | 'pitching'
+type Tab = 'standings' | 'hitting' | 'pitching' | 'results'
 type SortDir = 'asc' | 'desc'
 
 interface HittingRow {
@@ -161,6 +161,117 @@ function buildPitchingRows(
   })
 }
 
+interface StandingsRow {
+  teamId: string
+  name: string
+  shortName: string
+  logoUrl: string
+  w: number
+  l: number
+  t: number
+  pct: number
+}
+
+interface ResultRow {
+  gameId: string
+  date: string
+  homeTeamId: string
+  awayTeamId: string
+  homeName: string
+  awayName: string
+  homeLogo: string
+  awayLogo: string
+  homeScore: number
+  awayScore: number
+}
+
+interface TeamRosterRow {
+  playerId: string
+  name: string
+  jerseyNumber: string
+  avg: number
+  hr: number
+  rbi: number
+}
+
+function buildStandings(
+  games: Array<{ gameId: string; game: GameRecord }>,
+  teams: TeamsMap,
+): StandingsRow[] {
+  const agg: Record<string, { w: number; l: number; t: number }> = {}
+  for (const teamId of Object.keys(teams)) {
+    agg[teamId] = { w: 0, l: 0, t: 0 }
+  }
+  for (const { game } of games) {
+    if (!game.finalized) continue
+    const h = agg[game.homeTeamId]
+    const a = agg[game.awayTeamId]
+    if (!h || !a) continue
+    if (game.homeScore > game.awayScore) { h.w++; a.l++ }
+    else if (game.awayScore > game.homeScore) { a.w++; h.l++ }
+    else { h.t++; a.t++ }
+  }
+  return Object.entries(agg).map(([teamId, rec]) => {
+    const t = teams[teamId]
+    const total = rec.w + rec.l + rec.t
+    return {
+      teamId,
+      name: t?.name ?? teamId,
+      shortName: t?.shortName ?? teamId,
+      logoUrl: t?.logoUrl ?? '',
+      ...rec,
+      pct: total > 0 ? (rec.w + rec.t * 0.5) / total : 0,
+    }
+  }).sort((a, b) => b.pct - a.pct || b.w - a.w)
+}
+
+function buildResults(
+  games: Array<{ gameId: string; game: GameRecord }>,
+  teams: TeamsMap,
+): ResultRow[] {
+  return games
+    .filter(({ game }) => game.finalized)
+    .sort((a, b) => (b.game.startedAt ?? 0) - (a.game.startedAt ?? 0))
+    .map(({ gameId, game }) => ({
+      gameId,
+      date: game.date,
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
+      homeName: teams[game.homeTeamId]?.shortName ?? game.homeTeamId,
+      awayName: teams[game.awayTeamId]?.shortName ?? game.awayTeamId,
+      homeLogo: teams[game.homeTeamId]?.logoUrl ?? '',
+      awayLogo: teams[game.awayTeamId]?.logoUrl ?? '',
+      homeScore: game.homeScore,
+      awayScore: game.awayScore,
+    }))
+}
+
+function buildTeamRoster(
+  teamId: string,
+  players: PlayersMap,
+  hittingRows: HittingRow[],
+): TeamRosterRow[] {
+  const hittingMap = new Map(hittingRows.map(r => [r.playerId, r]))
+  return Object.entries(players)
+    .filter(([, p]) => p.teamId === teamId)
+    .map(([id, p]) => {
+      const h = hittingMap.get(id)
+      return {
+        playerId: id,
+        name: p.name,
+        jerseyNumber: p.jerseyNumber ?? '',
+        avg: h?.avg ?? 0,
+        hr: h?.hr ?? 0,
+        rbi: h?.rbi ?? 0,
+      }
+    })
+    .sort((a, b) => {
+      const aNum = parseInt(a.jerseyNumber); const bNum = parseInt(b.jerseyNumber)
+      if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum
+      return a.name.localeCompare(b.name)
+    })
+}
+
 function formatAvg(val: number): string {
   if (val === 0) return '.000'
   const s = val.toFixed(3)
@@ -185,9 +296,11 @@ export function StatsRoute() {
   const { games } = useGames()
   const { config } = useLeagueConfig()
 
-  const [tab, setTab] = useState<Tab>('hitting')
+  const [tab, setTab] = useState<Tab>('standings')
   const [hittingSort, setHittingSort] = useState<{ col: keyof HittingRow; dir: SortDir }>({ col: 'avg', dir: 'desc' })
   const [pitchingSort, setPitchingSort] = useState<{ col: keyof PitchingRow; dir: SortDir }>({ col: 'era', dir: 'asc' })
+  const [resultsFilter, setResultsFilter] = useState<string>('')
+  const [selectedTeam, setSelectedTeam] = useState<string>('')
 
   // Load all gameSummaries for finalized games
   const [allSummaries, setAllSummaries] = useState<Record<string, Record<string, GameSummary>>>({})
@@ -234,6 +347,22 @@ export function StatsRoute() {
       return dir === 'asc' ? (av as number) - (bv as number) : (bv as number) - (av as number)
     })
   }, [pitchingRows, pitchingSort])
+
+  const standings = useMemo(() => buildStandings(games, teams), [games, teams])
+  const results = useMemo(() => buildResults(games, teams), [games, teams])
+  const filteredResults = useMemo(
+    () => resultsFilter ? results.filter(r => r.homeTeamId === resultsFilter || r.awayTeamId === resultsFilter) : results,
+    [results, resultsFilter],
+  )
+  const teamRoster = useMemo(
+    () => selectedTeam ? buildTeamRoster(selectedTeam, players, hittingRows) : [],
+    [selectedTeam, players, hittingRows],
+  )
+
+  // Auto-select first team when standings load
+  useEffect(() => {
+    if (!selectedTeam && standings.length > 0) setSelectedTeam(standings[0].teamId)
+  }, [standings, selectedTeam])
 
   const toggleHittingSort = (col: keyof HittingRow) => {
     setHittingSort(prev => prev.col === col ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: col === 'name' || col === 'team' ? 'asc' : 'desc' })
@@ -286,15 +415,17 @@ export function StatsRoute() {
                 Brookside Athletics
               </h1>
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', margin: 0 }}>
-                Season Stats
+                2026 Season
               </p>
             </div>
           </div>
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0 }}>
+          <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
+            <TabButton active={tab === 'standings'} onClick={() => setTab('standings')}>Standings</TabButton>
             <TabButton active={tab === 'hitting'} onClick={() => setTab('hitting')}>Hitting</TabButton>
             <TabButton active={tab === 'pitching'} onClick={() => setTab('pitching')}>Pitching</TabButton>
+            <TabButton active={tab === 'results'} onClick={() => setTab('results')}>Results</TabButton>
           </div>
         </div>
       </div>
@@ -306,7 +437,89 @@ export function StatsRoute() {
         )}
         {loading ? (
           <p style={{ textAlign: 'center', color: '#9ca3af', padding: '40px 0', fontSize: 14 }}>Loading stats…</p>
+        ) : tab === 'standings' ? (
+          /* ── Standings ──────────────────────────────────────────── */
+          <div>
+            {/* Standings table */}
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 24 }}>
+              {standings.length === 0 ? <EmptyState>No teams found.</EmptyState> : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1e3a5f' }}>
+                      <th style={{ ...thBase, textAlign: 'left', paddingLeft: 12 }}>Team</th>
+                      <th style={thBase}>W</th>
+                      <th style={thBase}>L</th>
+                      <th style={thBase}>T</th>
+                      <th style={{ ...thBase, minWidth: 48 }}>PCT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {standings.map((row, i) => (
+                      <tr
+                        key={row.teamId}
+                        onClick={() => setSelectedTeam(row.teamId)}
+                        style={{
+                          borderBottom: '1px solid #e5e7eb',
+                          background: selectedTeam === row.teamId ? 'rgba(30,58,95,0.06)' : i % 2 === 0 ? '#ffffff' : '#f9fafb',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <td style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {row.logoUrl ? <img src={row.logoUrl} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} /> : <span style={{ width: 24 }} />}
+                          <span style={{ fontWeight: 600, color: '#1e293b' }}>{row.name}</span>
+                        </td>
+                        <td style={{ ...tdScore, fontWeight: 700 }}>{row.w}</td>
+                        <td style={tdScore}>{row.l}</td>
+                        <td style={tdScore}>{row.t}</td>
+                        <td style={{ ...tdScore, fontWeight: 700, color: '#1e3a5f' }}>{row.pct.toFixed(3).replace(/^0/, '')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Team roster */}
+            {selectedTeam && (
+              <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, background: '#f9fafb' }}>
+                  {teams[selectedTeam]?.logoUrl && <img src={teams[selectedTeam].logoUrl} alt="" style={{ width: 28, height: 28, objectFit: 'contain' }} />}
+                  <span style={{ fontFamily: 'var(--font-score)', fontWeight: 800, fontSize: 15, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {teams[selectedTeam]?.name ?? selectedTeam} Roster
+                  </span>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ ...thBase, width: 36 }}>#</th>
+                      <th style={{ ...thBase, textAlign: 'left' }}>Player</th>
+                      <th style={thBase}>AVG</th>
+                      <th style={thBase}>HR</th>
+                      <th style={thBase}>RBI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamRoster.map((row, i) => (
+                      <tr key={row.playerId} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#ffffff' : '#f9fafb' }}>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontFamily: 'var(--font-score)', fontWeight: 700, color: '#94a3b8' }}>
+                          {row.jerseyNumber || '—'}
+                        </td>
+                        <td style={{ padding: '8px 8px', fontWeight: 600, color: '#1e293b' }}>{row.name}</td>
+                        <td style={{ ...tdScore, fontWeight: 600 }}>{formatAvg(row.avg)}</td>
+                        <td style={tdScore}>{row.hr}</td>
+                        <td style={tdScore}>{row.rbi}</td>
+                      </tr>
+                    ))}
+                    {teamRoster.length === 0 && (
+                      <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>No players on roster</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         ) : tab === 'hitting' ? (
+          /* ── Hitting ────────────────────────────────────────────── */
           sortedHitting.length === 0 ? (
             <EmptyState>No hitting stats yet — finalize a game to see data here.</EmptyState>
           ) : (
@@ -350,7 +563,8 @@ export function StatsRoute() {
               </table>
             </div>
           )
-        ) : (
+        ) : tab === 'pitching' ? (
+          /* ── Pitching ───────────────────────────────────────────── */
           sortedPitching.length === 0 ? (
             <EmptyState>No pitching stats yet — finalize a game to see data here.</EmptyState>
           ) : (
@@ -394,13 +608,91 @@ export function StatsRoute() {
               </table>
             </div>
           )
+        ) : (
+          /* ── Results ────────────────────────────────────────────── */
+          <div>
+            {/* Team filter */}
+            <div style={{ marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <FilterChip active={resultsFilter === ''} onClick={() => setResultsFilter('')}>All</FilterChip>
+              {Object.entries(teams)
+                .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+                .map(([id, t]) => (
+                  <FilterChip key={id} active={resultsFilter === id} onClick={() => setResultsFilter(resultsFilter === id ? '' : id)}>
+                    {t.shortName}
+                  </FilterChip>
+                ))}
+            </div>
+
+            {filteredResults.length === 0 ? (
+              <EmptyState>No results yet.</EmptyState>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {filteredResults.map(r => {
+                  const homeWon = r.homeScore > r.awayScore
+                  const awayWon = r.awayScore > r.homeScore
+                  return (
+                    <div key={r.gameId} style={{
+                      background: '#ffffff', borderRadius: 10, border: '1px solid #e5e7eb',
+                      padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                        {r.awayLogo ? <img src={r.awayLogo} alt="" style={{ width: 24, height: 24, objectFit: 'contain', flexShrink: 0 }} /> : <span style={{ width: 24 }} />}
+                        <span style={{ fontWeight: awayWon ? 700 : 500, color: awayWon ? '#1e293b' : '#64748b', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {r.awayName}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, padding: '0 12px' }}>
+                        <span style={{ fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 800, color: awayWon ? '#1e293b' : '#94a3b8' }}>{r.awayScore}</span>
+                        <span style={{ color: '#cbd5e1', fontSize: 12 }}>—</span>
+                        <span style={{ fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 800, color: homeWon ? '#1e293b' : '#94a3b8' }}>{r.homeScore}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, justifyContent: 'flex-end' }}>
+                        <span style={{ fontWeight: homeWon ? 700 : 500, color: homeWon ? '#1e293b' : '#64748b', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>
+                          {r.homeName}
+                        </span>
+                        {r.homeLogo ? <img src={r.homeLogo} alt="" style={{ width: 24, height: 24, objectFit: 'contain', flexShrink: 0 }} /> : <span style={{ width: 24 }} />}
+                      </div>
+                      <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 12, whiteSpace: 'nowrap', flexShrink: 0 }}>{r.date}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
   )
 }
 
+// ── Shared styles ────────────────────────────────────────────────────────────
+
+const thBase: React.CSSProperties = {
+  padding: '8px 6px', textAlign: 'center', fontFamily: 'var(--font-score)',
+  fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b',
+}
+
+const tdScore: React.CSSProperties = {
+  padding: '8px 6px', textAlign: 'center', fontFamily: 'var(--font-score)', fontSize: 14, color: '#475569',
+}
+
 // ── Sub-components ───────────────────────────────────────────────────────────
+
+function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+        fontFamily: 'var(--font-score)', textTransform: 'uppercase', letterSpacing: '0.05em',
+        background: active ? '#1e3a5f' : '#ffffff', color: active ? '#ffffff' : '#64748b',
+        border: `1px solid ${active ? '#1e3a5f' : '#d1d5db'}`, cursor: 'pointer', transition: 'all 0.15s',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
