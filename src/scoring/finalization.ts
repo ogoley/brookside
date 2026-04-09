@@ -249,6 +249,7 @@ function computeGameSummaries(
   players: PlayersMap,
 ): Record<string, GameSummary> {
   const summaries: Record<string, GameSummary> = {}
+  const pitchingOuts: Record<string, number> = {}
 
   const ensureBatter = (playerId: string) => {
     if (!summaries[playerId]) {
@@ -282,13 +283,16 @@ function computeGameSummaries(
 
     if (ab.pitcherId) {
       const ps = ensureBatter(ab.pitcherId)
-      ps.inningsPitched = Math.round((
-        (ps.inningsPitched * 3 + ab.outsOnPlay) / 3
-      ) * 100) / 100
+      pitchingOuts[ab.pitcherId] = (pitchingOuts[ab.pitcherId] ?? 0) + ab.outsOnPlay
       if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') ps.pitchingK = (ps.pitchingK ?? 0) + 1
       if (ab.result === 'walk' || ab.result === 'hbp') ps.pitchingBb = (ps.pitchingBb ?? 0) + 1
       ps.runsAllowed = (ps.runsAllowed ?? 0) + (ab.runnersScored ?? []).length + (ab.batterAdvancedTo === 'home' ? 1 : 0)
     }
+  }
+
+  // Convert raw outs to innings pitched once at the end to avoid floating point drift
+  for (const [playerId, outs] of Object.entries(pitchingOuts)) {
+    summaries[playerId].inningsPitched = Math.floor(outs / 3) + (outs % 3) / 3
   }
 
   const result: Record<string, GameSummary> = {}

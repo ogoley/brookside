@@ -14,7 +14,10 @@
       "Bash(node -e \"const s = require\\(''./firebase-snapshot.json''\\); console.log\\(Object.keys\\(s.teams || {}\\)\\)\")",
       "Bash(node -e \"const s = require\\(''./firebase-snapshot.json''\\); Object.entries\\(s.teams\\).forEach\\(\\([id,t]\\) => console.log\\(id, t.shortName, t.primaryColor\\)\\)\")",
       "Bash(gh api:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://brookside-14b4b-default-rtdb.firebaseio.com/games/2026-04-09_nuke_squad_base_invaders.json\")",
+      "Bash(npx -y json)",
+      "Bash(xargs grep:*)"
     ]
   }
 }

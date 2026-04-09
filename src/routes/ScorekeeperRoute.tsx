@@ -826,13 +826,17 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     }
   }, [gameLoading])
 
-  // Persist pitcher selection to Firebase so it survives a page refresh.
-  // advanceHalfInning also writes this, but only at inning boundaries — writing
-  // here covers mid-inning refreshes (e.g. the very first inning before it ends).
+  // Persist pitcher selection to Firebase so it survives a page refresh and
+  // so the inning_end interstitial can pre-fill the pitcher for each side.
+  // During top of inning the home team fields, during bottom the away team fields.
   useEffect(() => {
     if (!gameId || !pitcherId) return
-    update(ref(db), { [`games/${gameId}/matchup/pitcherId`]: pitcherId })
-  }, [pitcherId, gameId])
+    const side = isTopInning ? 'lastPitcherHome' : 'lastPitcherAway'
+    update(ref(db), {
+      [`games/${gameId}/matchup/pitcherId`]: pitcherId,
+      [`games/${gameId}/matchup/${side}`]: pitcherId,
+    })
+  }, [pitcherId, gameId, isTopInning])
 
   // Pre-fill batter from lineup position
   useEffect(() => {
@@ -1860,28 +1864,28 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       {/* Live stats */}
       {(() => {
         // Tally per-batter stats from this game's at-bats
-        const tally: Record<string, { ab: number; r: number; h: number; rbi: number; hr: number; o: number }> = {}
-        const ensure = (id: string) => { if (!tally[id]) tally[id] = { ab: 0, r: 0, h: 0, rbi: 0, hr: 0, o: 0 }; return tally[id] }
+        const tally: Record<string, { pa: number; h: number; bb: number; rbi: number; hr: number; r: number }> = {}
+        const ensure = (id: string) => { if (!tally[id]) tally[id] = { pa: 0, h: 0, bb: 0, rbi: 0, hr: 0, r: 0 }; return tally[id] }
         for (const ab of Object.values(atBats)) {
           const s = ensure(ab.batterId)
-          if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) s.ab++
+          s.pa++
           if (['single', 'double', 'triple', 'home_run'].includes(ab.result)) s.h++
+          if (ab.result === 'walk') s.bb++
           s.rbi += ab.rbiCount
           if (ab.result === 'home_run') s.hr++
-          if (['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) s.o++
           if (ab.batterAdvancedTo === 'home') s.r++
           for (const runnerId of (ab.runnersScored ?? [])) { ensure(runnerId).r++ }
         }
 
         const homeId = game?.homeTeamId ?? ''
         const awayId = game?.awayTeamId ?? ''
-        const cols = ['AB', 'R', 'H', 'RBI', 'HR', 'O'] as const
-        const statKeys: Array<keyof typeof tally[string]> = ['ab', 'r', 'h', 'rbi', 'hr', 'o']
+        const cols = ['PA', 'H', 'BB', 'RBI', 'HR', 'R'] as const
+        const statKeys: Array<keyof typeof tally[string]> = ['pa', 'h', 'bb', 'rbi', 'hr', 'r']
 
         const renderSide = (teamId: string) => {
           const rows = Object.entries(tally)
             .filter(([id]) => players[id]?.teamId === teamId)
-            .sort(([, a], [, b]) => b.ab - a.ab)
+            .sort(([, a], [, b]) => b.pa - a.pa)
           if (rows.length === 0) return <p className="text-white/20 text-xs text-center py-2">No at-bats yet</p>
           return (
             <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
@@ -2342,9 +2346,6 @@ function GameSummaryView({ gameId, game, teams, players, onBack }: {
   onBack: () => void
 }) {
   const [summaries, setSummaries] = useState<Record<string, GameSummary>>({})
-  const [pitcherKs, setPitcherKs] = useState<Record<string, number>>({})
-  const [pitcherBbs, setPitcherBbs] = useState<Record<string, number>>({})
-  const [pitcherRuns, setPitcherRuns] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -2353,27 +2354,6 @@ function GameSummaryView({ gameId, game, teams, players, onBack }: {
       setLoading(false)
     })
     return () => unsub()
-  }, [gameId])
-
-  // Compute pitcher K/BB directly from raw at-bats — summaries written before
-  // the pitchingK/pitchingBb fields existed will have 0; this is always accurate.
-  useEffect(() => {
-    get(ref(db, `gameStats/${gameId}`)).then(snap => {
-      const ks: Record<string, number> = {}
-      const bbs: Record<string, number> = {}
-      const runs: Record<string, number> = {}
-      if (snap.exists()) {
-        for (const ab of Object.values(snap.val()) as AtBatRecord[]) {
-          if (!ab.pitcherId) continue
-          if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') ks[ab.pitcherId] = (ks[ab.pitcherId] ?? 0) + 1
-          if (ab.result === 'walk' || ab.result === 'hbp') bbs[ab.pitcherId] = (bbs[ab.pitcherId] ?? 0) + 1
-          runs[ab.pitcherId] = (runs[ab.pitcherId] ?? 0) + (ab.runnersScored ?? []).length + (ab.batterAdvancedTo === 'home' ? 1 : 0)
-        }
-      }
-      setPitcherKs(ks)
-      setPitcherBbs(bbs)
-      setPitcherRuns(runs)
-    })
   }, [gameId])
 
   const homeTeam = teams[game.homeTeamId]
@@ -2389,7 +2369,6 @@ function GameSummaryView({ gameId, game, teams, players, onBack }: {
   const pitchers = allStats
     .filter(s => s.inningsPitched > 0)
     .sort((a, b) => b.inningsPitched - a.inningsPitched)
-    .map(s => ({ ...s, pitchingK: pitcherKs[s.playerId] ?? 0, pitchingBb: pitcherBbs[s.playerId] ?? 0, runsAllowed: pitcherRuns[s.playerId] ?? 0 }))
 
   return (
     <div className="min-h-screen px-4 py-4 pb-16" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
