@@ -67,7 +67,7 @@ function buildHittingRows(
   players: PlayersMap,
   teams: TeamsMap,
 ): HittingRow[] {
-  const agg: Record<string, Omit<HittingRow, 'avg' | 'obp'>> = {}
+  const agg: Record<string, Omit<HittingRow, 'avg' | 'obp' | 'slg' | 'ops'>> = {}
 
   for (const gameSummaries of Object.values(allSummaries)) {
     const seen = new Set<string>()
