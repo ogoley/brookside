@@ -109,17 +109,17 @@ This answers: where does data flow, what gets written vs computed, and where do 
 ```mermaid
 flowchart TD
     subgraph TIER1["Tier 1 — Source of Truth (written live)"]
-        AB["/gameStats/{gameId}/{atBatId}\nAtBatRecord — every plate appearance"]
+        AB["/gameStats/{gameId}/{atBatId}<br/>AtBatRecord — every plate appearance"]
     end
 
     subgraph TIER2["Tier 2 — Live Game Cache (written after each at-bat)"]
-        LR["/liveRunners/{gameId}\nRunnersState — who is on base right now"]
-        GC["/games/{gameId}\nrunning score, outs, inning"]
+        LR["/liveRunners/{gameId}<br/>RunnersState — who is on base right now"]
+        GC["/games/{gameId}<br/>running score, outs, inning"]
     end
 
     subgraph TIER3["Tier 3 — Finalized Snapshots (written on finalization only)"]
-        GS["/gameSummaries/{gameId}/{playerId}\nGameSummary — per-game box score"]
-        PS["/players/{id}/stats/hitting\n/players/{id}/stats/pitching\nSeason totals — rewritten from ALL summaries"]
+        GS["/gameSummaries/{gameId}/{playerId}<br/>GameSummary — per-game box score"]
+        PS["/players/{id}/stats/hitting<br/>/players/{id}/stats/pitching<br/>Season totals — rewritten from ALL summaries"]
     end
 
     AB -->|replay engine after each submit| LR
@@ -128,9 +128,9 @@ flowchart TD
     GS -->|recalcSeasonStats reads ALL games| PS
 
     subgraph READERS["Who reads what"]
-        STATS_PAGE["StatsRoute\nderives everything from gameSummaries\ndoes NOT use players/stats"]
-        OVERLAY["Live Stat Overlay\nreads players/stats for season context\n+ computeGameStats on live at-bats\n+ mergeHittingStats to combine"]
-        SK_PANEL["Scorekeeper live panel\nderives from current game at-bats only"]
+        STATS_PAGE["StatsRoute<br/>derives everything from gameSummaries<br/>does NOT use players/stats"]
+        OVERLAY["Live Stat Overlay<br/>reads players/stats for season context<br/>+ computeGameStats on live at-bats<br/>+ mergeHittingStats to combine"]
+        SK_PANEL["Scorekeeper live panel<br/>derives from current game at-bats only"]
     end
 
     GS -->|direct aggregation| STATS_PAGE
@@ -154,12 +154,12 @@ Finalization runs entirely client-side in `GameEditorRoute`. It is a multi-path 
 ```mermaid
 flowchart TD
     A(["Admin taps Finalize in GameEditorRoute"]) --> B["Read all at-bats from gameStats/{gameId}"]
-    B --> C["computeGameStats per player\nsrc/scoring/engine.ts — pure function"]
-    C --> D["Build GameSummary for each player\nab, pa, h, 2B, 3B, HR, R, RBI, BB, K, IP, RA"]
+    B --> C["computeGameStats per player<br/>src/scoring/engine.ts — pure function"]
+    C --> D["Build GameSummary for each player<br/>ab, pa, h, 2B, 3B, HR, R, RBI, BB, K, IP, RA"]
     D --> E["Write /gameSummaries/{gameId}/{playerId}"]
-    E --> F["recalcSeasonStats\nRead ALL /gameSummaries across all finalized games"]
-    F --> G["Aggregate counting stats per player\ngp, pa, ab, h, 2B, 3B, HR, R, RBI, BB, K, IP, K, BB, RA"]
-    G --> H["Derive rate stats\nAVG = H/AB, OBP = H+BB/PA, ERA = RA/IP x 7"]
+    E --> F["recalcSeasonStats<br/>Read ALL /gameSummaries across all finalized games"]
+    F --> G["Aggregate counting stats per player<br/>gp, pa, ab, h, 2B, 3B, HR, R, RBI, BB, K, IP, K, BB, RA"]
+    G --> H["Derive rate stats<br/>AVG = H/AB, OBP = H+BB/PA, ERA = RA/IP x 7"]
     H --> I["Write /players/{id}/stats/hitting — season totals overwritten"]
     H --> J["Write /players/{id}/stats/pitching — season totals overwritten"]
     D --> K["Write /games/{gameId}/finalized = true"]

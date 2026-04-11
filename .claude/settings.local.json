@@ -21,7 +21,9 @@
       "WebFetch(domain:www.minimax.io)",
       "WebFetch(domain:platform.minimaxi.com)",
       "WebFetch(domain:platform.minimax.io)",
-      "WebFetch(domain:www.minimaxi.com)"
+      "WebFetch(domain:www.minimaxi.com)",
+      "Bash(python3:*)",
+      "Bash(git checkout:*)"
     ]
   },
   "hooks": {

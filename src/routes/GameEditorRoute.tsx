@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { ref, onValue, update, set, get } from 'firebase/database'
 import { db } from '../firebase'
@@ -10,6 +10,18 @@ import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import type { GameSummary, GameRecord, PlayersMap, TeamsMap, AtBatRecord } from '../types'
 
 const INNINGS_PER_GAME = 7
+
+// ── Ordinal helpers ───────────────────────────────────────────────────────────
+
+function ordinalInning(n: number): string {
+  if (n === 1) return '1st'
+  if (n === 2) return '2nd'
+  if (n === 3) return '3rd'
+  return `${n}th`
+}
+
+const OUT_ORD = ['', '1st', '2nd', '3rd']
+function outOrdinal(n: number): string { return OUT_ORD[n] ?? `${n}th` }
 
 // ── IP helpers ────────────────────────────────────────────────────────────────
 
@@ -240,12 +252,29 @@ function TracePanel({
   // Pitcher trace: at-bats by selected pitcher with running outs
   const pitcherTrace = useMemo(() => {
     if (!pitcherId) return []
+
+    // Compute outs-before-play within each half-inning from the FULL at-bat list
+    // so out position labels reflect the real game, not just this pitcher's filtered view
+    const halfInningOuts = new Map<AtBatRecord, number>()
+    const inningSoFar: Record<string, number> = {}
+    for (const ab of atBats) {
+      const key = `${ab.inning}-${String(ab.isTopInning)}`
+      const before = inningSoFar[key] ?? 0
+      halfInningOuts.set(ab, before)
+      inningSoFar[key] = before + ab.outsOnPlay
+    }
+
     let runningOuts = 0
     return atBats
       .filter(ab => ab.pitcherId === pitcherId)
       .map(ab => {
         runningOuts += ab.outsOnPlay
-        return { ab, runningOuts, ip: formatIp(Math.floor(runningOuts / 3) + (runningOuts % 3) / 3) }
+        return {
+          ab,
+          runningOuts,
+          ip: formatIp(Math.floor(runningOuts / 3) + (runningOuts % 3) / 3),
+          outsBeforeInInning: halfInningOuts.get(ab) ?? 0,
+        }
       })
   }, [atBats, pitcherId])
 
@@ -330,38 +359,83 @@ function TracePanel({
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={th}>Inn</th>
                     <th style={th}>Batter</th>
                     <th style={th}>Result</th>
-                    <th style={{ ...th, textAlign: 'center' }}>Outs</th>
+                    <th style={{ ...th, textAlign: 'center' }}>Out #</th>
                     <th style={{ ...th, textAlign: 'center' }}>Run IP</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pitcherTrace.map(({ ab, runningOuts, ip }, i) => (
-                    <tr key={i} style={{ background: ab.outsOnPlay > 0 ? '#f9fafb' : '#fff' }}>
-                      <td style={{ ...td, fontFamily: 'var(--font-score)', fontSize: 13 }}>
-                        {ab.isTopInning ? '▲' : '▼'}{ab.inning}
-                      </td>
-                      <td style={td}>{players[ab.batterId]?.name ?? ab.batterId}</td>
-                      <td style={{ ...td, fontWeight: 600 }}>
-                        <span style={{
-                          display: 'inline-block', padding: '1px 6px', borderRadius: 3,
-                          background: ['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout'].includes(ab.result) ? '#fee2e2' : ['single', 'double', 'triple', 'home_run'].includes(ab.result) ? '#dcfce7' : ab.result === 'walk' ? '#dbeafe' : '#f3f4f6',
-                          color: ['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout'].includes(ab.result) ? '#dc2626' : ['single', 'double', 'triple', 'home_run'].includes(ab.result) ? '#16a34a' : ab.result === 'walk' ? '#2563eb' : '#374151',
-                          fontSize: 12,
-                        }}>
-                          {RESULT_LABELS[ab.result] ?? ab.result}
-                        </span>
-                      </td>
-                      <td style={{ ...td, textAlign: 'center', fontFamily: 'var(--font-score)' }}>
-                        {runningOuts}
-                      </td>
-                      <td style={{ ...td, textAlign: 'center', fontFamily: 'var(--font-score)', fontWeight: 700 }}>
-                        {ip}
-                      </td>
-                    </tr>
-                  ))}
+                  {pitcherTrace.map(({ ab, ip, outsBeforeInInning }, i) => {
+                    const prev = i > 0 ? pitcherTrace[i - 1].ab : null
+                    const isNewHalf = !prev || prev.inning !== ab.inning || prev.isTopInning !== ab.isTopInning
+                    const isDP = ab.outsOnPlay === 2
+                    const isTP = ab.outsOnPlay >= 3
+                    const isOut = ab.outsOnPlay > 0
+                    const outStart = outsBeforeInInning + 1
+                    const outEnd = outsBeforeInInning + ab.outsOnPlay
+                    const outLabel = !isOut ? null
+                      : ab.outsOnPlay === 1 ? outOrdinal(outStart)
+                      : `${outOrdinal(outStart)}–${outOrdinal(outEnd)}`
+                    const isHit = ['single', 'double', 'triple', 'home_run'].includes(ab.result)
+                    const isResultOut = ['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout'].includes(ab.result)
+
+                    return (
+                      <React.Fragment key={i}>
+                        {isNewHalf && (
+                          <tr>
+                            <td colSpan={4} style={{
+                              padding: '5px 10px', background: '#1e3a5f', color: '#fff',
+                              fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em',
+                            }}>
+                              {ab.isTopInning ? '▲' : '▼'} {ab.inning}
+                              <span style={{ fontFamily: 'var(--font-ui)', fontWeight: 400, fontSize: 11, marginLeft: 8, opacity: 0.65 }}>
+                                {ab.isTopInning ? 'Top' : 'Bottom'} of {ordinalInning(ab.inning)}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                        <tr style={{ background: isOut ? '#f9fafb' : '#fff' }}>
+                          <td style={td}>{players[ab.batterId]?.name ?? ab.batterId}</td>
+                          <td style={{ ...td, fontWeight: 600 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{
+                                display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: 12,
+                                background: isResultOut ? '#fee2e2' : isHit ? '#dcfce7' : ab.result === 'walk' ? '#dbeafe' : '#f3f4f6',
+                                color: isResultOut ? '#dc2626' : isHit ? '#16a34a' : ab.result === 'walk' ? '#2563eb' : '#374151',
+                              }}>
+                                {RESULT_LABELS[ab.result] ?? ab.result}
+                              </span>
+                              {(isDP || isTP) && (
+                                <span style={{
+                                  display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: 11,
+                                  fontWeight: 800, background: '#fef3c7', color: '#92400e',
+                                  letterSpacing: '0.04em',
+                                }}>
+                                  {isTP ? 'TP' : 'DP'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            {outLabel ? (
+                              <span style={{
+                                fontSize: 12, fontWeight: isDP || isTP ? 700 : 500,
+                                color: isTP ? '#dc2626' : isDP ? '#d97706' : '#6b7280',
+                              }}>
+                                {outLabel}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#e5e7eb' }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ ...td, textAlign: 'center', fontFamily: 'var(--font-score)', fontWeight: 700 }}>
+                            {ip}
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
               <div style={{
@@ -436,6 +510,9 @@ function TracePanel({
                 </thead>
                 <tbody>
                   {batterTrace.map((ab, i) => {
+                    const prev = i > 0 ? batterTrace[i - 1] : null
+                    const isNewHalf = !prev || prev.inning !== ab.inning || prev.isTopInning !== ab.isTopInning
+
                     // Runners on base before the play
                     const on = ab.runnersOnBase ?? { first: null, second: null, third: null }
                     const basesOccupied = [
@@ -448,10 +525,11 @@ function TracePanel({
                     const runnersScored = (ab.runnersScored ?? []).filter(id => id !== ab.batterId)
                     const batterScored = ab.batterAdvancedTo === 'home'
 
-                    // Outcome badge colors
                     const isHit = ['single', 'double', 'triple', 'home_run'].includes(ab.result)
                     const isOut = ['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout'].includes(ab.result)
                     const isWalk = ab.result === 'walk'
+                    const isDP = ab.outsOnPlay === 2
+                    const isTP = ab.outsOnPlay >= 3
 
                     const advancedLabel = ab.batterAdvancedTo === null ? '—'
                       : ab.batterAdvancedTo === 'out' ? 'Out'
@@ -462,54 +540,79 @@ function TracePanel({
                       : ab.batterAdvancedTo
 
                     return (
-                      <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                        <td style={{ ...td, color: '#9ca3af', width: 24 }}>{i + 1}</td>
-                        <td style={{ ...td, fontFamily: 'var(--font-score)', fontSize: 13 }}>
-                          {ab.isTopInning ? '▲' : '▼'}{ab.inning}
-                        </td>
-                        <td style={{ ...td, fontSize: 12 }}>
-                          {ab.pitcherId ? players[ab.pitcherId]?.name ?? ab.pitcherId : '—'}
-                        </td>
-                        <td style={{ ...td, fontSize: 12 }}>
-                          {basesOccupied.length === 0
-                            ? <span style={{ color: '#9ca3af' }}>Bases empty</span>
-                            : basesOccupied.join(', ')}
-                        </td>
-                        <td style={td}>
-                          <span style={{
-                            display: 'inline-block', padding: '2px 7px', borderRadius: 3, fontSize: 12, fontWeight: 600,
-                            background: isHit ? '#dcfce7' : isOut ? '#fee2e2' : isWalk ? '#dbeafe' : '#f3f4f6',
-                            color: isHit ? '#16a34a' : isOut ? '#dc2626' : isWalk ? '#2563eb' : '#374151',
-                          }}>
-                            {RESULT_LABELS[ab.result] ?? ab.result}
-                          </span>
-                        </td>
-                        <td style={{
-                          ...td, fontSize: 12, fontWeight: 600,
-                          color: batterScored ? '#16a34a' : ab.batterAdvancedTo === 'out' ? '#dc2626' : '#374151',
-                        }}>
-                          {advancedLabel}
-                        </td>
-                        <td style={{ ...td, textAlign: 'center', fontFamily: 'var(--font-score)', fontWeight: 700 }}>
-                          {ab.rbiCount > 0
-                            ? <span style={{ color: '#16a34a' }}>{ab.rbiCount}</span>
-                            : <span style={{ color: '#d1d5db' }}>—</span>}
-                        </td>
-                        <td style={{ ...td, fontSize: 12 }}>
-                          {runnersScored.length === 0 && !batterScored ? (
-                            <span style={{ color: '#9ca3af' }}>—</span>
-                          ) : (
-                            <div>
-                              {runnersScored.map(id => (
-                                <div key={id}>{players[id]?.name ?? id}</div>
-                              ))}
-                              {batterScored && ab.result === 'home_run' && (
-                                <div style={{ color: '#6b7280', fontSize: 11 }}>(HR — self)</div>
+                      <React.Fragment key={i}>
+                        {isNewHalf && (
+                          <tr>
+                            <td colSpan={8} style={{
+                              padding: '5px 10px', background: '#1e3a5f', color: '#fff',
+                              fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em',
+                            }}>
+                              {ab.isTopInning ? '▲' : '▼'} {ab.inning}
+                              <span style={{ fontFamily: 'var(--font-ui)', fontWeight: 400, fontSize: 11, marginLeft: 8, opacity: 0.65 }}>
+                                {ab.isTopInning ? 'Top' : 'Bottom'} of {ordinalInning(ab.inning)}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                        <tr style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
+                          <td style={{ ...td, color: '#9ca3af', width: 24 }}>{i + 1}</td>
+                          <td style={{ ...td, fontFamily: 'var(--font-score)', fontSize: 13 }}>
+                            {ab.isTopInning ? '▲' : '▼'}{ab.inning}
+                          </td>
+                          <td style={{ ...td, fontSize: 12 }}>
+                            {ab.pitcherId ? players[ab.pitcherId]?.name ?? ab.pitcherId : '—'}
+                          </td>
+                          <td style={{ ...td, fontSize: 12 }}>
+                            {basesOccupied.length === 0
+                              ? <span style={{ color: '#9ca3af' }}>Bases empty</span>
+                              : basesOccupied.join(', ')}
+                          </td>
+                          <td style={td}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{
+                                display: 'inline-block', padding: '2px 7px', borderRadius: 3, fontSize: 12, fontWeight: 600,
+                                background: isHit ? '#dcfce7' : isOut ? '#fee2e2' : isWalk ? '#dbeafe' : '#f3f4f6',
+                                color: isHit ? '#16a34a' : isOut ? '#dc2626' : isWalk ? '#2563eb' : '#374151',
+                              }}>
+                                {RESULT_LABELS[ab.result] ?? ab.result}
+                              </span>
+                              {(isDP || isTP) && (
+                                <span style={{
+                                  display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: 11,
+                                  fontWeight: 800, background: '#fef3c7', color: '#92400e', letterSpacing: '0.04em',
+                                }}>
+                                  {isTP ? 'TP' : 'DP'}
+                                </span>
                               )}
                             </div>
-                          )}
-                        </td>
-                      </tr>
+                          </td>
+                          <td style={{
+                            ...td, fontSize: 12, fontWeight: 600,
+                            color: batterScored ? '#16a34a' : ab.batterAdvancedTo === 'out' ? '#dc2626' : '#374151',
+                          }}>
+                            {advancedLabel}
+                          </td>
+                          <td style={{ ...td, textAlign: 'center', fontFamily: 'var(--font-score)', fontWeight: 700 }}>
+                            {ab.rbiCount > 0
+                              ? <span style={{ color: '#16a34a' }}>{ab.rbiCount}</span>
+                              : <span style={{ color: '#d1d5db' }}>—</span>}
+                          </td>
+                          <td style={{ ...td, fontSize: 12 }}>
+                            {runnersScored.length === 0 && !batterScored ? (
+                              <span style={{ color: '#9ca3af' }}>—</span>
+                            ) : (
+                              <div>
+                                {runnersScored.map(id => (
+                                  <div key={id}>{players[id]?.name ?? id}</div>
+                                ))}
+                                {batterScored && ab.result === 'home_run' && (
+                                  <div style={{ color: '#6b7280', fontSize: 11 }}>(HR — self)</div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      </React.Fragment>
                     )
                   })}
                 </tbody>

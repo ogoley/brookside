@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import type { TeamsMap, PlayersMap, StandingsData, Team, Player } from '../types'
 
 // ── Qualification constants ───────────────────────────────────────────────────
-const MIN_AB        = 10    // minimum at-bats to qualify for batting leaderboard
+const MIN_AB_PER_GAME = 2   // minimum at-bats per team game to qualify for batting leaderboard
 const MIN_IP_PCTG   = 0.30  // pitcher must have thrown in ≥30% of team's games
 const GAME_INNINGS  = 7     // innings per game — used to compute min IP
 
@@ -53,12 +53,12 @@ function StatCell({ label, value, highlight, wide }: {
       <span style={{
         fontFamily: 'var(--font-score)', fontSize: 10,
         color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase',
-        letterSpacing: '0.15em', lineHeight: 1, marginBottom: 3,
+        letterSpacing: '0.15em', lineHeight: 1, marginBottom: 2,
       }}>
         {label}
       </span>
       <span style={{
-        fontFamily: 'var(--font-score)', fontSize: 22, fontWeight: 900, lineHeight: 1,
+        fontFamily: 'var(--font-score)', fontSize: 18, fontWeight: 900, lineHeight: 1,
         color: highlight ? '#fbbf24' : '#ffffff',
       }}>
         {value}
@@ -71,7 +71,7 @@ function StatCell({ label, value, highlight, wide }: {
 
 function LeaderRow({
   rank, player, team,
-  primary, stat1, stat2,
+  primary, stat1, stat2, stat3,
   delay, side,
 }: {
   rank: number
@@ -80,6 +80,7 @@ function LeaderRow({
   primary: { label: string; value: string }
   stat1:   { label: string; value: string }
   stat2:   { label: string; value: string }
+  stat3?:  { label: string; value: string }
   delay: number
   side: 'left' | 'right'
 }) {
@@ -90,10 +91,10 @@ function LeaderRow({
     <motion.div
       className="flex items-center"
       style={{
-        height: 80,
+        height: 62,
         background: isFirst ? 'rgba(251,191,36,0.08)' : 'rgba(255,255,255,0.04)',
         borderRadius: 10,
-        marginBottom: 5,
+        marginBottom: 3,
         borderLeft: `4px solid ${isFirst ? '#fbbf24' : primaryColor + '99'}`,
         overflow: 'hidden',
       }}
@@ -106,7 +107,7 @@ function LeaderRow({
         {isFirst && <Crown />}
         <span style={{
           fontFamily: 'var(--font-score)',
-          fontSize: isFirst ? 26 : 21,
+          fontSize: isFirst ? 22 : 18,
           fontWeight: 900,
           color: isFirst ? '#fbbf24' : 'rgba(255,255,255,0.4)',
           lineHeight: 1,
@@ -135,7 +136,7 @@ function LeaderRow({
       {/* Name + team */}
       <div style={{ flex: 1, minWidth: 0, paddingLeft: 10, paddingRight: 12 }}>
         <div style={{
-          fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 700,
+          fontFamily: 'var(--font-score)', fontSize: 26, fontWeight: 700,
           color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em',
           lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
@@ -144,7 +145,7 @@ function LeaderRow({
         <div style={{
           fontFamily: 'var(--font-score)', fontSize: 11,
           color: `${primaryColor}cc`, textTransform: 'uppercase',
-          letterSpacing: '0.08em', marginTop: 4,
+          letterSpacing: '0.08em', marginTop: 3,
         }}>
           {team?.shortName ?? ''}
         </div>
@@ -154,6 +155,7 @@ function LeaderRow({
       <StatCell label={primary.label} value={primary.value} highlight wide />
       <StatCell label={stat1.label}   value={stat1.value} />
       <StatCell label={stat2.label}   value={stat2.value} />
+      {stat3 && <StatCell label={stat3.label} value={stat3.value} />}
     </motion.div>
   )
 }
@@ -208,13 +210,18 @@ export function LeaderboardScene({ teams, players, standings }: Props) {
   const teamGamesMap: Record<string, number> = {}
   standingsData.forEach(s => { teamGamesMap[s.teamId] = s.w + s.l + s.t })
 
-  // Top 10 batters — min AB, sorted by AVG desc
+  // Top 10 batters — min 2 AB per team game, sorted by AVG desc
   const topBatters = Object.entries(players)
-    .filter(([, p]) =>
-      (p.stats.hitting?.ab ?? 0) >= MIN_AB &&
-      p.stats.hitting?.avg !== undefined
-    )
-    .sort(([, a], [, b]) => (b.stats.hitting!.avg! - a.stats.hitting!.avg!))
+    .filter(([, p]) => {
+      const teamGames = teamGamesMap[p.teamId] ?? 0
+      const minAb = Math.max(1, teamGames * MIN_AB_PER_GAME)
+      return (p.stats.hitting?.ab ?? 0) >= minAb && p.stats.hitting?.avg !== undefined
+    })
+    .sort(([, a], [, b]) => {
+      const avgDiff = (b.stats.hitting!.avg ?? 0) - (a.stats.hitting!.avg ?? 0)
+      if (avgDiff !== 0) return avgDiff
+      return (b.stats.hitting!.ops ?? 0) - (a.stats.hitting!.ops ?? 0)
+    })
     .slice(0, 10)
 
   // Top 6 pitchers — qualification filter, sorted by ERA asc
@@ -278,7 +285,7 @@ export function LeaderboardScene({ teams, players, standings }: Props) {
 
           {/* LEFT — Batters */}
           <div style={{ flex: 1 }}>
-            <ColumnHeader title="Top Batters" color="#fbbf24" stats={['AVG', 'HR', 'RBI']} delay={0.08} />
+            <ColumnHeader title="Top Batters" color="#fbbf24" stats={['AVG', 'HR', 'RBI', 'OPS']} delay={0.08} />
             {topBatters.map(([, player], i) => {
               const h = player.stats.hitting!
               return (
@@ -290,6 +297,7 @@ export function LeaderboardScene({ teams, players, standings }: Props) {
                   primary={{ label: 'AVG', value: h.avg!.toFixed(3).replace(/^0/, '') }}
                   stat1={{ label: 'HR',  value: String(h.hr  ?? 0) }}
                   stat2={{ label: 'RBI', value: String(h.rbi ?? 0) }}
+                  stat3={{ label: 'OPS', value: (h.ops ?? 0).toFixed(3).replace(/^0/, '') }}
                   delay={0.1 + i * 0.055}
                   side="left"
                 />

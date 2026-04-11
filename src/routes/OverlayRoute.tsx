@@ -73,7 +73,7 @@ function OverlayContent() {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 220 }}
           >
-            <LeaderboardScene teams={teams} players={players} />
+            <LeaderboardScene teams={teams} players={players} standings={standings.length ? standings : undefined} />
           </motion.div>
         )}
         {sceneKey === 'standings' && (

@@ -99,10 +99,18 @@ export function applyAtBat(input: ApplyAtBatInput): ApplyAtBatResult {
   let runsScored = 0
   let rbiCount = 0
 
-  const presentRunners = bases.filter(b => runnersOnBase[b] !== null)
+  const presentRunners = bases.filter(b => runnersOnBase[b] != null)
 
   if (presentRunners.length === 0 && result !== 'pitchers_poison') {
     lines.push(`  No runners on base.`)
+  }
+
+  // Data-integrity check: the batter cannot already be on base. If they are,
+  // later placement logic will put the same playerId on two bases, which shows
+  // up downstream as a spurious "same base" collision. Flag it explicitly.
+  const batterAlreadyOnBase = bases.find(b => runnersOnBase[b] === record.batterId)
+  if (batterAlreadyOnBase) {
+    warnings.push(`⚠ ${batterName} is listed as the batter but is also on ${batterAlreadyOnBase}. The at-bat before this one put them on base — pick a different batter, or edit the prior at-bat so they scored/got out.`)
   }
 
   for (const base of presentRunners) {
@@ -166,10 +174,26 @@ export function applyAtBat(input: ApplyAtBatInput): ApplyAtBatResult {
   const nextRunners = computeNextRunners(runnersOnBase, runnerOutcomes, batterAdvancedTo, record.batterId)
 
   // ── Collision check ────────────────────────────────────────────────────
-  const occupiedBases = bases.map(b => nextRunners[b]).filter(Boolean)
+  // A collision means the same playerId ended up on two bases at once —
+  // almost always caused by the same batter being sent up back-to-back
+  // (e.g. lineup edit that put them in consecutive slots) while still on base
+  // from their previous at-bat.
+  const occupiedBases = bases.map(b => nextRunners[b]).filter(Boolean) as string[]
   const uniqueOccupied = new Set(occupiedBases)
   if (occupiedBases.length !== uniqueOccupied.size) {
-    warnings.push(`⚠ Two players ended up on the same base after this play. Check runner outcomes and batterAdvancedTo.`)
+    const counts = new Map<string, string[]>()
+    for (const b of bases) {
+      const rid = nextRunners[b]
+      if (!rid) continue
+      const list = counts.get(rid) ?? []
+      list.push(b)
+      counts.set(rid, list)
+    }
+    const duplicates = [...counts.entries()].filter(([, bs]) => bs.length > 1)
+    const detail = duplicates
+      .map(([rid, bs]) => `${getPlayerName(rid)} on ${bs.join(' & ')}`)
+      .join('; ')
+    warnings.push(`⚠ Same player ended up on two bases at once: ${detail}. This usually means the same batter was up twice in a row while still on base — check the lineup and the prior at-bat.`)
   }
 
   // ── Score update ───────────────────────────────────────────────────────
@@ -457,18 +481,249 @@ export function mergePitchingStats(season: PitchingStats, game: PitchingStats): 
   }
 }
 
+// ── Full-game replay (for corrections to any at-bat) ──────────────────────
+// Takes the full at-bat map for a game, replays every half-inning in
+// chronological order, and recomputes derived fields for any at-bat whose
+// upstream state has shifted due to an edit. Runner outcomes are migrated by
+// runner ID: if the same player still exists in the replayed base state, we
+// preserve their original intent (scored / out / stayed / etc.), adjusting
+// base-specific numeric advances when possible.
+//
+// Returns the recomputed at-bat map (with updated runnersOnBase,
+// runnerOutcomes, runnersScored, outsOnPlay, rbiCount per record), plus the
+// end state of the half-inning that matches (currentInning, currentIsTopInning)
+// — which becomes the new liveRunners + games/outs for the scorekeeper.
+
+export interface RecomputeGameResult {
+  recomputedAtBats: Record<string, AtBatRecord>
+  currentHalfRunners: RunnersState
+  currentHalfOuts: number
+  homeScore: number
+  awayScore: number
+  warnings: Array<{ atBatId: string; message: string }>
+}
+
+type OutcomeValue = NonNullable<RunnerOutcomes['first']>
+type Base = 'first' | 'second' | 'third'
+
+/**
+ * Migrate a single stored outcome from its original base to a new base for the
+ * same runner. Base-agnostic outcomes (scored / out / sits / stayed) carry
+ * over directly. Numeric advances (second / third) map over when the new base
+ * is low enough to still make the advance meaningful; otherwise the runner
+ * defaults to 'stayed' and a warning is emitted by the caller.
+ */
+function migrateOutcomeValue(
+  original: OutcomeValue,
+  newBase: Base,
+): OutcomeValue | null {
+  if (original === 'scored' || original === 'out' || original === 'sits' || original === 'stayed') {
+    return original
+  }
+  if (original === 'second') {
+    return newBase === 'first' ? 'second' : null
+  }
+  if (original === 'third') {
+    return newBase === 'first' || newBase === 'second' ? 'third' : null
+  }
+  return null
+}
+
+function assignOutcome(outcomes: RunnerOutcomes, base: Base, value: OutcomeValue) {
+  // The RunnerOutcomes type narrows per base; we've validated via migration that
+  // `value` is legal for this base.
+  if (base === 'first') outcomes.first = value as RunnerOutcomes['first']
+  else if (base === 'second') outcomes.second = value as RunnerOutcomes['second']
+  else outcomes.third = value as RunnerOutcomes['third']
+}
+
+export function recomputeGameState(
+  atBats: Record<string, AtBatRecord>,
+  getPlayerName: (id: string) => string,
+  currentInning: number,
+  currentIsTopInning: boolean,
+): RecomputeGameResult {
+  const entries = Object.entries(atBats).sort(([, a], [, b]) => a.timestamp - b.timestamp)
+  const recomputed: Record<string, AtBatRecord> = {}
+  const warnings: Array<{ atBatId: string; message: string }> = []
+
+  // Group by half-inning
+  type HalfKey = string  // `${inning}-${'T'|'B'}`
+  const makeKey = (inning: number, isTop: boolean): HalfKey => `${inning}-${isTop ? 'T' : 'B'}`
+  const currentKey = makeKey(currentInning, currentIsTopInning)
+  const halfMap = new Map<HalfKey, Array<[string, AtBatRecord]>>()
+
+  for (const entry of entries) {
+    const [, ab] = entry
+    const key = makeKey(ab.inning, ab.isTopInning)
+    const list = halfMap.get(key) ?? []
+    list.push(entry)
+    halfMap.set(key, list)
+  }
+
+  // Process half-innings chronologically (inning asc, top before bottom)
+  const halfKeys = Array.from(halfMap.keys()).sort((a, b) => {
+    const [ai, ah] = a.split('-')
+    const [bi, bh] = b.split('-')
+    const ii = Number(ai) - Number(bi)
+    if (ii !== 0) return ii
+    return ah === 'T' ? -1 : bh === 'T' ? 1 : 0
+  })
+
+  let homeScore = 0
+  let awayScore = 0
+  let currentHalfRunners: RunnersState = { first: null, second: null, third: null }
+  let currentHalfOuts = 0
+
+  for (const key of halfKeys) {
+    const list = halfMap.get(key)!
+    const firstAb = list[0][1]
+    const isHomeBatting = !firstAb.isTopInning
+
+    let runners: RunnersState = { first: null, second: null, third: null }
+    let halfOuts = 0
+
+    for (const [atBatId, originalAb] of list) {
+      // Build a runner-ID → original outcome map from the at-bat's own snapshot.
+      // Firebase RTDB strips objects whose fields are all null/empty, so both
+      // runnersOnBase and runnerOutcomes can come back undefined for at-bats
+      // that happened with empty bases. Fall back to empty objects.
+      const origRunnersOnBase = originalAb.runnersOnBase ?? { first: null, second: null, third: null }
+      const origRunnerOutcomes = originalAb.runnerOutcomes ?? {}
+      const origMap = new Map<string, { base: Base; outcome: OutcomeValue }>()
+      for (const base of ['first', 'second', 'third'] as const) {
+        const rid = origRunnersOnBase[base]
+        const out = origRunnerOutcomes[base]
+        if (rid && out) origMap.set(rid, { base, outcome: out as OutcomeValue })
+      }
+
+      // Migrate outcomes onto the currently-propagated runners (by ID)
+      const newOutcomes: RunnerOutcomes = {}
+      for (const newBase of ['first', 'second', 'third'] as const) {
+        const rid = runners[newBase]
+        if (!rid) continue
+        const orig = origMap.get(rid)
+        if (!orig) {
+          // Runner appeared here due to an upstream edit — default to 'stayed'
+          assignOutcome(newOutcomes, newBase, 'stayed')
+          warnings.push({
+            atBatId,
+            message: `${getPlayerName(rid)} is now on ${newBase} but wasn't in the original snapshot — defaulted to "stayed".`,
+          })
+          continue
+        }
+        const migrated = migrateOutcomeValue(orig.outcome, newBase)
+        if (migrated === null) {
+          assignOutcome(newOutcomes, newBase, 'stayed')
+          warnings.push({
+            atBatId,
+            message: `${getPlayerName(rid)} moved from ${orig.base} → ${newBase}; old outcome "${orig.outcome}" no longer valid, defaulted to "stayed".`,
+          })
+        } else {
+          assignOutcome(newOutcomes, newBase, migrated)
+        }
+      }
+
+      const updatedRecord: AtBatRecord = {
+        ...originalAb,
+        runnersOnBase: { ...runners },
+        runnerOutcomes: newOutcomes,
+      }
+
+      const engineResult = applyAtBat({
+        record: updatedRecord,
+        currentRunners: runners,
+        batterName: getPlayerName(updatedRecord.batterId),
+        getPlayerName,
+        homeScore,
+        awayScore,
+        isHomeTeamBatting: isHomeBatting,
+      })
+
+      // Rebuild runnersScored list (player IDs) from the migrated outcomes
+      const scoredIds: string[] = []
+      for (const base of ['first', 'second', 'third'] as const) {
+        if (newOutcomes[base] === 'scored') {
+          const rid = runners[base]
+          if (rid) scoredIds.push(rid)
+        }
+      }
+      if (updatedRecord.result === 'home_run' || updatedRecord.batterAdvancedTo === 'home') {
+        scoredIds.push(updatedRecord.batterId)
+      }
+
+      updatedRecord.runnersScored = scoredIds
+      updatedRecord.outsOnPlay = engineResult.outsOnPlay
+      updatedRecord.rbiCount = engineResult.rbiCount
+
+      recomputed[atBatId] = updatedRecord
+
+      // Propagate
+      runners = engineResult.nextRunners
+      halfOuts += engineResult.outsOnPlay
+      if (isHomeBatting) homeScore += engineResult.runsScored
+      else awayScore += engineResult.runsScored
+
+      for (const w of engineResult.logEntry.warnings) {
+        warnings.push({ atBatId, message: w })
+      }
+    }
+
+    if (key === currentKey) {
+      currentHalfRunners = runners
+      currentHalfOuts = halfOuts
+    }
+  }
+
+  return {
+    recomputedAtBats: recomputed,
+    currentHalfRunners,
+    currentHalfOuts,
+    homeScore,
+    awayScore,
+    warnings,
+  }
+}
+
 // ── Lineup position ────────────────────────────────────────────────────────
-// Recomputable from the full game log — not dependent on ordering within a half-inning.
+// Derived from the game log: find the most-recent at-bat whose batter is still
+// present in the current lineup, then return the slot AFTER them.
+//
+// Subs occupy slots in the batting order like any other batter — `isSub` is
+// only used to exclude their at-bats from season stats on finalization, it
+// does NOT remove them from the rotation. So both regular and sub at-bats
+// are considered here.
+//
+// This self-heals when the scorekeeper:
+//   - manually picks an out-of-order batter (advances from the picked batter,
+//     not a stale counter)
+//   - removes a player mid-game (falls back to the previous still-present
+//     batter, so the "next up" is the player whose slot naturally follows)
+//   - reorders the lineup (next slot reflects the new order)
+// If no prior batter is still in the lineup (or no at-bats yet), returns 0.
 
 export function computeLineupPosition(
   allAtBats: AtBatRecord[],
   teamId: string,
-  playerTeamMap: Record<string, string>, // playerId → teamId
-  lineupSize: number,
+  playerTeamMap: Record<string, string>, // playerId → teamId (regulars only)
+  lineupOrder: string[],                 // player IDs in batting order (regulars AND subs)
 ): number {
-  const nonSubAtBats = allAtBats.filter(ab => {
-    const isCorrectTeam = playerTeamMap[ab.batterId] === teamId
-    return isCorrectTeam && !ab.isSub
-  })
-  return nonSubAtBats.length % lineupSize
+  if (lineupOrder.length === 0) return 0
+
+  // Filter to at-bats for this team. Custom-sub playerIds (e.g. `sub_<ts>`)
+  // aren't in /players, so they won't match playerTeamMap — fall back to
+  // lineup membership, which implies they're on this team by definition.
+  const lineupSet = new Set(lineupOrder)
+  const teamAtBats = allAtBats
+    .filter(ab => lineupSet.has(ab.batterId) || playerTeamMap[ab.batterId] === teamId)
+    .sort((a, b) => a.timestamp - b.timestamp)
+
+  // Walk backward through history; return the slot after the most-recent
+  // batter who still has a spot in the lineup.
+  for (let i = teamAtBats.length - 1; i >= 0; i--) {
+    const idx = lineupOrder.indexOf(teamAtBats[i].batterId)
+    if (idx !== -1) return (idx + 1) % lineupOrder.length
+  }
+
+  return 0
 }

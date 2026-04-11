@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ref, push, set, update, remove, onValue, get } from 'firebase/database'
 import { db } from '../firebase'
 import { usePlayers } from '../hooks/usePlayers'
@@ -8,13 +8,13 @@ import { useLiveRunners } from '../hooks/useLiveRunners'
 import { useGames } from '../hooks/useGames'
 import { useGameRecord } from '../hooks/useGameRecord'
 import { useGameLineup } from '../hooks/useGameLineup'
-import { applyAtBat, replayHalfInning, type PlayLogEntry } from '../scoring/engine'
+import { applyAtBat, recomputeGameState, computeLineupPosition, type PlayLogEntry, type RecomputeGameResult } from '../scoring/engine'
 import { computeFinalization } from '../scoring/finalization'
 import { generateGameId, getEasternDateString } from '../scoring/gameId'
 import { RunnerDiamond } from '../components/RunnerDiamond'
 import type {
   AtBatResult, AtBatRecord, RunnersState, RunnerOutcomes,
-  PlayersMap, LineupEntry, GameLineup, TeamsMap, GameSummary,
+  PlayersMap, LineupEntry, GameLineup, TeamsMap, GameSummary, GameRecord,
 } from '../types'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -78,6 +78,69 @@ function getConnectedChain(runners: RunnersState): Array<'first' | 'second' | 't
     }
   }
   return chain
+}
+
+/**
+ * Pure helper: given a result and the base state BEFORE the play, compute the
+ * default runner outcomes and batter advance. Used by both the wizard
+ * (live logging) and the at-bat editor (post-hoc corrections), so the chain
+ * rule, walk-forcing, and strikeout-freeze logic stay in one place.
+ */
+function computeResultDefaults(
+  result: AtBatResult,
+  runners: RunnersState,
+): { runnerOutcomes: RunnerOutcomes; batterAdvancedTo: AtBatRecord['batterAdvancedTo'] } {
+  let batterAdvancedTo: AtBatRecord['batterAdvancedTo'] = AUTO_BATTER_ADVANCE[result] ?? null
+  const runnerOutcomes: RunnerOutcomes = {}
+
+  if (result === 'home_run') {
+    if (runners.first)  runnerOutcomes.first  = 'scored'
+    if (runners.second) runnerOutcomes.second = 'scored'
+    if (runners.third)  runnerOutcomes.third  = 'scored'
+    return { runnerOutcomes, batterAdvancedTo }
+  }
+
+  if (result === 'strikeout' || result === 'strikeout_looking') {
+    if (runners.first)  runnerOutcomes.first  = 'stayed'
+    if (runners.second) runnerOutcomes.second = 'stayed'
+    if (runners.third)  runnerOutcomes.third  = 'stayed'
+    return { runnerOutcomes, batterAdvancedTo }
+  }
+
+  if (result === 'groundout') {
+    const chain = getConnectedChain(runners)
+    if (chain.length > 0) {
+      const leadBase = chain[chain.length - 1]
+      for (const base of chain) {
+        if (base === leadBase) {
+          runnerOutcomes[base] = 'sits'
+        } else if (base === 'first') {
+          runnerOutcomes.first = 'second'
+        } else if (base === 'second') {
+          runnerOutcomes.second = 'third'
+        }
+      }
+      batterAdvancedTo = 'first'  // chain rule — batter stays on 1st, lead runner sits
+    }
+    return { runnerOutcomes, batterAdvancedTo }
+  }
+
+  if (result === 'walk') {
+    if (runners.first) {
+      runnerOutcomes.first = 'second'
+      if (runners.second) {
+        runnerOutcomes.second = 'third'
+        if (runners.third) runnerOutcomes.third = 'scored'
+      }
+    }
+    if (runners.first  && !runnerOutcomes.first)  runnerOutcomes.first  = 'stayed'
+    if (runners.second && !runnerOutcomes.second) runnerOutcomes.second = 'stayed'
+    if (runners.third  && !runnerOutcomes.third)  runnerOutcomes.third  = 'stayed'
+    return { runnerOutcomes, batterAdvancedTo }
+  }
+
+  // Other results (single/double/triple/popout/legacy): leave outcomes empty; scorer fills in.
+  return { runnerOutcomes, batterAdvancedTo }
 }
 
 // ── Main component ──────────────────────────────────────────────────────────
@@ -486,11 +549,11 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
                 lineup={homeLineup}
                 onChange={setHomeLineup}
               />
-              <SkBtn onClick={() => setStep('away_lineup')} primary disabled={homeLineup.filter(e => !e.isSub).length < 4}>
+              <SkBtn onClick={() => setStep('away_lineup')} primary disabled={homeLineup.length < 4}>
                 Next — {teams[awayTeamId]?.shortName ?? 'Away'} Lineup →
               </SkBtn>
-              {homeLineup.filter(e => !e.isSub).length < 4 && (
-                <p className="text-yellow-400/60 text-xs text-center">Need at least 4 starters</p>
+              {homeLineup.length < 4 && (
+                <p className="text-yellow-400/60 text-xs text-center">Need at least 4 batters</p>
               )}
               <SkBtn onClick={() => setStep('teams')}>← Back</SkBtn>
             </>
@@ -505,11 +568,11 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
                 lineup={awayLineup}
                 onChange={setAwayLineup}
               />
-              <SkBtn onClick={() => setStep('confirm')} primary disabled={awayLineup.filter(e => !e.isSub).length < 4}>
+              <SkBtn onClick={() => setStep('confirm')} primary disabled={awayLineup.length < 4}>
                 Next — Confirm →
               </SkBtn>
-              {awayLineup.filter(e => !e.isSub).length < 4 && (
-                <p className="text-yellow-400/60 text-xs text-center">Need at least 4 starters</p>
+              {awayLineup.length < 4 && (
+                <p className="text-yellow-400/60 text-xs text-center">Need at least 4 batters</p>
               )}
               <SkBtn onClick={() => setStep('home_lineup')}>← Back</SkBtn>
             </>
@@ -626,7 +689,7 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
       {lineup.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
-            Batting order ({lineup.filter(e => !e.isSub).length} starters{lineup.filter(e => e.isSub).length > 0 ? `, ${lineup.filter(e => e.isSub).length} subs` : ''})
+            Batting order ({lineup.length} batter{lineup.length !== 1 ? 's' : ''}{lineup.filter(e => e.isSub).length > 0 ? `, ${lineup.filter(e => e.isSub).length} sub${lineup.filter(e => e.isSub).length !== 1 ? 's' : ''}` : ''})
           </span>
           {lineup.map((entry, i) => (
             <div
@@ -635,18 +698,15 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
               style={{ background: entry.isSub ? 'rgba(255,255,255,0.03)' : 'rgba(37,99,235,0.1)', border: `1px solid ${entry.isSub ? 'rgba(255,255,255,0.06)' : 'rgba(96,165,250,0.2)'}` }}
             >
               <span className="text-white/30 text-xs font-bold w-5 text-center" style={{ fontFamily: 'var(--font-score)' }}>
-                {entry.isSub ? 'S' : i + 1}
+                {i + 1}
               </span>
               <span className="text-white text-sm font-semibold flex-1">
                 {entry.subName ?? players[entry.playerId]?.name ?? entry.playerId}
+                {entry.isSub && <span className="text-white/30 text-xs font-normal ml-1.5">(sub)</span>}
               </span>
               <div className="flex items-center gap-1">
-                {!entry.isSub && (
-                  <>
-                    <button onClick={() => moveUp(i)} className="w-7 h-7 rounded-lg text-xs flex items-center justify-center" style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}>▲</button>
-                    <button onClick={() => moveDown(i)} className="w-7 h-7 rounded-lg text-xs flex items-center justify-center" style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}>▼</button>
-                  </>
-                )}
+                <button onClick={() => moveUp(i)} className="w-7 h-7 rounded-lg text-xs flex items-center justify-center" style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}>▲</button>
+                <button onClick={() => moveDown(i)} className="w-7 h-7 rounded-lg text-xs flex items-center justify-center" style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.06)' }}>▼</button>
                 <button onClick={() => remove(entry.playerId)} className="w-7 h-7 rounded-lg text-xs flex items-center justify-center" style={{ color: '#f87171', background: 'rgba(239,68,68,0.1)' }}>✕</button>
               </div>
             </div>
@@ -736,7 +796,7 @@ function LineupSummary({ label, lineup, players }: { label: string; lineup: Game
       <div className="flex flex-col gap-0.5">
         {lineup.map((entry, i) => (
           <p key={entry.playerId} className="text-white/70 text-xs">
-            {entry.isSub ? 'S' : `${i + 1}.`} {entry.subName ?? players[entry.playerId]?.name ?? entry.playerId}
+            {i + 1}. {entry.subName ?? players[entry.playerId]?.name ?? entry.playerId}
             {entry.isSub && <span className="text-white/30 ml-1">(sub)</span>}
           </p>
         ))}
@@ -838,12 +898,11 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     })
   }, [pitcherId, gameId, isTopInning])
 
-  // Pre-fill batter from lineup position
+  // Pre-fill batter from lineup position. Subs are real slots in the order.
   useEffect(() => {
-    const regularLineup = battingLineup.filter(e => !e.isSub)
-    if (regularLineup.length > 0) {
-      const pos = lineupPosition % regularLineup.length
-      setBatterId(regularLineup[pos]?.playerId ?? '')
+    if (battingLineup.length > 0) {
+      const pos = lineupPosition % battingLineup.length
+      setBatterId(battingLineup[pos]?.playerId ?? '')
     }
   }, [lineupPosition, battingLineup])
 
@@ -887,78 +946,18 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   const handleSelectResult = (r: AtBatResult) => {
     setResult(r)
 
-    // Auto-fill batter advance
-    const autoAdv = AUTO_BATTER_ADVANCE[r] ?? null
-    setBatterAdvancedTo(autoAdv)
+    const defaults = computeResultDefaults(r, liveRunners)
+    setRunnerOutcomes(defaults.runnerOutcomes)
+    setBatterAdvancedTo(defaults.batterAdvancedTo)
 
-    // Home run: all runners score
-    if (r === 'home_run') {
-      const allScored: RunnerOutcomes = {}
-      if (liveRunners.first) allScored.first = 'scored'
-      if (liveRunners.second) allScored.second = 'scored'
-      if (liveRunners.third) allScored.third = 'scored'
-      setRunnerOutcomes(allScored)
+    // Step transitions depend on the result's flow — kept here so the wizard
+    // and the edit modal (which needs no step transitions) share the pure part.
+    if (r === 'home_run' || r === 'strikeout' || r === 'strikeout_looking' || r === 'walk') {
       setStep('confirm')
       return
     }
-
-    // Strikeout: runners cannot advance — auto-fill all as 'stayed' and skip to confirm.
-    if (r === 'strikeout' || r === 'strikeout_looking') {
-      const allStayed: RunnerOutcomes = {}
-      if (liveRunners.first)  allStayed.first  = 'stayed'
-      if (liveRunners.second) allStayed.second = 'stayed'
-      if (liveRunners.third)  allStayed.third  = 'stayed'
-      setRunnerOutcomes(allStayed)
-      setStep('confirm')
-      return
-    }
-
-    // Ground / tag out: connected-chain rule applies.
-    // With a chain: lead runner leaves the bases (out), batter stays on 1st — 1 out total.
-    // Without a chain: batter is simply out (AUTO_BATTER_ADVANCE already set 'out' above).
     if (r === 'groundout') {
-      const chain = getConnectedChain(liveRunners)
-      if (chain.length > 0) {
-        const leadBase = chain[chain.length - 1]
-        const preFilledOutcomes: RunnerOutcomes = {}
-        for (const base of chain) {
-          if (base === leadBase) {
-            preFilledOutcomes[base] = 'sits'
-          } else if (base === 'first') {
-            preFilledOutcomes.first = 'second'
-          } else if (base === 'second') {
-            preFilledOutcomes.second = 'third'
-          }
-        }
-        setRunnerOutcomes(preFilledOutcomes)
-        setBatterAdvancedTo('first')  // batter is recorded as out but stays on 1st
-      } else {
-        setRunnerOutcomes({})
-      }
       setStep(hasRunners ? 'runner_outcomes' : 'confirm')
-      return
-    }
-
-    // Walk: runners are forced to advance only when every base between them and home is occupied.
-    // Batter takes 1st → runner on 1st forced to 2nd → runner on 2nd forced to 3rd (if 1st occupied)
-    // → runner on 3rd forced to score (if 1st AND 2nd occupied). Unforced runners stay.
-    if (r === 'walk') {
-      const forced: RunnerOutcomes = {}
-      if (liveRunners.first) {
-        forced.first = 'second'
-        if (liveRunners.second) {
-          forced.second = 'third'
-          if (liveRunners.third) {
-            forced.third = 'scored'   // bases loaded — runner scores, batter gets RBI
-          }
-        }
-      }
-      // Runners not in the forced chain stay where they are
-      if (liveRunners.first  && !forced.first)  forced.first  = 'stayed'
-      if (liveRunners.second && !forced.second) forced.second = 'stayed'
-      if (liveRunners.third  && !forced.third)  forced.third  = 'stayed'
-      setRunnerOutcomes(forced)
-      setStep('confirm')
       return
     }
 
@@ -1053,13 +1052,14 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       [`games/${gameId}/awayScore`]: newAwayScore,
     }
 
-    // Advance lineup position if not a sub
-    if (!isSub) {
-      const regularLineup = battingLineup.filter(e => !e.isSub)
-      if (regularLineup.length > 0) {
-        const nextPos = (lineupPosition + 1) % regularLineup.length
-        updates[`games/${gameId}/lineupPosition/${battingTeamId}`] = nextPos
-      }
+    // Advance lineup position from the ACTUAL batter's slot, not a stale
+    // counter. Subs occupy slots in the rotation just like regulars — the
+    // isSub flag is only a stat-exclusion tag — so we advance the pointer
+    // regardless of isSub.
+    const batterIdx = battingLineup.findIndex(e => e.playerId === batterId)
+    if (batterIdx !== -1 && battingLineup.length > 0) {
+      const nextPos = (batterIdx + 1) % battingLineup.length
+      updates[`games/${gameId}/lineupPosition/${battingTeamId}`] = nextPos
     }
 
     // Mirror to /game/meta if streamed
@@ -1079,12 +1079,17 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       // Write the next batter directly so the notch updates atomically with the play.
       // Avoids the 3-hop delay: Firebase lineupPosition → listener → pre-fill effect → sync effect.
       if (newOuts < 3) {
-        const regularLineup = battingLineup.filter(e => !e.isSub)
-        if (regularLineup.length > 0) {
-          const nextPos = isSub
-            ? lineupPosition % regularLineup.length
-            : (lineupPosition + 1) % regularLineup.length
-          updates['game/matchup/batterId'] = regularLineup[nextPos]?.playerId ?? null
+        if (battingLineup.length > 0) {
+          const nextPos = batterIdx !== -1
+            ? (batterIdx + 1) % battingLineup.length
+            : (lineupPosition + 1) % battingLineup.length
+          const nextEntry = battingLineup[nextPos]
+          // Custom subs have a fabricated playerId (sub_<timestamp>) not in /players;
+          // their name comes from subName, so the scorebug notch can't render them.
+          // In that case, clear the notch rather than pointing at a bogus ID.
+          const nextBatterForNotch =
+            nextEntry && !nextEntry.isSub ? nextEntry.playerId : null
+          updates['game/matchup/batterId'] = nextBatterForNotch
         }
       } else {
         updates['game/matchup/batterId'] = null  // inning ending — clear the notch
@@ -1228,69 +1233,88 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   const sortedAtBats = Object.entries(atBats).sort(([, a], [, b]) => b.timestamp - a.timestamp)
   const lastAtBatId = sortedAtBats[0]?.[0] ?? null
 
-  const deleteAtBat = async (atBatId: string) => {
+  // ── At-bat editing modal state ───────────────────────────────────────────
+  const [editingAtBatId, setEditingAtBatId] = useState<string | null>(null)
+
+  /**
+   * Commit a recomputed game state to Firebase. Used by deleteAtBat and the
+   * edit modal. Writes all recomputed at-bat records, game aggregates,
+   * liveRunners, lineup positions, and mirrors to /game/meta if streamed.
+   * Also flips wizard step between batter/inning_end if outs cross 3.
+   */
+  const applyRecompute = async (recompute: RecomputeGameResult, deletedIds: string[] = []) => {
     if (!gameId || !game) return
-    if (atBatId !== lastAtBatId) return
 
-    // Remove the record first
-    await remove(ref(db, `gameStats/${gameId}/${atBatId}`))
+    const updates: Record<string, unknown> = {}
 
-    // Replay current half-inning to recompute liveRunners + outs
-    const isHomeTeamBatting = !isTopInning
-    const allAtBatList = Object.entries(atBats)
-      .filter(([id]) => id !== atBatId)
-      .map(([, ab]) => ab)
-      .sort((a, b) => a.timestamp - b.timestamp)
-
-    // Split into current half-inning vs everything else
-    const currentHalfAbs = allAtBatList.filter(ab => ab.inning === inning && ab.isTopInning === isTopInning)
-    const otherAbs = allAtBatList.filter(ab => !(ab.inning === inning && ab.isTopInning === isTopInning))
-
-    // Compute score totals from all other half-innings
-    let startHomeScore = 0, startAwayScore = 0
-    for (const ab of otherAbs) {
-      const isHomeBatting = !ab.isTopInning
-      const runs = ab.runnersScored.length + (ab.batterAdvancedTo === 'home' ? 1 : 0)
-      if (isHomeBatting) startHomeScore += runs
-      else startAwayScore += runs
+    // Delete removed records
+    for (const id of deletedIds) {
+      updates[`gameStats/${gameId}/${id}`] = null
+    }
+    // Write every recomputed at-bat record back to the same key
+    for (const [id, rec] of Object.entries(recompute.recomputedAtBats)) {
+      updates[`gameStats/${gameId}/${id}`] = rec
     }
 
-    const replay = replayHalfInning(currentHalfAbs, resolvePlayerName, isHomeTeamBatting, startHomeScore, startAwayScore)
+    // Game aggregates
+    updates[`games/${gameId}/homeScore`] = recompute.homeScore
+    updates[`games/${gameId}/awayScore`] = recompute.awayScore
+    updates[`games/${gameId}/outs`] = recompute.currentHalfOuts
+    updates[`liveRunners/${gameId}`] = recompute.currentHalfRunners
 
-    const newHomeScore = startHomeScore + (isHomeTeamBatting ? replay.totalRuns : 0)
-    const newAwayScore = startAwayScore + (!isHomeTeamBatting ? replay.totalRuns : 0)
-
-    const updates: Record<string, unknown> = {
-      [`liveRunners/${gameId}`]: replay.finalRunners,
-      [`games/${gameId}/outs`]: Math.min(replay.totalOuts, 2),
-      [`games/${gameId}/homeScore`]: newHomeScore,
-      [`games/${gameId}/awayScore`]: newAwayScore,
+    // Recompute lineup positions for both teams from the full at-bat list.
+    // Subs are real slots in the rotation, so we pass the full lineup orders.
+    const allAtBatList = Object.values(recompute.recomputedAtBats)
+    const playerTeamMap: Record<string, string> = {}
+    for (const [id, p] of Object.entries(players)) playerTeamMap[id] = p.teamId
+    const homeLineup = game.homeTeamId === battingTeamId ? battingLineup : fieldingLineup
+    const awayLineup = game.awayTeamId === battingTeamId ? battingLineup : fieldingLineup
+    const homeOrder = homeLineup.map(e => e.playerId)
+    const awayOrder = awayLineup.map(e => e.playerId)
+    if (homeOrder.length > 0 && game.homeTeamId) {
+      updates[`games/${gameId}/lineupPosition/${game.homeTeamId}`] =
+        computeLineupPosition(allAtBatList, game.homeTeamId, playerTeamMap, homeOrder)
+    }
+    if (awayOrder.length > 0 && game.awayTeamId) {
+      updates[`games/${gameId}/lineupPosition/${game.awayTeamId}`] =
+        computeLineupPosition(allAtBatList, game.awayTeamId, playerTeamMap, awayOrder)
     }
 
-    // Rewind lineup position if the deleted at-bat was not a sub
-    const deletedAb = atBats[atBatId]
-    if (deletedAb && !deletedAb.isSub) {
-      const regularLineup = battingLineup.filter(e => !e.isSub)
-      if (regularLineup.length > 0) {
-        const prevPos = (lineupPosition - 1 + regularLineup.length) % regularLineup.length
-        updates[`games/${gameId}/lineupPosition/${battingTeamId}`] = prevPos
-      }
-    }
-
+    // Mirror to /game/meta if streamed
     if (game.isStreamed) {
-      updates['game/meta/outs'] = Math.min(replay.totalOuts, 2)
-      updates['game/meta/homeScore'] = newHomeScore
-      updates['game/meta/awayScore'] = newAwayScore
+      updates['game/meta/outs'] = recompute.currentHalfOuts
+      updates['game/meta/homeScore'] = recompute.homeScore
+      updates['game/meta/awayScore'] = recompute.awayScore
+      updates['game/meta/bases'] = {
+        first: !!recompute.currentHalfRunners.first,
+        second: !!recompute.currentHalfRunners.second,
+        third: !!recompute.currentHalfRunners.third,
+      }
     }
 
     await update(ref(db), updates)
 
-    // If we were showing the inning-end interstitial (outs >= 3) but after
-    // deletion the outs drop back below 3, return to the batter step.
-    if (step === 'inning_end' && replay.totalOuts < 3) {
+    // Flip wizard step if outs crossed the 3-out threshold in either direction
+    if (recompute.currentHalfOuts >= 3 && step !== 'inning_end') {
+      setStep('inning_end')
+      const lastPitcher = isTopInning
+        ? game.matchup?.lastPitcherAway
+        : game.matchup?.lastPitcherHome
+      setNextPitcherId(lastPitcher ?? pitcherId ?? '')
+    } else if (recompute.currentHalfOuts < 3 && step === 'inning_end') {
       setStep('batter')
       setNextPitcherId('')
     }
+  }
+
+  const deleteAtBat = async (atBatId: string) => {
+    if (!gameId || !game) return
+    if (!atBats[atBatId]) return
+
+    const updatedAtBats = { ...atBats }
+    delete updatedAtBats[atBatId]
+    const recompute = recomputeGameState(updatedAtBats, resolvePlayerName, inning, isTopInning)
+    await applyRecompute(recompute, [atBatId])
   }
 
   const undoLastAtBat = async () => {
@@ -1306,19 +1330,8 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     await deleteAtBat(lastAtBatId)
   }
 
-  const startEdit = async (atBatId: string) => {
-    if (atBatId !== lastAtBatId) return  // only last at-bat is editable
-    const ab = atBats[atBatId]
-    if (!ab) return
-    // Pre-fill wizard with the at-bat's data, then delete the old record (same as undo)
-    setBatterId(ab.batterId)
-    setPitcherId(ab.pitcherId)
-    setResult(ab.result)
-    setRunnerOutcomes(ab.runnerOutcomes ?? {})
-    setBatterAdvancedTo(ab.batterAdvancedTo)
-    await deleteAtBat(atBatId)
-    setStep('confirm')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  const openEditModal = (atBatId: string) => {
+    setEditingAtBatId(atBatId)
   }
 
   // ── Pitcher options ──────────────────────────────────────────────────────
@@ -1344,6 +1357,26 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
 
   return (
     <div className="min-h-screen px-4 py-4" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
+
+      {/* At-bat edit modal */}
+      {editingAtBatId && atBats[editingAtBatId] && (
+        <AtBatEditModal
+          atBatId={editingAtBatId}
+          ab={atBats[editingAtBatId]}
+          allAtBats={atBats}
+          players={players}
+          teams={teams}
+          game={game}
+          gameId={gameId}
+          battingLineup={battingLineup}
+          fieldingLineup={fieldingLineup}
+          resolvePlayerName={resolvePlayerName}
+          currentInning={inning}
+          currentIsTop={isTopInning}
+          onClose={() => setEditingAtBatId(null)}
+          applyRecompute={applyRecompute}
+        />
+      )}
 
       {/* Finalize confirmation modal — triggered by End Game button or auto game-complete prompt */}
       {(confirmFinalize || showGameCompletePrompt) && !game?.finalized && (
@@ -1852,8 +1885,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
                 atBatId={id}
                 ab={ab}
                 players={players}
-                isEditable={id === lastAtBatId}
-                onEdit={startEdit}
+                onEdit={openEditModal}
                 onDelete={deleteAtBat}
               />
             ))}
@@ -2027,11 +2059,10 @@ function SkBtn({ onClick, disabled, primary, children }: {
   )
 }
 
-function AtBatRow({ atBatId, ab, players, isEditable, onEdit, onDelete }: {
+function AtBatRow({ atBatId, ab, players, onEdit, onDelete }: {
   atBatId: string
   ab: AtBatRecord
   players: PlayersMap
-  isEditable: boolean
   onEdit: (id: string) => void
   onDelete: (id: string) => void
 }) {
@@ -2056,9 +2087,7 @@ function AtBatRow({ atBatId, ab, players, isEditable, onEdit, onDelete }: {
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        {!isEditable ? (
-          <span className="text-white/15 text-xs">locked</span>
-        ) : confirming ? (
+        {confirming ? (
           <>
             <button onClick={() => { onDelete(atBatId); setConfirming(false) }} className="text-xs font-bold px-3 h-8 rounded-lg" style={{ background: '#b91c1c', color: '#fff' }}>
               Delete
@@ -2077,6 +2106,353 @@ function AtBatRow({ atBatId, ab, players, isEditable, onEdit, onDelete }: {
             </button>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+function AtBatEditModal({
+  atBatId, ab, allAtBats, players, teams, game, battingLineup, fieldingLineup,
+  resolvePlayerName, currentInning, currentIsTop, onClose, applyRecompute,
+}: {
+  atBatId: string
+  ab: AtBatRecord
+  allAtBats: Record<string, AtBatRecord>
+  players: PlayersMap
+  teams: TeamsMap
+  game: GameRecord | null
+  gameId: string
+  battingLineup: GameLineup
+  fieldingLineup: GameLineup
+  resolvePlayerName: (id: string) => string
+  currentInning: number
+  currentIsTop: boolean
+  onClose: () => void
+  applyRecompute: (recompute: RecomputeGameResult, deletedIds?: string[]) => Promise<void>
+}) {
+  const [batterId, setBatterId] = useState(ab.batterId)
+  const [pitcherId, setPitcherId] = useState(ab.pitcherId)
+  const [result, setResult] = useState<AtBatResult>(ab.result)
+  const [runnerOutcomes, setRunnerOutcomes] = useState<RunnerOutcomes>(ab.runnerOutcomes ?? {})
+  const [batterAdvancedTo, setBatterAdvancedTo] = useState<AtBatRecord['batterAdvancedTo']>(ab.batterAdvancedTo)
+  const [saving, setSaving] = useState(false)
+
+  // The base state AT the time of this at-bat, as stored on the record.
+  // The scorekeeper edits this at-bat relative to its own snapshot, not
+  // liveRunners (the current half may have moved on since). Firebase RTDB
+  // strips objects whose fields are all null, so an at-bat that happened
+  // with empty bases has runnersOnBase === undefined — fall back to empty.
+  const runners: RunnersState = ab.runnersOnBase ?? { first: null, second: null, third: null }
+
+  // Determine the at-bat's batting/fielding teams — may be different from
+  // the current game state if editing a past half-inning.
+  const abBattingTeamId = ab.isTopInning ? (game?.awayTeamId ?? '') : (game?.homeTeamId ?? '')
+  const abFieldingTeamId = ab.isTopInning ? (game?.homeTeamId ?? '') : (game?.awayTeamId ?? '')
+  const abLineup: GameLineup = ab.isTopInning === currentIsTop ? battingLineup : fieldingLineup
+
+  const batterOptions = Object.entries(players)
+    .filter(([, p]) => p.teamId === abBattingTeamId)
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+  const pitcherOptions = Object.entries(players)
+    .filter(([, p]) => p.teamId === abFieldingTeamId)
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+
+  const handleSelectResult = (r: AtBatResult) => {
+    setResult(r)
+    const defaults = computeResultDefaults(r, runners)
+    setRunnerOutcomes(defaults.runnerOutcomes)
+    setBatterAdvancedTo(defaults.batterAdvancedTo)
+  }
+
+  // Construct the hypothetical updated record for cascade preview
+  const updatedRecord: AtBatRecord = useMemo(() => {
+    const entry = abLineup.find(e => e.playerId === batterId)
+    const isSub = !entry || entry.isSub
+    return {
+      ...ab,
+      batterId,
+      pitcherId,
+      result,
+      runnersOnBase: runners, // normalized — Firebase may have stripped the stored one
+      runnerOutcomes,
+      batterAdvancedTo,
+      isSub,
+      ...(entry?.subName ? { subName: entry.subName } : {}),
+    }
+  }, [ab, batterId, pitcherId, result, runners, runnerOutcomes, batterAdvancedTo, abLineup])
+
+  // Preview the full replay with this edit applied
+  const preview = useMemo(() => {
+    const hypotheticalMap = { ...allAtBats, [atBatId]: updatedRecord }
+    return recomputeGameState(hypotheticalMap, resolvePlayerName, currentInning, currentIsTop)
+  }, [allAtBats, atBatId, updatedRecord, resolvePlayerName, currentInning, currentIsTop])
+
+  const oldHome = game?.homeScore ?? 0
+  const oldAway = game?.awayScore ?? 0
+  const oldOuts = game?.outs ?? 0
+
+  const homeDelta = preview.homeScore - oldHome
+  const awayDelta = preview.awayScore - oldAway
+  const outsDelta = preview.currentHalfOuts - oldOuts
+
+  const presentBases = (['third', 'second', 'first'] as const).filter(b => runners[b])
+  const hasRunners = presentBases.length > 0
+
+  const advanceOptions: Array<{ label: string; value: NonNullable<AtBatRecord['batterAdvancedTo']> }> = [
+    { label: '1st', value: 'first' },
+    { label: '2nd', value: 'second' },
+    { label: '3rd', value: 'third' },
+    { label: 'Home', value: 'home' },
+    { label: 'Out', value: 'out' },
+  ]
+
+  const handleSave = async () => {
+    if (!batterId || !result || !batterAdvancedTo) return
+    setSaving(true)
+    try {
+      await applyRecompute(preview)
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const renderDelta = (delta: number) => {
+    if (delta === 0) return <span className="text-white/30">no change</span>
+    const color = delta > 0 ? '#4ade80' : '#f87171'
+    const sign = delta > 0 ? '+' : ''
+    return <span style={{ color, fontWeight: 700 }}>{sign}{delta}</span>
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)' }}>
+      <div
+        className="w-full max-w-md rounded-2xl p-5 max-h-[92vh] overflow-y-auto"
+        style={{ background: '#1a1f2e', border: '1px solid rgba(96,165,250,0.3)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-white text-xl font-black uppercase tracking-wide" style={{ fontFamily: 'var(--font-score)' }}>
+            Edit At-Bat
+          </h2>
+          <span className="text-white/50 text-sm font-semibold" style={{ fontFamily: 'var(--font-score)' }}>
+            {ab.isTopInning ? '▲' : '▼'}{ab.inning}
+          </span>
+        </div>
+
+        {/* Batter */}
+        <div className="mb-3">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-score)' }}>
+            🏏 Batter — {teams[abBattingTeamId]?.shortName ?? abBattingTeamId}
+          </p>
+          <select
+            value={batterId}
+            onChange={e => setBatterId(e.target.value)}
+            className="w-full h-12 rounded-xl px-3 text-sm font-medium"
+            style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+          >
+            {batterOptions.map(([id, p]) => (
+              <option key={id} value={id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Pitcher */}
+        <div className="mb-3">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-score)' }}>
+            ⚾ Pitcher — {teams[abFieldingTeamId]?.shortName ?? abFieldingTeamId}
+          </p>
+          <select
+            value={pitcherId}
+            onChange={e => setPitcherId(e.target.value)}
+            className="w-full h-12 rounded-xl px-3 text-sm font-medium"
+            style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+          >
+            {pitcherOptions.map(([id, p]) => (
+              <option key={id} value={id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Result */}
+        <div className="mb-3">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-score)' }}>
+            Result
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {RESULTS.map(r => (
+              <button
+                key={r}
+                onClick={() => handleSelectResult(r)}
+                className="h-10 rounded-lg text-xs font-semibold"
+                style={{
+                  background: result === r ? 'rgba(37,99,235,0.9)' : 'rgba(255,255,255,0.07)',
+                  color: result === r ? '#fff' : 'rgba(255,255,255,0.8)',
+                  border: result === r ? '1px solid rgba(96,165,250,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                }}
+              >
+                {RESULT_LABELS[r]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Runner outcomes — only for bases that had a runner at this play */}
+        {hasRunners && (
+          <div className="mb-3">
+            <p className="text-white/40 text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-score)' }}>
+              Runners (at time of play)
+            </p>
+            <div className="flex flex-col gap-2">
+              {presentBases.map(base => {
+                const runnerId = runners[base]!
+                const outcome = runnerOutcomes[base]
+                const allOptions: Array<{ label: string; value: NonNullable<RunnerOutcomes['first']> }> = [
+                  { label: 'Scored', value: 'scored' },
+                  ...(base === 'first' ? [{ label: '→ 2nd', value: 'second' as const }] : []),
+                  ...(base !== 'third' ? [{ label: '→ 3rd', value: 'third' as const }] : []),
+                  { label: 'Stayed', value: 'stayed' },
+                  { label: 'Out', value: 'out' },
+                  { label: 'Sits', value: 'sits' },
+                ]
+                const setOutcome = (v: NonNullable<RunnerOutcomes['first']>) => {
+                  setRunnerOutcomes(prev => {
+                    const next = { ...prev }
+                    if (base === 'first') next.first = v as RunnerOutcomes['first']
+                    else if (base === 'second') next.second = v as RunnerOutcomes['second']
+                    else next.third = v as RunnerOutcomes['third']
+                    return next
+                  })
+                }
+                return (
+                  <div key={base} className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <p className="text-white font-semibold text-xs mb-1">
+                      {resolvePlayerName(runnerId)}{' '}
+                      <span className="text-white/40">· {base === 'first' ? '1st' : base === 'second' ? '2nd' : '3rd'}</span>
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {allOptions.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setOutcome(opt.value)}
+                          className="h-7 px-2 rounded text-xs font-semibold"
+                          style={{
+                            background: outcome === opt.value
+                              ? opt.value === 'out' ? 'rgba(239,68,68,0.4)'
+                              : opt.value === 'sits' ? 'rgba(234,179,8,0.35)'
+                              : opt.value === 'scored' ? 'rgba(22,163,74,0.4)'
+                              : 'rgba(37,99,235,0.5)'
+                              : 'rgba(255,255,255,0.08)',
+                            color: outcome === opt.value ? '#fff' : 'rgba(255,255,255,0.6)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Batter advance */}
+        <div className="mb-4">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-score)' }}>
+            Batter ends up
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {advanceOptions.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setBatterAdvancedTo(opt.value)}
+                className="h-9 px-3 rounded-lg text-xs font-semibold"
+                style={{
+                  background: batterAdvancedTo === opt.value ? 'rgba(37,99,235,0.9)' : 'rgba(255,255,255,0.07)',
+                  color: batterAdvancedTo === opt.value ? '#fff' : 'rgba(255,255,255,0.8)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Cascade preview */}
+        <div className="rounded-xl p-3 mb-4" style={{ background: 'rgba(37,99,235,0.08)', border: '1px solid rgba(96,165,250,0.25)' }}>
+          <p className="text-blue-300 text-xs font-semibold uppercase tracking-widest mb-2" style={{ fontFamily: 'var(--font-score)' }}>
+            Cascade Preview
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-xs mb-1">
+            <div>
+              <span className="text-white/40">{teams[game?.awayTeamId ?? '']?.shortName ?? 'Away'}: </span>
+              <span className="text-white font-bold" style={{ fontFamily: 'var(--font-score)' }}>{oldAway} → {preview.awayScore}</span>{' '}
+              {renderDelta(awayDelta)}
+            </div>
+            <div>
+              <span className="text-white/40">{teams[game?.homeTeamId ?? '']?.shortName ?? 'Home'}: </span>
+              <span className="text-white font-bold" style={{ fontFamily: 'var(--font-score)' }}>{oldHome} → {preview.homeScore}</span>{' '}
+              {renderDelta(homeDelta)}
+            </div>
+          </div>
+          <div className="text-xs">
+            <span className="text-white/40">
+              Current half outs ({currentIsTop ? '▲' : '▼'}{currentInning}):{' '}
+            </span>
+            <span className="text-white font-bold" style={{ fontFamily: 'var(--font-score)' }}>
+              {oldOuts} → {preview.currentHalfOuts}
+            </span>{' '}
+            {renderDelta(outsDelta)}
+          </div>
+          {preview.warnings.length > 0 && (
+            <div className="mt-2 pt-2 border-t" style={{ borderColor: 'rgba(234,179,8,0.25)' }}>
+              <p className="text-yellow-400 text-xs font-semibold mb-1">⚠ {preview.warnings.length} warning(s)</p>
+              <ul className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                {preview.warnings.slice(0, 8).map((w, i) => {
+                  const wab = allAtBats[w.atBatId]
+                  const half = wab ? `${wab.isTopInning ? 'Top' : 'Bot'} ${wab.inning}` : ''
+                  const batterName = wab ? resolvePlayerName(wab.batterId) : ''
+                  return (
+                    <li key={i} className="text-yellow-300/70 text-xs leading-snug">
+                      <span className="text-yellow-500/80 font-semibold">[{half} · {batterName}]</span>{' '}
+                      {w.message}
+                    </li>
+                  )
+                })}
+                {preview.warnings.length > 8 && (
+                  <li className="text-yellow-300/50 text-xs italic">…and {preview.warnings.length - 8} more</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 h-11 rounded-xl font-bold text-sm"
+            style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !batterId || !result || !batterAdvancedTo}
+            className="flex-1 h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
+            style={{
+              background: saving ? 'rgba(37,99,235,0.4)' : '#2563eb',
+              color: '#fff',
+              border: '1px solid rgba(96,165,250,0.5)',
+              opacity: (!batterId || !result || !batterAdvancedTo) ? 0.4 : 1,
+            }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -2156,6 +2532,7 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
 
   const { lineup: homeLineup } = useGameLineup(gameId, homeTeamId)
   const { lineup: awayLineup } = useGameLineup(gameId, awayTeamId)
+  const { atBats } = useGameStats(gameId)
 
   const [editingSide, setEditingSide] = useState<'home' | 'away'>('home')
   const [saving, setSaving] = useState(false)
@@ -2205,7 +2582,21 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
   const save = async () => {
     setSaving(true)
     try {
-      await set(ref(db, `games/${gameId}/lineups/${teamId}`), localLineup)
+      // Recompute lineupPosition from history against the new lineup order
+      // so removals/reorders immediately re-sync the pointer. Subs count
+      // as real slots, so we pass the full order.
+      const lineupOrder = localLineup.map(e => e.playerId)
+      const playerTeamMap: Record<string, string> = {}
+      for (const [id, p] of Object.entries(players)) playerTeamMap[id] = p.teamId
+      const allAtBatList = Object.values(atBats)
+      const nextPos = lineupOrder.length > 0
+        ? computeLineupPosition(allAtBatList, teamId, playerTeamMap, lineupOrder)
+        : 0
+
+      const updates: Record<string, unknown> = {}
+      updates[`games/${gameId}/lineups/${teamId}`] = localLineup
+      updates[`games/${gameId}/lineupPosition/${teamId}`] = nextPos
+      await update(ref(db), updates)
       onBack()
     } finally {
       setSaving(false)

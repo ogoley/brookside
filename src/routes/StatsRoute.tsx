@@ -6,7 +6,8 @@ import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
 import { useGames } from '../hooks/useGames'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
-import type { GameSummary, GameRecord, PlayersMap, TeamsMap } from '../types'
+import { computeGameStats, mergeHittingStats, mergePitchingStats } from '../scoring/engine'
+import type { GameRecord, PlayersMap, TeamsMap, AtBatRecord, HittingStats, PitchingStats } from '../types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,102 +64,91 @@ interface PitchingRow {
 const INNINGS_PER_GAME = 7
 
 function buildHittingRows(
-  allSummaries: Record<string, Record<string, GameSummary>>,
   players: PlayersMap,
   teams: TeamsMap,
+  liveAtBats: Record<string, AtBatRecord[]>,
 ): HittingRow[] {
-  const agg: Record<string, Omit<HittingRow, 'avg' | 'obp' | 'slg' | 'ops'>> = {}
+  const rows: HittingRow[] = []
 
-  for (const gameSummaries of Object.values(allSummaries)) {
-    const seen = new Set<string>()
-    for (const s of Object.values(gameSummaries)) {
-      if (s.pa === 0 && s.ab === 0) continue
-      if (!agg[s.playerId]) {
-        const p = players[s.playerId]
-        const t = teams[s.teamId]
-        agg[s.playerId] = {
-          playerId: s.playerId,
-          name: p?.name ?? s.playerId,
-          team: t?.name ?? s.teamId,
-          teamShort: t?.shortName ?? s.teamId,
-          teamLogo: t?.logoUrl ?? '',
-          gp: 0, pa: 0, ab: 0, h: 0, doubles: 0, triples: 0,
-          hr: 0, r: 0, rbi: 0, bb: 0, k: 0,
-        }
+  for (const [playerId, player] of Object.entries(players)) {
+    let hitting: HittingStats | null = player.stats?.hitting ?? null
+
+    for (const atBats of Object.values(liveAtBats)) {
+      const nonSub = atBats.filter(ab => !ab.isSub)
+      const gameResult = computeGameStats(nonSub, playerId)
+      if (gameResult.hitting) {
+        hitting = hitting ? mergeHittingStats(hitting, gameResult.hitting) : gameResult.hitting
       }
-      const a = agg[s.playerId]
-      a.pa += s.pa
-      a.ab += s.ab
-      a.h += s.h
-      a.doubles += s.doubles
-      a.triples += s.triples
-      a.hr += s.hr
-      a.r += s.r
-      a.rbi += s.rbi
-      a.bb += s.bb
-      a.k += s.k
-      if (!seen.has(s.playerId)) { a.gp++; seen.add(s.playerId) }
     }
+
+    if (!hitting) continue
+
+    const team = teams[player.teamId]
+    rows.push({
+      playerId,
+      name: player.name,
+      team: team?.name ?? player.teamId,
+      teamShort: team?.shortName ?? player.teamId,
+      teamLogo: team?.logoUrl ?? '',
+      gp: hitting.gp ?? 0,
+      pa: hitting.pa ?? 0,
+      ab: hitting.ab ?? 0,
+      h: hitting.h ?? 0,
+      doubles: hitting.doubles ?? 0,
+      triples: hitting.triples ?? 0,
+      hr: hitting.hr ?? 0,
+      r: hitting.r ?? 0,
+      rbi: hitting.rbi ?? 0,
+      bb: hitting.bb ?? 0,
+      k: hitting.k ?? 0,
+      avg: hitting.avg ?? 0,
+      obp: hitting.obp ?? 0,
+      slg: hitting.slg ?? 0,
+      ops: hitting.ops ?? 0,
+    })
   }
 
-  return Object.values(agg).map(a => ({
-    ...a,
-    avg: a.ab > 0 ? a.h / a.ab : 0,
-    obp: a.pa > 0 ? (a.h + a.bb) / a.pa : 0,
-    slg: a.ab > 0 ? ((a.h - a.doubles - a.triples - a.hr) + 2 * a.doubles + 3 * a.triples + 4 * a.hr) / a.ab : 0,
-    ops: (a.pa > 0 ? (a.h + a.bb) / a.pa : 0) + (a.ab > 0 ? ((a.h - a.doubles - a.triples - a.hr) + 2 * a.doubles + 3 * a.triples + 4 * a.hr) / a.ab : 0),
-  }))
+  return rows
 }
 
 function buildPitchingRows(
-  allSummaries: Record<string, Record<string, GameSummary>>,
   players: PlayersMap,
   teams: TeamsMap,
+  liveAtBats: Record<string, AtBatRecord[]>,
 ): PitchingRow[] {
-  const agg: Record<string, { playerId: string; name: string; team: string; teamShort: string; teamLogo: string; gp: number; outs: number; k: number; bb: number; ra: number }> = {}
+  const rows: PitchingRow[] = []
 
-  for (const gameSummaries of Object.values(allSummaries)) {
-    const seen = new Set<string>()
-    for (const s of Object.values(gameSummaries)) {
-      if (s.inningsPitched === 0) continue
-      if (!agg[s.playerId]) {
-        const p = players[s.playerId]
-        const t = teams[s.teamId]
-        agg[s.playerId] = {
-          playerId: s.playerId,
-          name: p?.name ?? s.playerId,
-          team: t?.name ?? s.teamId,
-          teamShort: t?.shortName ?? s.teamId,
-          teamLogo: t?.logoUrl ?? '',
-          gp: 0, outs: 0, k: 0, bb: 0, ra: 0,
-        }
+  for (const [playerId, player] of Object.entries(players)) {
+    let pitching: PitchingStats | null = player.stats?.pitching ?? null
+
+    for (const atBats of Object.values(liveAtBats)) {
+      const nonSub = atBats.filter(ab => !ab.isSub)
+      const gameResult = computeGameStats(nonSub, playerId)
+      if (gameResult.pitching) {
+        pitching = pitching ? mergePitchingStats(pitching, gameResult.pitching) : gameResult.pitching
       }
-      const a = agg[s.playerId]
-      // Convert IP back to outs for clean accumulation
-      a.outs += Math.round(s.inningsPitched * 3)
-      a.k += s.pitchingK ?? 0
-      a.bb += s.pitchingBb ?? 0
-      a.ra += s.runsAllowed ?? 0
-      if (!seen.has(s.playerId)) { a.gp++; seen.add(s.playerId) }
     }
+
+    if (!pitching) continue
+
+    const ip = pitching.inningsPitched ?? 0
+    const team = teams[player.teamId]
+    rows.push({
+      playerId,
+      name: player.name,
+      team: team?.name ?? player.teamId,
+      teamShort: team?.shortName ?? player.teamId,
+      teamLogo: team?.logoUrl ?? '',
+      gp: pitching.gp ?? 0,
+      ip,
+      k: pitching.k ?? 0,
+      bb: pitching.bb ?? 0,
+      ra: pitching.runsAllowed ?? 0,
+      era: pitching.era ?? 0,
+    })
   }
 
-  return Object.values(agg).map(a => {
-    const ip = Math.floor(a.outs / 3) + (a.outs % 3) / 3
-    return {
-      playerId: a.playerId,
-      name: a.name,
-      team: a.team,
-      teamShort: a.teamShort,
-      teamLogo: a.teamLogo,
-      gp: a.gp,
-      ip,
-      k: a.k,
-      bb: a.bb,
-      ra: a.ra,
-      era: ip > 0 ? (a.ra / ip) * INNINGS_PER_GAME : 0,
-    }
-  })
+  return rows
 }
 
 interface StandingsRow {
@@ -302,33 +292,32 @@ export function StatsRoute() {
   const [resultsFilter, setResultsFilter] = useState<string>('')
   const [selectedTeam, setSelectedTeam] = useState<string>('')
 
-  // Load all gameSummaries for finalized games
-  const [allSummaries, setAllSummaries] = useState<Record<string, Record<string, GameSummary>>>({})
-  const [loading, setLoading] = useState(true)
+  // Subscribe to at-bats for any non-finalized games so live stats merge in real-time
+  const [liveAtBats, setLiveAtBats] = useState<Record<string, AtBatRecord[]>>({})
 
-  const finalizedGameIds = useMemo(
-    () => games.filter(g => g.game.finalized).map(g => g.gameId),
+  const liveGameIds = useMemo(
+    () => games.filter(g => !g.game.finalized).map(g => g.gameId),
     [games],
   )
 
   useEffect(() => {
-    if (finalizedGameIds.length === 0) { setLoading(false); return }
-    const unsub = onValue(ref(db, 'gameSummaries'), snap => {
-      if (!snap.exists()) { setAllSummaries({}); setLoading(false); return }
-      const raw = snap.val() as Record<string, Record<string, GameSummary>>
-      // Only include finalized games
-      const filtered: typeof raw = {}
-      for (const gId of finalizedGameIds) {
-        if (raw[gId]) filtered[gId] = raw[gId]
-      }
-      setAllSummaries(filtered)
-      setLoading(false)
-    })
-    return () => unsub()
-  }, [finalizedGameIds])
+    if (liveGameIds.length === 0) { setLiveAtBats({}); return }
+    const data: Record<string, AtBatRecord[]> = {}
+    const unsubs = liveGameIds.map(gameId =>
+      onValue(ref(db, `gameStats/${gameId}`), snap => {
+        if (snap.exists()) {
+          data[gameId] = Object.values(snap.val() as Record<string, AtBatRecord>)
+        } else {
+          delete data[gameId]
+        }
+        setLiveAtBats({ ...data })
+      })
+    )
+    return () => unsubs.forEach(u => u())
+  }, [liveGameIds])
 
-  const hittingRows = useMemo(() => buildHittingRows(allSummaries, players, teams), [allSummaries, players, teams])
-  const pitchingRows = useMemo(() => buildPitchingRows(allSummaries, players, teams), [allSummaries, players, teams])
+  const hittingRows = useMemo(() => buildHittingRows(players, teams, liveAtBats), [players, teams, liveAtBats])
+  const pitchingRows = useMemo(() => buildPitchingRows(players, teams, liveAtBats), [players, teams, liveAtBats])
 
   const sortedHitting = useMemo(() => {
     const { col, dir } = hittingSort
@@ -446,9 +435,7 @@ export function StatsRoute() {
         {config.leagueLogo && (
           <img src={config.leagueLogo} alt="" style={{ position: 'absolute', top: 16, right: 12, width: 64, height: 64, objectFit: 'contain', opacity: 0.12, pointerEvents: 'none' }} />
         )}
-        {loading ? (
-          <p style={{ textAlign: 'center', color: '#9ca3af', padding: '40px 0', fontSize: 14 }}>Loading stats…</p>
-        ) : tab === 'standings' ? (
+        {tab === 'standings' ? (
           /* ── Standings ──────────────────────────────────────────── */
           <div>
             {/* Standings table */}
@@ -532,7 +519,7 @@ export function StatsRoute() {
         ) : tab === 'hitting' ? (
           /* ── Hitting ────────────────────────────────────────────── */
           sortedHitting.length === 0 ? (
-            <EmptyState>No hitting stats yet — finalize a game to see data here.</EmptyState>
+            <EmptyState>No hitting stats yet.</EmptyState>
           ) : (
             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
@@ -577,7 +564,7 @@ export function StatsRoute() {
         ) : tab === 'pitching' ? (
           /* ── Pitching ───────────────────────────────────────────── */
           sortedPitching.length === 0 ? (
-            <EmptyState>No pitching stats yet — finalize a game to see data here.</EmptyState>
+            <EmptyState>No pitching stats yet.</EmptyState>
           ) : (
             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 420 }}>
