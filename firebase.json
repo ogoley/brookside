@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "source": "functions"
+  },
   "hosting": {
     "site": "brookside-14b4b",
     "public": "dist",
@@ -8,6 +11,13 @@
       "**/node_modules/**"
     ],
     "rewrites": [
+      {
+        "source": "/api/generateSummary",
+        "run": {
+          "serviceId": "generatesummary",
+          "region": "us-central1"
+        }
+      },
       {
         "source": "**",
         "destination": "/index.html"

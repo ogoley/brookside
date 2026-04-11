@@ -3,12 +3,12 @@ import type { TeamsMap, StandingsData } from '../types'
 
 interface Props {
   teams: TeamsMap
-  // Will be replaced with live Firebase /standings data when that path is wired up.
-  // For now the component accepts optional override standings; falls back to STUB.
+  // Derived by useStandings() from finalized /games records. Falls back to STUB_STANDINGS
+  // when no finalized games exist (pre-season / dev).
   standings?: StandingsData
 }
 
-// ── Stub data — replace with useStandings() hook when /standings is in Firebase ──
+// ── Fallback data — shown only when no finalized games exist yet ──
 // 8-team league: top 2 get playoff bye, bottom 2 are in elimination zone.
 const STUB_STANDINGS: StandingsData = [
   { teamId: 'swing_mafia',      w: 11, l: 3,  t: 0, streak: 'W3' },

@@ -421,11 +421,22 @@ export function StatsRoute() {
           </div>
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: 0, overflowX: 'auto', alignItems: 'flex-end' }}>
             <TabButton active={tab === 'standings'} onClick={() => setTab('standings')}>Standings</TabButton>
             <TabButton active={tab === 'hitting'} onClick={() => setTab('hitting')}>Hitting</TabButton>
             <TabButton active={tab === 'pitching'} onClick={() => setTab('pitching')}>Pitching</TabButton>
             <TabButton active={tab === 'results'} onClick={() => setTab('results')}>Results</TabButton>
+            <a
+              href="/game-editor"
+              style={{
+                padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                color: 'rgba(255,255,255,0.5)', textDecoration: 'none',
+                borderBottom: '3px solid transparent', display: 'inline-block',
+                marginLeft: 8,
+              }}
+            >
+              Game Editor
+            </a>
           </div>
         </div>
       </div>

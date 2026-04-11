@@ -213,6 +213,10 @@ export interface GameRecord {
     lastPitcherHome?: string | null
     lastPitcherAway?: string | null
   }
+  /** Pitcher credited with the win — set manually for paper games, auto-set on finalization */
+  wPitcherId?: string | null
+  /** Pitcher credited with the loss */
+  lPitcherId?: string | null
 }
 
 // /games/{gameId}/lineups/{teamId} — ordered batting lineup

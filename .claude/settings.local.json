@@ -17,7 +17,23 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(curl -s \"https://brookside-14b4b-default-rtdb.firebaseio.com/games/2026-04-09_nuke_squad_base_invaders.json\")",
       "Bash(npx -y json)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "WebFetch(domain:www.minimax.io)",
+      "WebFetch(domain:platform.minimaxi.com)",
+      "WebFetch(domain:platform.minimax.io)",
+      "WebFetch(domain:www.minimaxi.com)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "changed=$(git -C \"$(pwd)\" diff --name-only HEAD 2>/dev/null | grep '^src/' | head -1); if [ -n \"$changed\" ]; then echo '{\"systemMessage\": \"src/ files changed this session — consider updating ARCHITECTURE.md and docs/diagrams.md if the data flow or schema changed.\"}'; fi"
+          }
+        ]
+      }
     ]
   }
 }

@@ -6,6 +6,7 @@ import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
+import { useStandings } from '../hooks/useStandings'
 import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene } from '../scenes'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
 
@@ -16,6 +17,7 @@ function OverlayContent() {
   const { players } = usePlayers()
   const { matchup } = useMatchup()
   const { config } = useLeagueConfig()
+  const { standings } = useStandings()
 
   // Mark body as overlay mode so CSS can set transparent background
   useEffect(() => {
@@ -83,7 +85,7 @@ function OverlayContent() {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 220 }}
           >
-            <StandingsScene teams={teams} />
+            <StandingsScene teams={teams} standings={standings.length ? standings : undefined} />
           </motion.div>
         )}
         {sceneKey === 'insights' && (
