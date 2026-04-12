@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "seed": "node scripts/seedPlayers.js",
     "snapshot": "node scripts/exportSnapshot.js",
+    "backup": "node scripts/backupGames.js",
     "reset": "node scripts/resetDb.js",
     "deploy": "npm run build && firebase deploy --only hosting",
     "test": "vitest run",

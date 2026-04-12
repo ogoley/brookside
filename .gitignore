@@ -21,3 +21,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local game data backups (read-only snapshots pulled via `npm run backup`)
+backups/

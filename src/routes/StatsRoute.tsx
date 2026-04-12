@@ -61,8 +61,6 @@ interface PitchingRow {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const INNINGS_PER_GAME = 7
-
 function buildHittingRows(
   players: PlayersMap,
   teams: TeamsMap,

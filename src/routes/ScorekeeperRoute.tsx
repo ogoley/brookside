@@ -941,6 +941,22 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
 
   const hasRunners = currentRunners.length > 0
 
+  // ── Inning-ending detection ───────────────────────────────────────────────
+  // When a play's locked-in outs (batter + chain rule) reach 3, runners can
+  // only have scored or not — no additional outs are possible.
+
+  function computeIsInningEnding(r: AtBatResult | null): boolean {
+    if (!r) return false
+    const defaults = computeResultDefaults(r, liveRunners)
+    const defBatterOut = defaults.batterAdvancedTo === 'out' ? 1 : 0
+    const defRunnerOuts = (['first', 'second', 'third'] as const).filter(b =>
+      defaults.runnerOutcomes[b] === 'out' || defaults.runnerOutcomes[b] === 'sits'
+    ).length
+    return outs + defBatterOut + defRunnerOuts >= 3
+  }
+
+  const isInningEndingPlay = computeIsInningEnding(result)
+
   // ── Result selection ─────────────────────────────────────────────────────
 
   const handleSelectResult = (r: AtBatResult) => {
@@ -956,19 +972,44 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       setStep('confirm')
       return
     }
-    if (r === 'groundout') {
-      setStep(hasRunners ? 'runner_outcomes' : 'confirm')
+
+    if (!hasRunners) {
+      setRunnerOutcomes({})
+      setStep('confirm')
       return
     }
 
-    // All other results with runners: go to runner outcomes step
-    if (hasRunners) {
-      setRunnerOutcomes({})
-      setStep('runner_outcomes')
-    } else {
-      setRunnerOutcomes({})
-      setStep('confirm')
+    // Detect if this play ends the inning (reaches 3 outs)
+    const defBatterOut = defaults.batterAdvancedTo === 'out' ? 1 : 0
+    const defRunnerOuts = (['first', 'second', 'third'] as const).filter(b =>
+      defaults.runnerOutcomes[b] === 'out' || defaults.runnerOutcomes[b] === 'sits'
+    ).length
+    const isInningEnding = outs + defBatterOut + defRunnerOuts >= 3
+
+    if (isInningEnding) {
+      // Pre-fill non-out runners to 'stayed' (default: didn't score)
+      const endOutcomes = { ...defaults.runnerOutcomes }
+      let hasScorableRunners = false
+      for (const base of ['first', 'second', 'third'] as const) {
+        if (liveRunners[base] && endOutcomes[base] !== 'out' && endOutcomes[base] !== 'sits') {
+          endOutcomes[base] = 'stayed'
+          hasScorableRunners = true
+        }
+      }
+      setRunnerOutcomes(endOutcomes)
+      setStep(hasScorableRunners ? 'runner_outcomes' : 'confirm')
+      return
     }
+
+    if (r === 'groundout') {
+      // Keep defaults (chain rule already set)
+      setStep('runner_outcomes')
+      return
+    }
+
+    // All other results with runners: clear for manual entry
+    setRunnerOutcomes({})
+    setStep('runner_outcomes')
   }
 
   // ── Submit ───────────────────────────────────────────────────────────────
@@ -1040,7 +1081,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const runsThisPlay = engineResult.runsScored
     const newHomeScore = !isTopInning ? (game?.homeScore ?? 0) + runsThisPlay : (game?.homeScore ?? 0)
     const newAwayScore = isTopInning ? (game?.awayScore ?? 0) + runsThisPlay : (game?.awayScore ?? 0)
-    const newOuts = outs + outsOnPlay
+    const newOuts = Math.min(outs + outsOnPlay, 3)  // hard cap — never exceed 3 outs per half-inning
 
     // Write to Firebase
     await push(ref(db, `gameStats/${gameId}`), record)
@@ -1259,7 +1300,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     // Game aggregates
     updates[`games/${gameId}/homeScore`] = recompute.homeScore
     updates[`games/${gameId}/awayScore`] = recompute.awayScore
-    updates[`games/${gameId}/outs`] = recompute.currentHalfOuts
+    updates[`games/${gameId}/outs`] = Math.min(recompute.currentHalfOuts, 3)  // hard cap
     updates[`liveRunners/${gameId}`] = recompute.currentHalfRunners
 
     // Recompute lineup positions for both teams from the full at-bat list.
@@ -1627,93 +1668,171 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
         {step === 'runner_outcomes' && result && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <StepLabel step={3} label="Runner Outcomes" />
+              <StepLabel step={3} label={isInningEndingPlay ? 'Runners Score?' : 'Runner Outcomes'} />
               <BackBtn onClick={() => setStep('result')} />
             </div>
 
-            {result === 'groundout' && getConnectedChain(liveRunners).length > 0 && (
-              <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
-                <p className="text-yellow-400 font-semibold mb-1">Chain Rule</p>
-                <p className="text-yellow-300/70 text-xs">
-                  Connected chain — batter is recorded as out but stays on 1st. Lead runner sits down and leaves the bases. 1 out total. Adjust below if needed.
-                </p>
-              </div>
-            )}
+            {isInningEndingPlay ? (
+              /* ── Simplified inning-ending UI: scored yes/no per runner ─── */
+              <>
+                <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <p className="text-red-400 font-semibold text-sm">3rd Out</p>
+                  <p className="text-red-300/70 text-xs">Inning over. Did anyone score before the out?</p>
+                </div>
 
-            <div className="flex flex-col gap-3">
-              {(['third', 'second', 'first'] as const).map(base => {
-                const runnerId = liveRunners[base]
-                if (!runnerId) return null
-                const outcome = runnerOutcomes[base]
-                const setOutcome = (v: RunnerOutcomes[typeof base]) => {
-                  setRunnerOutcomes(prev => ({ ...prev, [base]: v }))
-                }
+                <div className="flex flex-col gap-2">
+                  {(['third', 'second', 'first'] as const).map(base => {
+                    const runnerId = liveRunners[base]
+                    if (!runnerId) return null
+                    const outcome = runnerOutcomes[base]
 
-                // Bases the batter is taking — runner cannot land there
-                const batterTakes = new Set(
-                  batterAdvancedTo && batterAdvancedTo !== 'out' && batterAdvancedTo !== 'home'
-                    ? [batterAdvancedTo]
-                    : []
-                )
+                    // Chain-rule runners are locked
+                    if (outcome === 'sits' || outcome === 'out') {
+                      return (
+                        <div key={base} className="flex items-center justify-between rounded-xl px-4 py-2" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                          <span className="text-white/40 text-sm">
+                            {resolvePlayerName(runnerId)}
+                            <span className="text-white/25 text-xs ml-2">{base === 'first' ? '1st' : base === 'second' ? '2nd' : '3rd'}</span>
+                          </span>
+                          <span className="text-yellow-400/70 text-xs font-semibold">Sits (chain)</span>
+                        </div>
+                      )
+                    }
 
-                // 'stayed' means the runner stays on their current base — invalid if batter is going there
-                const stayedBlocked = batterTakes.has(base)
-
-                const advanceOptions: Array<{ label: string; value: RunnerOutcomes[typeof base] }> =
-                  base === 'first'
-                    ? [
-                        ...(!batterTakes.has('second') ? [{ label: '→ 2nd', value: 'second' as const }] : []),
-                        ...(!batterTakes.has('third')  ? [{ label: '→ 3rd', value: 'third'  as const }] : []),
-                      ]
-                    : base === 'second'
-                    ? [...(!batterTakes.has('third') ? [{ label: '→ 3rd', value: 'third' as const }] : [])]
-                    : []
-
-                const allOptions: Array<{ label: string; value: RunnerOutcomes[typeof base] }> = [
-                  { label: 'Scored', value: 'scored' as const },
-                  ...advanceOptions,
-                  ...(!stayedBlocked ? [{ label: 'Stayed', value: 'stayed' as const }] : []),
-                  { label: 'Out', value: 'out' as const },
-                  { label: 'Sits', value: 'sits' as const },
-                ]
-
-                // If the currently selected outcome is now invalid (batter took that base), clear it
-                const currentOutcomeBlocked =
-                  (outcome === 'stayed' && stayedBlocked) ||
-                  (outcome === 'second' && batterTakes.has('second')) ||
-                  (outcome === 'third'  && batterTakes.has('third'))
-                if (currentOutcomeBlocked) {
-                  setOutcome(undefined)
-                }
-
-                return (
-                  <div key={base} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                    <p className="text-white font-semibold text-sm mb-2">
-                      {resolvePlayerName(runnerId)}
-                      <span className="text-white/40 text-xs ml-2">{base === 'first' ? '1st' : base === 'second' ? '2nd' : '3rd'}</span>
+                    const scored = outcome === 'scored'
+                    return (
+                      <div key={base} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <div className="flex flex-col">
+                          <span className="text-white text-sm font-semibold">
+                            {resolvePlayerName(runnerId)}
+                          </span>
+                          <span className="text-white/30 text-xs">{base === 'first' ? '1st base' : base === 'second' ? '2nd base' : '3rd base'}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setRunnerOutcomes(prev => ({ ...prev, [base]: 'scored' }))}
+                            className="h-9 w-16 rounded-lg text-xs font-semibold transition-all"
+                            style={{
+                              background: scored ? 'rgba(22,163,74,0.4)' : 'rgba(255,255,255,0.08)',
+                              color: scored ? '#fff' : 'rgba(255,255,255,0.5)',
+                              border: scored ? '1px solid rgba(74,222,128,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                            }}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            onClick={() => setRunnerOutcomes(prev => ({ ...prev, [base]: 'stayed' }))}
+                            className="h-9 w-16 rounded-lg text-xs font-semibold transition-all"
+                            style={{
+                              background: !scored ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)',
+                              color: !scored ? '#fff' : 'rgba(255,255,255,0.5)',
+                              border: !scored ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.08)',
+                            }}
+                          >
+                            No
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              /* ── Normal runner outcome UI ─────────────────────────────── */
+              <>
+                {result === 'groundout' && getConnectedChain(liveRunners).length > 0 && (
+                  <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
+                    <p className="text-yellow-400 font-semibold mb-1">Chain Rule</p>
+                    <p className="text-yellow-300/70 text-xs">
+                      Connected chain — batter is recorded as out but stays on 1st. Lead runner sits down and leaves the bases. 1 out total. Adjust below if needed.
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      {allOptions.map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setOutcome(opt.value)}
-                          className="h-9 px-3 rounded-lg text-xs font-semibold transition-all"
-                          style={{
-                            background: outcome === opt.value
-                              ? opt.value === 'out' ? 'rgba(239,68,68,0.4)' : opt.value === 'sits' ? 'rgba(234,179,8,0.35)' : opt.value === 'scored' ? 'rgba(22,163,74,0.4)' : 'rgba(37,99,235,0.5)'
-                              : 'rgba(255,255,255,0.08)',
-                            color: outcome === opt.value ? '#fff' : 'rgba(255,255,255,0.6)',
-                            border: outcome === opt.value ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.08)',
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
                   </div>
-                )
-              })}
-            </div>
+                )}
+
+                <div className="flex flex-col gap-3">
+                  {(['third', 'second', 'first'] as const).map(base => {
+                    const runnerId = liveRunners[base]
+                    if (!runnerId) return null
+                    const outcome = runnerOutcomes[base]
+                    const setOutcome = (v: RunnerOutcomes[typeof base]) => {
+                      setRunnerOutcomes(prev => ({ ...prev, [base]: v }))
+                    }
+
+                    // Bases the batter is taking — runner cannot land there
+                    const batterTakes = new Set(
+                      batterAdvancedTo && batterAdvancedTo !== 'out' && batterAdvancedTo !== 'home'
+                        ? [batterAdvancedTo]
+                        : []
+                    )
+
+                    // 'stayed' means the runner stays on their current base — invalid if batter is going there
+                    const stayedBlocked = batterTakes.has(base)
+
+                    const advanceOptions: Array<{ label: string; value: RunnerOutcomes[typeof base] }> =
+                      base === 'first'
+                        ? [
+                            ...(!batterTakes.has('second') ? [{ label: '→ 2nd', value: 'second' as const }] : []),
+                            ...(!batterTakes.has('third')  ? [{ label: '→ 3rd', value: 'third'  as const }] : []),
+                          ]
+                        : base === 'second'
+                        ? [...(!batterTakes.has('third') ? [{ label: '→ 3rd', value: 'third' as const }] : [])]
+                        : []
+
+                    // Clamp: prevent outs from exceeding 3 per inning
+                    const batterOut = batterAdvancedTo === 'out' ? 1 : 0
+                    const otherRunnerOuts = (['first', 'second', 'third'] as const).filter(b =>
+                      b !== base && (runnerOutcomes[b] === 'out' || runnerOutcomes[b] === 'sits')
+                    ).length
+                    const thisIsOut = outcome === 'out' || outcome === 'sits'
+                    const canSelectOut = thisIsOut || (outs + batterOut + otherRunnerOuts + 1) <= 3
+
+                    const allOptions: Array<{ label: string; value: RunnerOutcomes[typeof base] }> = [
+                      { label: 'Scored', value: 'scored' as const },
+                      ...advanceOptions,
+                      ...(!stayedBlocked ? [{ label: 'Stayed', value: 'stayed' as const }] : []),
+                      ...(canSelectOut ? [{ label: 'Out', value: 'out' as const }] : []),
+                      ...(canSelectOut ? [{ label: 'Sits', value: 'sits' as const }] : []),
+                    ]
+
+                    // If the currently selected outcome is now invalid (batter took that base), clear it
+                    const currentOutcomeBlocked =
+                      (outcome === 'stayed' && stayedBlocked) ||
+                      (outcome === 'second' && batterTakes.has('second')) ||
+                      (outcome === 'third'  && batterTakes.has('third'))
+                    if (currentOutcomeBlocked) {
+                      setOutcome(undefined)
+                    }
+
+                    return (
+                      <div key={base} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <p className="text-white font-semibold text-sm mb-2">
+                          {resolvePlayerName(runnerId)}
+                          <span className="text-white/40 text-xs ml-2">{base === 'first' ? '1st' : base === 'second' ? '2nd' : '3rd'}</span>
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {allOptions.map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setOutcome(opt.value)}
+                              className="h-9 px-3 rounded-lg text-xs font-semibold transition-all"
+                              style={{
+                                background: outcome === opt.value
+                                  ? opt.value === 'out' ? 'rgba(239,68,68,0.4)' : opt.value === 'sits' ? 'rgba(234,179,8,0.35)' : opt.value === 'scored' ? 'rgba(22,163,74,0.4)' : 'rgba(37,99,235,0.5)'
+                                  : 'rgba(255,255,255,0.08)',
+                                color: outcome === opt.value ? '#fff' : 'rgba(255,255,255,0.6)',
+                                border: outcome === opt.value ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.08)',
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
 
             <SkBtn
               onClick={() => setStep('confirm')}
@@ -2198,6 +2317,20 @@ function AtBatEditModal({
   const presentBases = (['third', 'second', 'first'] as const).filter(b => runners[b])
   const hasRunners = presentBases.length > 0
 
+  // Compute outs in this half-inning BEFORE the at-bat being edited, so we
+  // can clamp runner out/sits options to never exceed 3 total.
+  const outsBeforeThisAb = useMemo(() => {
+    const sorted = Object.entries(preview.recomputedAtBats)
+      .filter(([, r]) => r.inning === ab.inning && r.isTopInning === ab.isTopInning)
+      .sort(([, a], [, b]) => a.timestamp - b.timestamp)
+    let total = 0
+    for (const [id, r] of sorted) {
+      if (id === atBatId) break
+      total += r.outsOnPlay
+    }
+    return total
+  }, [preview.recomputedAtBats, ab.inning, ab.isTopInning, atBatId])
+
   const advanceOptions: Array<{ label: string; value: NonNullable<AtBatRecord['batterAdvancedTo']> }> = [
     { label: '1st', value: 'first' },
     { label: '2nd', value: 'second' },
@@ -2306,13 +2439,22 @@ function AtBatEditModal({
               {presentBases.map(base => {
                 const runnerId = runners[base]!
                 const outcome = runnerOutcomes[base]
+
+                // Clamp: prevent outs from exceeding 3 per half-inning
+                const editBatterOut = batterAdvancedTo === 'out' ? 1 : 0
+                const editOtherRunnerOuts = presentBases.filter(b =>
+                  b !== base && (runnerOutcomes[b] === 'out' || runnerOutcomes[b] === 'sits')
+                ).length
+                const editThisIsOut = outcome === 'out' || outcome === 'sits'
+                const editCanSelectOut = editThisIsOut || (outsBeforeThisAb + editBatterOut + editOtherRunnerOuts + 1) <= 3
+
                 const allOptions: Array<{ label: string; value: NonNullable<RunnerOutcomes['first']> }> = [
                   { label: 'Scored', value: 'scored' },
                   ...(base === 'first' ? [{ label: '→ 2nd', value: 'second' as const }] : []),
                   ...(base !== 'third' ? [{ label: '→ 3rd', value: 'third' as const }] : []),
                   { label: 'Stayed', value: 'stayed' },
-                  { label: 'Out', value: 'out' },
-                  { label: 'Sits', value: 'sits' },
+                  ...(editCanSelectOut ? [{ label: 'Out', value: 'out' as const }] : []),
+                  ...(editCanSelectOut ? [{ label: 'Sits', value: 'sits' as const }] : []),
                 ]
                 const setOutcome = (v: NonNullable<RunnerOutcomes['first']>) => {
                   setRunnerOutcomes(prev => {
