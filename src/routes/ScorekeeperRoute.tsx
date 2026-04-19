@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { ref, push, set, update, remove, onValue, get } from 'firebase/database'
 import { db } from '../firebase'
+import { HomeButton } from '../components/HomeButton'
 import { usePlayers } from '../hooks/usePlayers'
 import { useTeams } from '../hooks/useTeams'
 import { useGameStats } from '../hooks/useGameStats'
@@ -159,51 +160,63 @@ export function ScorekeeperRoute() {
 
   if (activeGameId && activeGameRecord?.game.finalized) {
     return (
-      <GameSummaryView
-        gameId={activeGameId}
-        game={activeGameRecord.game}
-        teams={teams}
-        players={players}
-        onBack={() => setActiveGameId(null)}
-      />
+      <>
+        <HomeButton />
+        <GameSummaryView
+          gameId={activeGameId}
+          game={activeGameRecord.game}
+          teams={teams}
+          players={players}
+          onBack={() => setActiveGameId(null)}
+        />
+      </>
     )
   }
 
   if (activeGameId && showLineupEditor) {
     return (
-      <LineupEditScreen
-        gameId={activeGameId}
-        players={players}
-        teams={teams}
-        onBack={() => setShowLineupEditor(false)}
-      />
+      <>
+        <HomeButton />
+        <LineupEditScreen
+          gameId={activeGameId}
+          players={players}
+          teams={teams}
+          onBack={() => setShowLineupEditor(false)}
+        />
+      </>
     )
   }
 
   if (activeGameId) {
     return (
-      <GameWizard
-        gameId={activeGameId}
-        players={players}
-        teams={teams}
-        onBack={() => setActiveGameId(null)}
-        onEditLineup={() => setShowLineupEditor(true)}
-      />
+      <>
+        <HomeButton />
+        <GameWizard
+          gameId={activeGameId}
+          players={players}
+          teams={teams}
+          onBack={() => setActiveGameId(null)}
+          onEditLineup={() => setShowLineupEditor(true)}
+        />
+      </>
     )
   }
 
   return (
-    <GameSelectorScreen
-      games={games}
-      loading={gamesLoading}
-      teams={teams}
-      onSelectGame={setActiveGameId}
-      onNewGame={() => setShowNewGameModal(true)}
-      showNewGameModal={showNewGameModal}
-      onCloseNewGameModal={() => setShowNewGameModal(false)}
-      onGameCreated={(id) => { setShowNewGameModal(false); setActiveGameId(id) }}
-      players={players}
-    />
+    <>
+      <HomeButton />
+      <GameSelectorScreen
+        games={games}
+        loading={gamesLoading}
+        teams={teams}
+        onSelectGame={setActiveGameId}
+        onNewGame={() => setShowNewGameModal(true)}
+        showNewGameModal={showNewGameModal}
+        onCloseNewGameModal={() => setShowNewGameModal(false)}
+        onGameCreated={(id) => { setShowNewGameModal(false); setActiveGameId(id) }}
+        players={players}
+      />
+    </>
   )
 }
 

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { ref, push, set, remove } from 'firebase/database'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
+import { HomeButton } from '../components/HomeButton'
 import { Link } from 'react-router-dom'
 import { db, storage } from '../firebase'
 import { useTeams } from '../hooks/useTeams'
@@ -68,6 +69,7 @@ export function ConfigRoute() {
       className="min-h-screen px-4 py-4 sm:px-6 lg:px-10 lg:py-8"
       style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
+      <HomeButton />
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1

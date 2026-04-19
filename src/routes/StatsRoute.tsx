@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
+import { AppNav } from '../components/AppNav'
 import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
 import { useGames } from '../hooks/useGames'
@@ -392,7 +393,10 @@ export function StatsRoute() {
     <div style={{ minHeight: '100vh', background: '#f3f4f6', fontFamily: 'var(--font-ui)' }}>
       {/* Header */}
       <div style={{ background: '#1e3a5f', borderBottom: '4px solid #c0392b' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '20px 16px 0' }}>
+        <div style={{ maxWidth: 960, margin: '0 auto', padding: '12px 16px 0' }}>
+          <div style={{ marginBottom: 12 }}>
+            <AppNav />
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             {config.leagueLogo && (
               <img src={config.leagueLogo} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} />
@@ -413,17 +417,6 @@ export function StatsRoute() {
             <TabButton active={tab === 'hitting'} onClick={() => setTab('hitting')}>Hitting</TabButton>
             <TabButton active={tab === 'pitching'} onClick={() => setTab('pitching')}>Pitching</TabButton>
             <TabButton active={tab === 'results'} onClick={() => setTab('results')}>Results</TabButton>
-            <a
-              href="/game-editor"
-              style={{
-                padding: '8px 16px', fontSize: 13, fontWeight: 600,
-                color: 'rgba(255,255,255,0.5)', textDecoration: 'none',
-                borderBottom: '3px solid transparent', display: 'inline-block',
-                marginLeft: 8,
-              }}
-            >
-              Game Editor
-            </a>
           </div>
         </div>
       </div>

@@ -24,3 +24,6 @@ dist-ssr
 
 # Local game data backups (read-only snapshots pulled via `npm run backup`)
 backups/
+
+# Firebase admin service account key — DO NOT COMMIT
+service-account.json

@@ -1,0 +1,29 @@
+{
+  "rules": {
+    ".read": true,
+    "game": {
+      ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+    },
+    "overlay": {
+      ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+    },
+    "games": {
+      ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+    },
+    "gameStats": {
+      ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+    },
+    "liveRunners": {
+      ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+    },
+    "teams": {
+      ".write": "auth != null && auth.token.role === 'admin'"
+    },
+    "players": {
+      ".write": "auth != null && auth.token.role === 'admin'"
+    },
+    "config": {
+      ".write": "auth != null && auth.token.role === 'admin'"
+    }
+  }
+}

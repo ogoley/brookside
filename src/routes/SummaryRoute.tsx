@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { get, ref } from 'firebase/database'
-import { db } from '../firebase'
+import { db, auth } from '../firebase'
+import { HomeButton } from '../components/HomeButton'
 import { useGames } from '../hooks/useGames'
 import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
@@ -129,9 +130,15 @@ Write the recap now.`
 
       const payload: SummaryPayload = { date: selectedDate, games: gameDatas, prompt: promptText }
 
+      const idToken = await auth.currentUser?.getIdToken()
+      if (!idToken) throw new Error('Not signed in.')
+
       const response = await fetch(FUNCTION_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
@@ -158,6 +165,7 @@ Write the recap now.`
 
   return (
     <div style={{ fontFamily: 'var(--font-ui)', maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
+      <HomeButton />
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Game Day Summary</h1>
       <p style={{ color: '#888', marginBottom: 32 }}>
         Pick a date to generate an AI-written recap of all games played that day.

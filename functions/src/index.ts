@@ -1,7 +1,29 @@
 import { onRequest } from 'firebase-functions/v2/https'
 import { defineSecret } from 'firebase-functions/params'
+import { initializeApp, getApps } from 'firebase-admin/app'
+import { getAuth } from 'firebase-admin/auth'
 
 const openaiApiKey = defineSecret('OPENAI_API_KEY')
+
+if (!getApps().length) initializeApp()
+
+async function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const header = req.headers.authorization
+  const raw = Array.isArray(header) ? header[0] : header
+  if (!raw || !raw.startsWith('Bearer ')) {
+    return { ok: false, status: 401, error: 'Missing Authorization bearer token' }
+  }
+  const idToken = raw.slice('Bearer '.length).trim()
+  try {
+    const decoded = await getAuth().verifyIdToken(idToken)
+    if (decoded.role !== 'admin') {
+      return { ok: false, status: 403, error: 'Admin role required' }
+    }
+    return { ok: true }
+  } catch {
+    return { ok: false, status: 401, error: 'Invalid or expired token' }
+  }
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +64,12 @@ export const generateSummary = onRequest(
   async (req, res) => {
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed' })
+      return
+    }
+
+    const authCheck = await requireAdmin(req)
+    if (!authCheck.ok) {
+      res.status(authCheck.status).json({ error: authCheck.error })
       return
     }
 

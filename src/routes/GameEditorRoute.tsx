@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { ref, onValue, update, set, get } from 'firebase/database'
+import { HomeButton } from '../components/HomeButton'
 import { db } from '../firebase'
 import { useGames } from '../hooks/useGames'
 import { usePlayers } from '../hooks/usePlayers'
@@ -1290,6 +1291,7 @@ export function GameEditorRoute() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', fontFamily: 'var(--font-ui)' }}>
+      <HomeButton />
       {/* Header */}
       <div style={{ background: '#1e3a5f', borderBottom: '4px solid #c0392b' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 16px 0' }}>

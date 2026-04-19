@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ref, update, set, get, remove } from 'firebase/database'
 // TODO: hrPlayerName is a temporary text input. Replace with playerId resolved from /players once the player roster feature is built out.
 import { Link } from 'react-router-dom'
+import { HomeButton } from '../components/HomeButton'
 import { db } from '../firebase'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
@@ -383,6 +384,7 @@ export function ControllerRoute() {
       className="min-h-screen px-4 py-4 sm:px-6 lg:px-10 lg:py-8"
       style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
+      <HomeButton />
       {/* ── HEADER ── */}
       <div className="flex items-center justify-between mb-4">
         <h1
