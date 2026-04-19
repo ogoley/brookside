@@ -1,10 +1,5 @@
-import { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { ref, update } from 'firebase/database'
-import { db } from '../firebase'
 import type { HomrunState, Team } from '../types'
-
-const DISMISS_MS = 10_000
 
 interface Props {
   homerun: HomrunState
@@ -24,13 +19,6 @@ export function HomrunBanner({ homerun, playerName, team }: Props) {
   const mainText = isGrandSlam ? 'GRAND SLAM' : 'HOME RUN'
   // Font size slightly smaller for GRAND SLAM (10 chars) vs HOME RUN (8 chars)
   const mainFontSize = isGrandSlam ? 72 : 82
-
-  useEffect(() => {
-    const id = setTimeout(() => {
-      update(ref(db, 'overlay/homerun'), { active: false })
-    }, DISMISS_MS)
-    return () => clearTimeout(id)
-  }, [homerun.triggeredAt])
 
   return (
     <motion.div

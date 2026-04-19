@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { ref, push, set, remove } from 'firebase/database'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import { HomeButton } from '../components/HomeButton'
+import { AuthStatus } from '../components/AuthStatus'
 import { Link } from 'react-router-dom'
 import { db, storage } from '../firebase'
 import { useTeams } from '../hooks/useTeams'
@@ -70,6 +71,7 @@ export function ConfigRoute() {
       style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
       <HomeButton />
+      <AuthStatus />
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1

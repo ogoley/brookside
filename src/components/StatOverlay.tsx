@@ -1,7 +1,4 @@
-import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ref, update } from 'firebase/database'
-import { db } from '../firebase'
 import { useLivePlayerStats } from '../hooks/useLivePlayerStats'
 import type { StatOverlayState, PlayersMap, TeamsMap } from '../types'
 
@@ -13,19 +10,7 @@ interface Props {
 }
 
 export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
-  const { visible, playerId, type, dismissAfterMs } = statOverlay
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (visible && dismissAfterMs > 0) {
-      timerRef.current = setTimeout(() => {
-        update(ref(db, 'overlay/statOverlay'), { visible: false })
-      }, dismissAfterMs)
-    }
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [visible, dismissAfterMs, playerId])
+  const { visible, playerId, type } = statOverlay
 
   const player = players[playerId]
   const team = player ? teams[player.teamId] : undefined

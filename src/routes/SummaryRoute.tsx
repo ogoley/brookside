@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { get, ref } from 'firebase/database'
 import { db, auth } from '../firebase'
 import { HomeButton } from '../components/HomeButton'
+import { AuthStatus } from '../components/AuthStatus'
 import { useGames } from '../hooks/useGames'
 import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
@@ -166,6 +167,7 @@ Write the recap now.`
   return (
     <div style={{ fontFamily: 'var(--font-ui)', maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
       <HomeButton />
+      <AuthStatus />
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Game Day Summary</h1>
       <p style={{ color: '#888', marginBottom: 32 }}>
         Pick a date to generate an AI-written recap of all games played that day.

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { ref, push, set, update, remove, onValue, get } from 'firebase/database'
 import { db } from '../firebase'
 import { HomeButton } from '../components/HomeButton'
+import { AuthStatus } from '../components/AuthStatus'
 import { usePlayers } from '../hooks/usePlayers'
 import { useTeams } from '../hooks/useTeams'
 import { useGameStats } from '../hooks/useGameStats'
@@ -162,6 +163,7 @@ export function ScorekeeperRoute() {
     return (
       <>
         <HomeButton />
+        <AuthStatus />
         <GameSummaryView
           gameId={activeGameId}
           game={activeGameRecord.game}
@@ -177,6 +179,7 @@ export function ScorekeeperRoute() {
     return (
       <>
         <HomeButton />
+        <AuthStatus />
         <LineupEditScreen
           gameId={activeGameId}
           players={players}
@@ -191,6 +194,7 @@ export function ScorekeeperRoute() {
     return (
       <>
         <HomeButton />
+        <AuthStatus />
         <GameWizard
           gameId={activeGameId}
           players={players}
@@ -205,6 +209,7 @@ export function ScorekeeperRoute() {
   return (
     <>
       <HomeButton />
+      <AuthStatus />
       <GameSelectorScreen
         games={games}
         loading={gamesLoading}

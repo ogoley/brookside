@@ -3,6 +3,7 @@ import { ref, update, set, get, remove } from 'firebase/database'
 // TODO: hrPlayerName is a temporary text input. Replace with playerId resolved from /players once the player roster feature is built out.
 import { Link } from 'react-router-dom'
 import { HomeButton } from '../components/HomeButton'
+import { AuthStatus } from '../components/AuthStatus'
 import { db } from '../firebase'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
@@ -52,6 +53,31 @@ export function ControllerRoute() {
   const statReminderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Tracks whether stats were shown for the CURRENT at-bat only — cleared when batter changes
   const statsShownThisAtBatRef = useRef<boolean>(false)
+
+  // Overlay dismiss timers. The controller is the only writer, so dismiss
+  // scheduling lives here — the /overlay route is strictly read-only.
+  const statDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const homerunDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const scheduleStatDismiss = (ms: number) => {
+    if (statDismissRef.current) clearTimeout(statDismissRef.current)
+    if (ms <= 0) return
+    statDismissRef.current = setTimeout(() => {
+      update(ref(db, 'overlay/statOverlay'), { visible: false })
+    }, ms)
+  }
+
+  const scheduleHomerunDismiss = (ms: number) => {
+    if (homerunDismissRef.current) clearTimeout(homerunDismissRef.current)
+    homerunDismissRef.current = setTimeout(() => {
+      update(ref(db, 'overlay/homerun'), { active: false })
+    }, ms)
+  }
+
+  useEffect(() => () => {
+    if (statDismissRef.current) clearTimeout(statDismissRef.current)
+    if (homerunDismissRef.current) clearTimeout(homerunDismissRef.current)
+  }, [])
 
   useEffect(() => {
     // New batter — reset the shown flag and clear any pending reminder
@@ -301,6 +327,7 @@ export function ControllerRoute() {
       runsScored,
       triggeredAt: Date.now(),
     })
+    scheduleHomerunDismiss(10_000)
   }
 
   const timerPreset = (ms: number) => {
@@ -330,14 +357,17 @@ export function ControllerRoute() {
   const showBatterStats = () => {
     if (!matchup.batterId) return
     set(ref(db, 'overlay/statOverlay'), { visible: true, type: 'hitter', playerId: matchup.batterId, dismissAfterMs: dismissDelay })
+    scheduleStatDismiss(dismissDelay)
   }
 
   const showPitcherStats = () => {
     if (!matchup.pitcherId) return
     set(ref(db, 'overlay/statOverlay'), { visible: true, type: 'pitcher', playerId: matchup.pitcherId, dismissAfterMs: dismissDelay })
+    scheduleStatDismiss(dismissDelay)
   }
 
   const dismissStatOverlay = () => {
+    if (statDismissRef.current) clearTimeout(statDismissRef.current)
     update(ref(db, 'overlay/statOverlay'), { visible: false })
   }
 
@@ -364,6 +394,7 @@ export function ControllerRoute() {
     }
     update(ref(db, 'game/matchup'), { batterId: playerId })
     set(ref(db, 'overlay/statOverlay'), { visible: true, type: 'hitter', playerId, dismissAfterMs: 20000 })
+    scheduleStatDismiss(20000)
   }
 
   const selectPitcher = (playerId: string) => {
@@ -385,6 +416,7 @@ export function ControllerRoute() {
       style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
       <HomeButton />
+      <AuthStatus />
       {/* ── HEADER ── */}
       <div className="flex items-center justify-between mb-4">
         <h1
