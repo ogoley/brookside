@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { computeFinalization } from '../finalization'
 import type { FinalizeOutput } from '../finalization'
 import type { AtBatRecord, PlayersMap, GameRecord, HittingStats, PitchingStats } from '../../types'
+import { AUTO_OUT_BATTER_ID } from '../../types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -554,5 +555,94 @@ describe('computeFinalization — game summaries', () => {
     expect(pitcherSummary).toBeDefined()
     expect(pitcherSummary.inningsPitched).toBeCloseTo(0.33, 1) // 1 out
     expect(pitcherSummary.runsAllowed).toBe(1)
+  })
+})
+
+// ── Auto Out (Forceful Action) finalization ─────────────────────────────
+
+describe('computeFinalization — auto_out', () => {
+  it('does not write a phantom __auto_out__ entry to season hitting stats', () => {
+    // Three normal at-bats from b1, then an auto-out (e.g. missing 4th batter)
+    const atBats: AtBatRecord[] = [
+      makeAtBat({ batterId: 'b1', pitcherId: 'p_home', result: 'single', batterAdvancedTo: 'first' }),
+      makeAtBat({ batterId: 'b2', pitcherId: 'p_home', result: 'strikeout', batterAdvancedTo: 'out', outsOnPlay: 1 }),
+      makeAtBat({
+        batterId: AUTO_OUT_BATTER_ID, pitcherId: 'p_home',
+        result: 'auto_out', batterAdvancedTo: 'out', outsOnPlay: 1,
+      }),
+    ]
+
+    const output = computeFinalization({
+      gameId: 'g1',
+      game: makeGame({ homeScore: 0, awayScore: 0 }),
+      currentGameAtBats: atBats,
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+
+    // No phantom season hitting stats keyed by sentinel
+    expect(output.updates[`players/${AUTO_OUT_BATTER_ID}/stats/hitting`]).toBeUndefined()
+    expect(output.updates[`players/${AUTO_OUT_BATTER_ID}/stats/pitching`]).toBeUndefined()
+
+    // Real batter is unaffected
+    const b1 = getUpdatedHitting(output, 'b1')
+    expect(b1).toBeDefined()
+    expect(b1!.pa).toBe(1)
+    expect(b1!.h).toBe(1)
+  })
+
+  it('does not write a phantom __auto_out__ game summary entry', () => {
+    const atBats: AtBatRecord[] = [
+      makeAtBat({ batterId: 'b1', pitcherId: 'p_home', result: 'single', batterAdvancedTo: 'first' }),
+      makeAtBat({
+        batterId: AUTO_OUT_BATTER_ID, pitcherId: 'p_home',
+        result: 'auto_out', batterAdvancedTo: 'out', outsOnPlay: 1,
+      }),
+    ]
+
+    const output = computeFinalization({
+      gameId: 'g1',
+      game: makeGame(),
+      currentGameAtBats: atBats,
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+
+    // No phantom game summary entry under the sentinel key
+    expect(output.updates[`gameSummaries/g1/${AUTO_OUT_BATTER_ID}`]).toBeUndefined()
+
+    // Real batter still gets their summary
+    expect(output.updates['gameSummaries/g1/b1']).toBeDefined()
+  })
+
+  it('credits the pitcher with the auto-out toward IP (season + game summary)', () => {
+    // Pitcher faces one auto-out only — gets 1 out toward IP
+    const atBats: AtBatRecord[] = [
+      makeAtBat({
+        batterId: AUTO_OUT_BATTER_ID, pitcherId: 'p_home',
+        result: 'auto_out', batterAdvancedTo: 'out', outsOnPlay: 1,
+      }),
+    ]
+
+    const output = computeFinalization({
+      gameId: 'g1',
+      game: makeGame(),
+      currentGameAtBats: atBats,
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+
+    const pitching = getUpdatedPitching(output, 'p_home')
+    expect(pitching).toBeDefined()
+    expect(pitching!.inningsPitched).toBeCloseTo(0.33, 1) // 1 out
+    expect(pitching!.k).toBe(0) // auto-out is not a strikeout
+    expect(pitching!.bb).toBe(0)
+
+    const pitcherSummary = output.updates['gameSummaries/g1/p_home'] as Record<string, unknown>
+    expect(pitcherSummary).toBeDefined()
+    expect(pitcherSummary.inningsPitched).toBeCloseTo(0.33, 1)
   })
 })

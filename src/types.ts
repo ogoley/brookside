@@ -143,6 +143,14 @@ export interface PlayersMap {
 
 // ── Scorekeeper / game log types ──
 
+// Sentinel batter ID for auto-outs (Forceful Actions). Auto-outs are not tied
+// to a real player — using a sentinel keeps AtBatRecord.batterId non-nullable
+// while ensuring the value won't match any real player ID in lookups (batting
+// stats, season finalization, lineup-pointer walk-back, etc.).
+// Any code that iterates at-bats and accumulates per-batter stats MUST guard
+// against this value, or it will write phantom records keyed by the sentinel.
+export const AUTO_OUT_BATTER_ID = '__auto_out__'
+
 // Active results (the only options scorekeepers can select):
 //   single | double | triple | home_run | walk | strikeout | strikeout_looking
 //   groundout  — ground out or tag out; connected-chain rule applies (lead runner leaves, batter stays on 1st)

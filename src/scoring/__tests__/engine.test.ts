@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { applyAtBat, replayHalfInning, computeGameStats, mergeHittingStats, mergePitchingStats } from '../engine'
 import type { AtBatRecord, RunnersState, HittingStats, PitchingStats } from '../../types'
+import { AUTO_OUT_BATTER_ID } from '../../types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -348,5 +349,67 @@ describe('mergePitchingStats', () => {
     // Game runs = 0
     // ERA = (4 / 21) * 7 = 1.33
     expect(merged.era).toBeCloseTo(1.33, 1)
+  })
+})
+
+// ── Auto Out (Forceful Action) ───────────────────────────────────────────
+
+describe('applyAtBat — auto_out', () => {
+  it('empty bases — 1 out, no runners, no runs', () => {
+    const ab = makeAtBat({ batterId: AUTO_OUT_BATTER_ID, result: 'auto_out', batterAdvancedTo: 'out' })
+    const r = runApply(ab)
+    expect(r.outsOnPlay).toBe(1)
+    expect(r.nextRunners).toEqual(emptyBases())
+    expect(r.runsScored).toBe(0)
+    expect(r.rbiCount).toBe(0)
+  })
+
+  it('runners on base — runners stay put, 1 out', () => {
+    const runners: RunnersState = { first: 'r1', second: 'r2', third: null }
+    const ab = makeAtBat({
+      batterId: AUTO_OUT_BATTER_ID, result: 'auto_out', batterAdvancedTo: 'out',
+      runnersOnBase: runners,
+      runnerOutcomes: { first: 'stayed', second: 'stayed' },
+    })
+    const r = runApply(ab, runners)
+    expect(r.outsOnPlay).toBe(1)
+    expect(r.nextRunners).toEqual({ first: 'r1', second: 'r2', third: null })
+    expect(r.runsScored).toBe(0)
+    expect(r.rbiCount).toBe(0)
+  })
+
+  it('replays correctly inside replayHalfInning — 3 auto-outs end the half', () => {
+    const ab1 = makeAtBat({ batterId: AUTO_OUT_BATTER_ID, result: 'auto_out', batterAdvancedTo: 'out', timestamp: 1 })
+    const ab2 = makeAtBat({ batterId: AUTO_OUT_BATTER_ID, result: 'auto_out', batterAdvancedTo: 'out', timestamp: 2 })
+    const ab3 = makeAtBat({ batterId: AUTO_OUT_BATTER_ID, result: 'auto_out', batterAdvancedTo: 'out', timestamp: 3 })
+    const result = replayHalfInning([ab1, ab2, ab3], getName, false, 0, 0)
+    expect(result.totalOuts).toBe(3)
+    expect(result.totalRuns).toBe(0)
+    expect(result.finalRunners).toEqual(emptyBases())
+  })
+})
+
+describe('computeGameStats — auto_out', () => {
+  it('credits the pitcher with +1 out (1/3 IP) and does not pollute pitcher batting', () => {
+    const ab = makeAtBat({
+      batterId: AUTO_OUT_BATTER_ID, pitcherId: 'p1',
+      result: 'auto_out', batterAdvancedTo: 'out', outsOnPlay: 1,
+    })
+    const pitcherStats = computeGameStats([ab], 'p1')
+    expect(pitcherStats.pitching).not.toBeNull()
+    expect(pitcherStats.pitching!.inningsPitched).toBeCloseTo(0.33, 2) // 1/3 of an inning
+    expect(pitcherStats.pitching!.k).toBe(0) // not a strikeout
+    expect(pitcherStats.pitching!.bb).toBe(0)
+    expect(pitcherStats.hitting).toBeNull() // pitcher didn't bat
+  })
+
+  it('does not credit any real player with a plate appearance', () => {
+    const ab = makeAtBat({
+      batterId: AUTO_OUT_BATTER_ID, pitcherId: 'p1',
+      result: 'auto_out', batterAdvancedTo: 'out', outsOnPlay: 1,
+    })
+    // Any other player ID should produce no batting stats from this auto-out
+    const realBatterStats = computeGameStats([ab], 'b1')
+    expect(realBatterStats.hitting).toBeNull()
   })
 })

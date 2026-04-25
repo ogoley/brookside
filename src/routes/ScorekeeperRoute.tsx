@@ -20,17 +20,12 @@ import type {
   PlayersMap, LineupEntry, GameLineup, TeamsMap, GameSummary, GameRecord,
   SubPitcherEntry,
 } from '../types'
+import { AUTO_OUT_BATTER_ID } from '../types'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 type WizardStep = 'batter' | 'result' | 'runner_outcomes' | 'confirm' | 'inning_end'
 type NewGameStep = 'teams' | 'home_lineup' | 'away_lineup' | 'confirm'
-
-// Sentinel batter ID for auto-outs (Forceful Actions). Auto-outs are not
-// associated with a real player — using a sentinel keeps AtBatRecord.batterId
-// non-nullable while ensuring the value won't match any real player in lookups
-// (batting stats, lineup pointer walk-back, etc.).
-const AUTO_OUT_BATTER_ID = '__auto_out__'
 
 // Legacy values (flyout, hbp, sacrifice_fly, sacrifice_bunt, fielders_choice, pitchers_poison)
 // are kept here only so historical records render correctly. They are not selectable.
@@ -2470,7 +2465,7 @@ function AtBatRow({ atBatId, ab, players, onEdit, onDelete }: {
           <span className="text-white/60 text-xs font-semibold shrink-0" style={{ fontFamily: 'var(--font-score)' }}>
             {ab.isTopInning ? '▲' : '▼'}{ab.inning}
           </span>
-          {ab.isSub && <span className="text-white/30 text-xs">sub</span>}
+          {ab.isSub && <span className="text-white/30 text-xs italic">(sub)</span>}
           {isAutoOut && <span className="text-yellow-500/70 text-xs">⚡ forceful</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -2660,6 +2655,46 @@ function AtBatEditModal({
     setSaving(true)
     try {
       await applyRecompute(preview)
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ── Convert to Auto Out ──────────────────────────────────────────────────
+  // Strips the batter's credit (PA/AB/K/etc.) by rewriting the current at-bat
+  // as an auto-out in place. Preserves the original timestamp and pitcher so
+  // replay ordering and pitcher credit are unchanged. Bypasses the regular
+  // save validation (which requires batterId/result/batterAdvancedTo) and
+  // builds the converted record from `ab` directly.
+  const [convertConfirming, setConvertConfirming] = useState(false)
+
+  const handleConvertToAutoOut = async () => {
+    setSaving(true)
+    try {
+      const presentRunners = ab.runnersOnBase ?? { first: null, second: null, third: null }
+      const stayedOutcomes: RunnerOutcomes = {}
+      if (presentRunners.first) stayedOutcomes.first = 'stayed'
+      if (presentRunners.second) stayedOutcomes.second = 'stayed'
+      if (presentRunners.third) stayedOutcomes.third = 'stayed'
+
+      const converted: AtBatRecord = {
+        ...ab,
+        batterId: AUTO_OUT_BATTER_ID,
+        result: 'auto_out',
+        batterAdvancedTo: 'out',
+        runnersOnBase: presentRunners,
+        runnerOutcomes: stayedOutcomes,
+        runnersScored: [],
+        outsOnPlay: 1,
+        rbiCount: 0,
+        isSub: false,
+      }
+      delete converted.subName
+
+      const hypothetical = { ...allAtBats, [atBatId]: converted }
+      const recompute = recomputeGameState(hypothetical, resolvePlayerName, currentInning, currentIsTop)
+      await applyRecompute(recompute)
       onClose()
     } finally {
       setSaving(false)
@@ -2997,6 +3032,44 @@ function AtBatEditModal({
                 )}
               </ul>
             </div>
+          )}
+        </div>
+
+        {/* Convert to Auto Out — strips batter's credit, keeps pitcher's out */}
+        <div className="rounded-xl p-3 mb-3" style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)' }}>
+          {convertConfirming ? (
+            <>
+              <p className="text-yellow-200 text-xs leading-relaxed mb-2">
+                Convert this at-bat to an auto-out? <span className="font-bold">{resolvePlayerName(ab.batterId)}</span> loses the PA/AB/K credit. Pitcher keeps the out.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConvertConfirming(false)}
+                  disabled={saving}
+                  className="flex-1 h-9 rounded-lg font-bold text-xs"
+                  style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
+                >
+                  Nevermind
+                </button>
+                <button
+                  onClick={handleConvertToAutoOut}
+                  disabled={saving}
+                  className="flex-1 h-9 rounded-lg font-bold text-xs uppercase tracking-wider"
+                  style={{ background: '#ca8a04', color: '#fff', border: '1px solid rgba(234,179,8,0.5)' }}
+                >
+                  {saving ? 'Converting…' : 'Confirm Convert'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <button
+              onClick={() => setConvertConfirming(true)}
+              disabled={saving}
+              className="w-full h-9 rounded-lg font-bold text-xs uppercase tracking-wider"
+              style={{ background: 'rgba(234,179,8,0.12)', color: '#facc15', border: '1px solid rgba(234,179,8,0.25)' }}
+            >
+              ⚡ Convert to Auto Out
+            </button>
           )}
         </div>
 

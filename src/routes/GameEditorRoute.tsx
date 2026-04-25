@@ -11,6 +11,7 @@ import { useGameStats } from '../hooks/useGameStats'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { computeFinalization } from '../scoring/finalization'
 import type { GameSummary, GameRecord, PlayersMap, TeamsMap, AtBatRecord } from '../types'
+import { AUTO_OUT_BATTER_ID } from '../types'
 
 const INNINGS_PER_GAME = 7
 
@@ -229,6 +230,7 @@ function TracePanel({
   const [tab, setTab] = useState<TraceTab>('pitcher')
   const [pitcherId, setPitcherId] = useState<string | null>(null)
   const [batterId, setBatterId] = useState<string | null>(null)
+  const [runTeamFilter, setRunTeamFilter] = useState<'all' | string>('all')
 
   // All pitchers in this game
   const pitchers = useMemo(() => {
@@ -287,19 +289,34 @@ function TracePanel({
     return atBats.filter(ab => ab.batterId === batterId)
   }, [atBats, batterId])
 
-  // Run trace: all scoring plays
+  // Run trace: all scoring plays. Derive scorers from runnersOnBase +
+  // runnerOutcomes (source of truth) rather than the unreliable runnersScored
+  // cache, which can drop ghost-of-self entries or double-count the batter.
+  // Allow duplicate IDs in scorerIds so a player can appear twice on a play
+  // (e.g. ghost-of-self scoring AND batter advancing home).
   const runTrace = useMemo(() => {
     const plays: { ab: AtBatRecord; scorerIds: string[] }[] = []
     for (const ab of atBats) {
       const scorers: string[] = []
-      if (ab.batterAdvancedTo === 'home') scorers.push(ab.batterId)
-      for (const id of (ab.runnersScored ?? [])) {
-        if (!scorers.includes(id)) scorers.push(id)
+      const onBase = ab.runnersOnBase ?? { first: null, second: null, third: null }
+      const outcomes = ab.runnerOutcomes ?? {}
+      for (const base of ['first', 'second', 'third'] as const) {
+        if (outcomes[base] === 'scored' && onBase[base]) scorers.push(onBase[base]!)
       }
+      if (ab.batterAdvancedTo === 'home') scorers.push(ab.batterId)
       if (scorers.length > 0) plays.push({ ab, scorerIds: scorers })
     }
     return plays
   }, [atBats])
+
+  // The team that scored a run is the batting team (top → away bats, bottom → home bats).
+  const filteredRunTrace = useMemo(() => {
+    if (runTeamFilter === 'all') return runTrace
+    return runTrace.filter(({ ab }) => {
+      const battingTeamId = ab.isTopInning ? awayTeamId : homeTeamId
+      return battingTeamId === runTeamFilter
+    })
+  }, [runTrace, runTeamFilter, awayTeamId, homeTeamId])
 
   const th: CSSProperties = {
     padding: '6px 8px', fontSize: 11, fontWeight: 700,
@@ -399,7 +416,11 @@ function TracePanel({
                           </tr>
                         )}
                         <tr style={{ background: isOut ? '#f9fafb' : '#fff' }}>
-                          <td style={td}>{players[ab.batterId]?.name ?? ab.batterId}</td>
+                          <td style={td}>
+                            {ab.batterId === AUTO_OUT_BATTER_ID
+                              ? <span style={{ fontStyle: 'italic', color: '#a16207' }}>(Auto Out)</span>
+                              : (players[ab.batterId]?.name ?? ab.batterId)}
+                          </td>
                           <td style={{ ...td, fontWeight: 600 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                               <span style={{
@@ -647,7 +668,55 @@ function TracePanel({
 
       {tab === 'runs' && (
         <>
-          {runTrace.length === 0 ? (
+          {/* Team filter */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            {([
+              { id: 'all', label: 'All', team: null },
+              { id: awayTeamId, label: teams[awayTeamId]?.shortName ?? 'Away', team: teams[awayTeamId] },
+              { id: homeTeamId, label: teams[homeTeamId]?.shortName ?? 'Home', team: teams[homeTeamId] },
+            ] as const).map(opt => {
+              const active = runTeamFilter === opt.id
+              // Count actual runs scored (sum of scorerIds), not the number
+              // of scoring plays — multi-run plays were undercounting before.
+              const count = opt.id === 'all'
+                ? runTrace.reduce((sum, p) => sum + p.scorerIds.length, 0)
+                : runTrace
+                    .filter(({ ab }) => (ab.isTopInning ? awayTeamId : homeTeamId) === opt.id)
+                    .reduce((sum, p) => sum + p.scorerIds.length, 0)
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setRunTeamFilter(opt.id)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `1px solid ${active ? '#1e3a5f' : '#d1d5db'}`,
+                    borderRadius: 6,
+                    background: active ? '#1e3a5f' : '#fff',
+                    color: active ? '#fff' : '#374151',
+                  }}
+                >
+                  {opt.team?.logoUrl ? (
+                    <img
+                      src={opt.team.logoUrl}
+                      alt=""
+                      style={{ width: 18, height: 18, objectFit: 'contain', flexShrink: 0 }}
+                    />
+                  ) : null}
+                  <span>{opt.label}</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 8,
+                    background: active ? 'rgba(255,255,255,0.2)' : '#f3f4f6',
+                    color: active ? '#fff' : '#6b7280',
+                  }}>
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {filteredRunTrace.length === 0 ? (
             <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', padding: 20 }}>No runs found in play log</p>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -661,7 +730,7 @@ function TracePanel({
                 </tr>
               </thead>
               <tbody>
-                {runTrace.map(({ ab, scorerIds }, i) => (
+                {filteredRunTrace.map(({ ab, scorerIds }, i) => (
                   <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
                     <td style={{ ...td, color: '#9ca3af', width: 28 }}>{i + 1}</td>
                     <td style={{ ...td, fontFamily: 'var(--font-score)', fontSize: 13 }}>
@@ -672,7 +741,9 @@ function TracePanel({
                         {RESULT_LABELS[ab.result] ?? ab.result}
                       </div>
                       <div style={{ fontSize: 11, color: '#6b7280' }}>
-                        {players[ab.batterId]?.name ?? ab.batterId}
+                        {ab.batterId === AUTO_OUT_BATTER_ID
+                          ? <span style={{ fontStyle: 'italic', color: '#a16207' }}>(Auto Out)</span>
+                          : (players[ab.batterId]?.name ?? ab.batterId)}
                       </div>
                     </td>
                     <td style={td}>
@@ -819,10 +890,12 @@ function BoxScoreSection({
                 {batterIds.map(playerId => {
                   const s = effectiveSummary(playerId)
                   const isExtra = extraBatters.includes(playerId) && !summaryBatterIds.includes(playerId)
+                  const isSub = !!players[playerId]?.isSub
                   return (
                     <tr key={playerId}>
                       <td style={{ ...tdLabel, paddingLeft: 12 }}>
                         {players[playerId]?.name ?? playerId}
+                        {isSub && <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4, fontStyle: 'italic' }}>(sub)</span>}
                         {isExtra && <span style={{ fontSize: 10, color: '#9ca3af', marginLeft: 4 }}>new</span>}
                       </td>
                       {(['ab', 'h', 'doubles', 'triples', 'hr', 'r', 'rbi', 'bb', 'k'] as (keyof GameSummary)[]).map(field => (
@@ -907,10 +980,12 @@ function BoxScoreSection({
                 {pitcherIds.map(playerId => {
                   const s = effectiveSummary(playerId)
                   const isExtra = extraPitchers.includes(playerId) && !summaryPitcherIds.includes(playerId)
+                  const isSub = !!players[playerId]?.isSub
                   return (
                     <tr key={playerId}>
                       <td style={{ ...tdLabel, paddingLeft: 12 }}>
                         {players[playerId]?.name ?? playerId}
+                        {isSub && <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4, fontStyle: 'italic' }}>(sub)</span>}
                         {isExtra && <span style={{ fontSize: 10, color: '#9ca3af', marginLeft: 4 }}>new</span>}
                       </td>
                       <td style={tdCell}>
@@ -1218,24 +1293,78 @@ export function GameEditorRoute() {
     setRefinalizing(true)
     setRefinalizeMsg(null)
     try {
-      // Migration safety: ensure any sub_/subp_ ID referenced anywhere in this
-      // game has a /players record with isSub:true. Older games may have sub
-      // IDs in at-bats or lineups without corresponding /players entries.
+      // Migration safety: every sub_/subp_ ID referenced in this game must have
+      // a /players record with name + teamId + isSub set. Older games can hit
+      // two failure modes:
+      //   1. No /players entry at all.
+      //   2. A PARTIAL /players entry — earlier finalize wrote
+      //      players/{id}/stats/* directly, auto-creating the parent node with
+      //      no name/teamId/isSub fields. UI then falls back to showing the
+      //      raw UUID.
+      // We use partial-key updates so this heals (2) without disturbing the
+      // existing stats subtree.
+      //
+      // For batter subs the canonical name lives in the lineup's `subName`
+      // field, not on the at-bat. Load both team lineups and read names from there.
+      const [homeLineupSnap, awayLineupSnap, subPitchersSnap] = await Promise.all([
+        get(ref(db, `games/${selectedGameId}/lineups/${selectedGame.homeTeamId}`)),
+        get(ref(db, `games/${selectedGameId}/lineups/${selectedGame.awayTeamId}`)),
+        get(ref(db, `games/${selectedGameId}/subPitchers`)),
+      ])
+      const homeLineup = (homeLineupSnap.val() ?? []) as Array<{ playerId: string; subName?: string }>
+      const awayLineup = (awayLineupSnap.val() ?? []) as Array<{ playerId: string; subName?: string }>
+      const subPitchersAllTeams = (subPitchersSnap.val() ?? {}) as Record<string, Record<string, { playerId: string; name: string }>>
+
+      const subNameFromLineup = (subId: string): { name: string; teamId: string } | null => {
+        const homeMatch = homeLineup.find(e => e.playerId === subId)
+        if (homeMatch?.subName) return { name: homeMatch.subName, teamId: selectedGame.homeTeamId }
+        const awayMatch = awayLineup.find(e => e.playerId === subId)
+        if (awayMatch?.subName) return { name: awayMatch.subName, teamId: selectedGame.awayTeamId }
+        return null
+      }
+      const subPitcherInfo = (subId: string): { name: string; teamId: string } | null => {
+        for (const [teamId, byId] of Object.entries(subPitchersAllTeams)) {
+          if (byId?.[subId]) return { name: byId[subId].name, teamId }
+        }
+        return null
+      }
+
       const migrationUpdates: Record<string, unknown> = {}
-      const ensureSubPlayer = (id: string, fallbackName: string, teamId: string) => {
-        if (players[id]) return
-        migrationUpdates[`players/${id}`] = {
-          name: fallbackName, teamId, isSub: true, stats: {},
+      const upsertSubIdentity = (id: string, name: string, teamId: string) => {
+        const existing = players[id]
+        // Always force the identity fields. Partial-key update preserves stats.
+        if (!existing || existing.name !== name) migrationUpdates[`players/${id}/name`] = name
+        if (!existing || existing.teamId !== teamId) migrationUpdates[`players/${id}/teamId`] = teamId
+        if (!existing || existing.isSub !== true) migrationUpdates[`players/${id}/isSub`] = true
+        // Preserve any existing stats; if none, initialize empty so the record is well-formed.
+        if (!existing) migrationUpdates[`players/${id}/stats`] = {}
+      }
+      const seen = new Set<string>()
+      for (const ab of atBats) {
+        if (ab.batterId.startsWith('sub_') && !seen.has(ab.batterId)) {
+          seen.add(ab.batterId)
+          const lookup = subNameFromLineup(ab.batterId)
+          const teamId = lookup?.teamId ?? (ab.isTopInning ? selectedGame.awayTeamId : selectedGame.homeTeamId)
+          const name = lookup?.name ?? ab.subName ?? 'Sub'
+          upsertSubIdentity(ab.batterId, name, teamId)
+        }
+        if (ab.pitcherId?.startsWith('subp_') && !seen.has(ab.pitcherId)) {
+          seen.add(ab.pitcherId)
+          const lookup = subPitcherInfo(ab.pitcherId)
+          const teamId = lookup?.teamId ?? (ab.isTopInning ? selectedGame.homeTeamId : selectedGame.awayTeamId)
+          const name = lookup?.name ?? ab.pitcherSubName ?? 'Sub Pitcher'
+          upsertSubIdentity(ab.pitcherId, name, teamId)
         }
       }
+      // Also catch sub IDs that only appear as runners on base (never batted, never pitched).
       for (const ab of atBats) {
-        if (ab.batterId.startsWith('sub_')) {
-          const teamId = ab.isTopInning ? selectedGame.awayTeamId : selectedGame.homeTeamId
-          ensureSubPlayer(ab.batterId, ab.subName ?? 'Sub', teamId)
-        }
-        if (ab.pitcherId?.startsWith('subp_')) {
-          const teamId = ab.isTopInning ? selectedGame.homeTeamId : selectedGame.awayTeamId
-          ensureSubPlayer(ab.pitcherId, ab.pitcherSubName ?? 'Sub Pitcher', teamId)
+        for (const base of ['first','second','third'] as const) {
+          const rid = ab.runnersOnBase?.[base]
+          if (rid && rid.startsWith('sub_') && !seen.has(rid)) {
+            seen.add(rid)
+            const lookup = subNameFromLineup(rid)
+            if (lookup) upsertSubIdentity(rid, lookup.name, lookup.teamId)
+          }
         }
       }
       if (Object.keys(migrationUpdates).length > 0) {

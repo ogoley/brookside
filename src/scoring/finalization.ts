@@ -15,6 +15,7 @@ import type {
   PlayersMap,
   GameSummary,
 } from '../types'
+import { AUTO_OUT_BATTER_ID } from '../types'
 
 export interface FinalizeInput {
   /** The game being finalized */
@@ -84,7 +85,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     const { batterId, pitcherId, result, rbiCount, batterAdvancedTo, outsOnPlay } = ab
 
     // ── Hitting (skip auto-out sentinel batter — not a real player) ─────
-    if (batterId !== '__auto_out__') {
+    if (batterId !== AUTO_OUT_BATTER_ID) {
       if (!batting[batterId]) batting[batterId] = { pa: 0, ab: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, games: new Set() }
       const b = batting[batterId]
       b.games.add(ab.gameId)
@@ -316,28 +317,35 @@ function computeGameSummaries(
     // in case /players doesn't have a record for them (legacy sub IDs from
     // before sub players were promoted to first-class /players entries).
     const battingTeamId = ab.isTopInning ? game.awayTeamId : game.homeTeamId
-    const b = ensureBatter(ab.batterId, battingTeamId)
-    b.pa++
-    if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) b.ab++
-    if (['single', 'double', 'triple', 'home_run'].includes(ab.result)) b.h++
-    if (ab.result === 'double') b.doubles++
-    if (ab.result === 'triple') b.triples++
-    if (ab.result === 'home_run') b.hr++
-    if (ab.result === 'walk') b.bb++
-    if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') b.k++
-    b.rbi += ab.rbiCount
-    if (ab.batterAdvancedTo === 'home') b.r++
 
-    // Runs scored by runners on base — derive from runnersOnBase + outcomes
-    // (the source of truth) instead of the unreliable runnersScored cache.
-    const onBase = ab.runnersOnBase ?? { first: null, second: null, third: null }
-    const outcomes = ab.runnerOutcomes ?? {}
+    // Skip the batter section entirely for auto-outs — there's no real batter
+    // to credit. The sentinel ID isn't in /players, so writing it as a key
+    // would create a phantom box-score entry. The pitcher block below still
+    // runs (auto-outs DO credit the pitcher with an out recorded).
     let runnerRunsThisPlay = 0
-    for (const base of ['first', 'second', 'third'] as const) {
-      if (outcomes[base] === 'scored' && onBase[base]) {
-        const s = ensureBatter(onBase[base]!, battingTeamId)
-        s.r++
-        runnerRunsThisPlay++
+    if (ab.batterId !== AUTO_OUT_BATTER_ID) {
+      const b = ensureBatter(ab.batterId, battingTeamId)
+      b.pa++
+      if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) b.ab++
+      if (['single', 'double', 'triple', 'home_run'].includes(ab.result)) b.h++
+      if (ab.result === 'double') b.doubles++
+      if (ab.result === 'triple') b.triples++
+      if (ab.result === 'home_run') b.hr++
+      if (ab.result === 'walk') b.bb++
+      if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') b.k++
+      b.rbi += ab.rbiCount
+      if (ab.batterAdvancedTo === 'home') b.r++
+
+      // Runs scored by runners on base — derive from runnersOnBase + outcomes
+      // (the source of truth) instead of the unreliable runnersScored cache.
+      const onBase = ab.runnersOnBase ?? { first: null, second: null, third: null }
+      const outcomes = ab.runnerOutcomes ?? {}
+      for (const base of ['first', 'second', 'third'] as const) {
+        if (outcomes[base] === 'scored' && onBase[base]) {
+          const s = ensureBatter(onBase[base]!, battingTeamId)
+          s.r++
+          runnerRunsThisPlay++
+        }
       }
     }
 
