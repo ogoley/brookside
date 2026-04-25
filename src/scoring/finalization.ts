@@ -101,7 +101,9 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     }
 
     // ── Pitching ─────────────────────────────────────────────────────────
-    if (pitcherId) {
+    // Skip ephemeral sub pitchers — their stats are stripped on finalization
+    // and they're not eligible for season totals or W/L credit.
+    if (pitcherId && !ab.pitcherIsSub) {
       if (!pitching[pitcherId]) pitching[pitcherId] = { outs: 0, k: 0, bb: 0, runs: 0, games: new Set() }
       const p = pitching[pitcherId]
       p.games.add(ab.gameId)
@@ -153,7 +155,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
   if (!winnerTeamId) summary.push(`  Tie game — no W/L awarded`)
 
   // ── Game summaries (includes isSub — full box score) ─────────────────────
-  const gameSummaryUpdates = computeGameSummaries(currentGameAtBats, gameId, players)
+  const gameSummaryUpdates = computeGameSummaries(currentGameAtBats, gameId, players, game)
 
   // ── Build Firebase update object ─────────────────────────────────────────
   const updates: Record<string, unknown> = {}
@@ -220,6 +222,7 @@ function findWinningPitcher(
 
   for (const ab of atBats) {
     if (!ab.pitcherId) continue
+    if (ab.pitcherIsSub) continue   // sub pitchers are not eligible for W/L
     const pitcherTeam = players[ab.pitcherId]?.teamId
     if (pitcherTeam !== teamId) continue
     outsByPitcher[ab.pitcherId] = (outsByPitcher[ab.pitcherId] ?? 0) + ab.outsOnPlay
@@ -247,18 +250,21 @@ function computeGameSummaries(
   atBats: AtBatRecord[],
   gameId: string,
   players: PlayersMap,
+  game: GameRecord,
 ): Record<string, GameSummary> {
   const summaries: Record<string, GameSummary> = {}
   const pitchingOuts: Record<string, number> = {}
 
-  const ensureBatter = (playerId: string) => {
+  const ensureBatter = (playerId: string, fallbackTeamId = '') => {
     if (!summaries[playerId]) {
       summaries[playerId] = {
         playerId,
-        teamId: players[playerId]?.teamId ?? '',
+        teamId: players[playerId]?.teamId ?? fallbackTeamId,
         ab: 0, pa: 0, h: 0, doubles: 0, triples: 0, hr: 0,
         r: 0, rbi: 0, bb: 0, k: 0, inningsPitched: 0,
       }
+    } else if (!summaries[playerId].teamId && fallbackTeamId) {
+      summaries[playerId].teamId = fallbackTeamId
     }
     return summaries[playerId]
   }
@@ -282,7 +288,9 @@ function computeGameSummaries(
     }
 
     if (ab.pitcherId) {
-      const ps = ensureBatter(ab.pitcherId)
+      // Sub pitchers aren't in /players — their team is the fielding team for this at-bat.
+      const fieldingTeamId = ab.isTopInning ? game.homeTeamId : game.awayTeamId
+      const ps = ensureBatter(ab.pitcherId, fieldingTeamId)
       pitchingOuts[ab.pitcherId] = (pitchingOuts[ab.pitcherId] ?? 0) + ab.outsOnPlay
       if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') ps.pitchingK = (ps.pitchingK ?? 0) + 1
       if (ab.result === 'walk' || ab.result === 'hbp') ps.pitchingBb = (ps.pitchingBb ?? 0) + 1

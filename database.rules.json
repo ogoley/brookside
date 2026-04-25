@@ -16,6 +16,9 @@
     "liveRunners": {
       ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
+    "gameSummaries": {
+      ".write": "auth != null && auth.token.role === 'admin'"
+    },
     "teams": {
       ".write": "auth != null && auth.token.role === 'admin'"
     },

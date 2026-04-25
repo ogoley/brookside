@@ -10,6 +10,7 @@ import { useLiveRunners } from '../hooks/useLiveRunners'
 import { useGames } from '../hooks/useGames'
 import { useGameRecord } from '../hooks/useGameRecord'
 import { useGameLineup } from '../hooks/useGameLineup'
+import { useSubPitchers } from '../hooks/useSubPitchers'
 import { applyAtBat, recomputeGameState, computeLineupPosition, type PlayLogEntry, type RecomputeGameResult } from '../scoring/engine'
 import { computeFinalization } from '../scoring/finalization'
 import { generateGameId, getEasternDateString } from '../scoring/gameId'
@@ -17,6 +18,7 @@ import { RunnerDiamond } from '../components/RunnerDiamond'
 import type {
   AtBatResult, AtBatRecord, RunnersState, RunnerOutcomes,
   PlayersMap, LineupEntry, GameLineup, TeamsMap, GameSummary, GameRecord,
+  SubPitcherEntry,
 } from '../types'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -161,67 +163,51 @@ export function ScorekeeperRoute() {
 
   if (activeGameId && activeGameRecord?.game.finalized) {
     return (
-      <>
-        <HomeButton />
-        <AuthStatus />
-        <GameSummaryView
-          gameId={activeGameId}
-          game={activeGameRecord.game}
-          teams={teams}
-          players={players}
-          onBack={() => setActiveGameId(null)}
-        />
-      </>
+      <GameSummaryView
+        gameId={activeGameId}
+        game={activeGameRecord.game}
+        teams={teams}
+        players={players}
+        onBack={() => setActiveGameId(null)}
+      />
     )
   }
 
   if (activeGameId && showLineupEditor) {
     return (
-      <>
-        <HomeButton />
-        <AuthStatus />
-        <LineupEditScreen
-          gameId={activeGameId}
-          players={players}
-          teams={teams}
-          onBack={() => setShowLineupEditor(false)}
-        />
-      </>
+      <LineupEditScreen
+        gameId={activeGameId}
+        players={players}
+        teams={teams}
+        onBack={() => setShowLineupEditor(false)}
+      />
     )
   }
 
   if (activeGameId) {
     return (
-      <>
-        <HomeButton />
-        <AuthStatus />
-        <GameWizard
-          gameId={activeGameId}
-          players={players}
-          teams={teams}
-          onBack={() => setActiveGameId(null)}
-          onEditLineup={() => setShowLineupEditor(true)}
-        />
-      </>
+      <GameWizard
+        gameId={activeGameId}
+        players={players}
+        teams={teams}
+        onBack={() => setActiveGameId(null)}
+        onEditLineup={() => setShowLineupEditor(true)}
+      />
     )
   }
 
   return (
-    <>
-      <HomeButton />
-      <AuthStatus />
-      <GameSelectorScreen
-        games={games}
-        loading={gamesLoading}
-        teams={teams}
-        onSelectGame={setActiveGameId}
-        onNewGame={() => setShowNewGameModal(true)}
-        showNewGameModal={showNewGameModal}
-        onCloseNewGameModal={() => setShowNewGameModal(false)}
-        onGameCreated={(id) => { setShowNewGameModal(false); setActiveGameId(id) }}
-        players={players}
-      />
-    </>
+    <GameSelectorScreen
+      games={games}
+      loading={gamesLoading}
+      teams={teams}
+      onSelectGame={setActiveGameId}
+      onNewGame={() => setShowNewGameModal(true)}
+      showNewGameModal={showNewGameModal}
+      onCloseNewGameModal={() => setShowNewGameModal(false)}
+      onGameCreated={(id) => { setShowNewGameModal(false); setActiveGameId(id) }}
+      players={players}
+    />
   )
 }
 
@@ -247,17 +233,23 @@ function GameSelectorScreen({
   return (
     <div className="min-h-screen px-4 py-4" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-white text-2xl font-black uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
-          Scorekeeper
-        </h1>
-        <button
-          onClick={onNewGame}
-          className="h-10 px-4 rounded-xl font-bold text-sm uppercase tracking-wider"
-          style={{ background: '#2563eb', color: '#fff', border: '1px solid rgba(96,165,250,0.4)' }}
-        >
-          + New Game
-        </button>
+      <div className="flex items-center justify-between mb-6 gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <HomeButton />
+          <h1 className="text-white text-2xl font-black uppercase tracking-widest truncate" style={{ fontFamily: 'var(--font-score)' }}>
+            Scorekeeper
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onNewGame}
+            className="h-10 px-4 rounded-xl font-bold text-sm uppercase tracking-wider"
+            style={{ background: '#2563eb', color: '#fff', border: '1px solid rgba(96,165,250,0.4)' }}
+          >
+            + New Game
+          </button>
+          <AuthStatus />
+        </div>
       </div>
 
       {loading ? (
@@ -845,12 +837,17 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
 
   const { lineup: battingLineup } = useGameLineup(gameId, battingTeamId)
   const { lineup: fieldingLineup } = useGameLineup(gameId, fieldingTeamId)
+  const { subPitchers } = useSubPitchers(gameId)
 
-  // Resolve player name: checks real players first, then lineup subName entries
+  // Resolve player name: checks real players first, then lineup subName entries,
+  // then per-game sub pitcher entries (which use fabricated subp_<ts> ids).
   const resolvePlayerName = (id: string) => {
     if (players[id]?.name) return players[id].name
     const entry = [...battingLineup, ...fieldingLineup].find(e => e.playerId === id)
     if (entry?.subName) return entry.subName
+    for (const teamMap of Object.values(subPitchers)) {
+      if (teamMap?.[id]?.name) return teamMap[id].name
+    }
     return id
   }
 
@@ -1050,6 +1047,11 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const isSub = !regularEntry
     const subName = lineupEntry?.subName
 
+    // Determine if the pitcher is an ephemeral sub (per-game subPitchers entry).
+    const pitcherSubEntry = subPitchers[fieldingTeamId]?.[pitcherId]
+    const pitcherIsSub = !!pitcherSubEntry
+    const pitcherSubName = pitcherSubEntry?.name
+
     // Compute derived fields
     const runnersScored = bases
       .filter(b => runnerOutcomes[b as keyof RunnerOutcomes] === 'scored')
@@ -1079,6 +1081,8 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       rbiCount,
       batterAdvancedTo,
       ...(subName ? { subName } : {}),
+      ...(pitcherIsSub ? { pitcherIsSub: true } : {}),
+      ...(pitcherSubName ? { pitcherSubName } : {}),
     }
 
     // Run through engine for narrated log + next runner state
@@ -1240,6 +1244,15 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       setShowGameCompletePrompt(false)
       setConfirmFinalize(false)
       onBack()
+    } catch (err) {
+      console.error('[Finalization] Failed:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      const isPerm = /permission_denied/i.test(msg)
+      alert(
+        isPerm
+          ? 'Finalize failed: permission denied. You must be signed in as an admin to finalize a game.'
+          : `Finalize failed: ${msg}`
+      )
     } finally {
       setFinalizing(false)
     }
@@ -1397,6 +1410,22 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   const pitcherOptions = Object.entries(players)
     .filter(([, p]) => p.teamId === fieldingTeamId)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+  const fieldingSubPitchers: SubPitcherEntry[] = Object.values(subPitchers[fieldingTeamId] ?? {})
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const nextSubPitcherTeamId = isTopInning ? (game?.awayTeamId ?? '') : (game?.homeTeamId ?? '')
+  const nextSubPitchers: SubPitcherEntry[] = Object.values(subPitchers[nextSubPitcherTeamId] ?? {})
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const addSubPitcher = async (teamId: string): Promise<string | null> => {
+    if (!gameId || !teamId) return null
+    const name = window.prompt('Sub pitcher name')?.trim()
+    if (!name) return null
+    const playerId = `subp_${Date.now()}`
+    await update(ref(db), {
+      [`games/${gameId}/subPitchers/${teamId}/${playerId}`]: { playerId, name },
+    })
+    return playerId
+  }
 
   // ── Batter options ───────────────────────────────────────────────────────
   const regularBatters = battingLineup.filter(e => !e.isSub).map(e => e.playerId)
@@ -1429,6 +1458,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
           gameId={gameId}
           battingLineup={battingLineup}
           fieldingLineup={fieldingLineup}
+          subPitchers={subPitchers}
           resolvePlayerName={resolvePlayerName}
           currentInning={inning}
           currentIsTop={isTopInning}
@@ -1482,14 +1512,15 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20 }}>‹</button>
-          <h1 className="text-white text-xl font-black uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <HomeButton />
+          <button onClick={onBack} style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20, lineHeight: 1 }}>‹</button>
+          <h1 className="text-white text-xl font-black uppercase tracking-widest truncate" style={{ fontFamily: 'var(--font-score)' }}>
             {teams[game?.awayTeamId ?? '']?.shortName ?? '?'} @ {teams[game?.homeTeamId ?? '']?.shortName ?? '?'}
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <p className="text-white/40 text-sm">
             {isTopInning ? '▲' : '▼'}{inning} · {outs} out{outs !== 1 ? 's' : ''}
           </p>
@@ -1521,6 +1552,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
               End Game
             </button>
           )}
+          <AuthStatus />
         </div>
       </div>
 
@@ -1639,14 +1671,32 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
               </span>
               <select
                 value={pitcherId}
-                onChange={e => setPitcherId(e.target.value)}
+                onChange={async e => {
+                  const v = e.target.value
+                  if (v === '__add_sub__') {
+                    const newId = await addSubPitcher(fieldingTeamId)
+                    if (newId) setPitcherId(newId)
+                    return
+                  }
+                  setPitcherId(v)
+                }}
                 className="w-full h-14 rounded-xl px-3 text-base font-medium"
                 style={{ background: '#1c2333', color: pitcherId ? '#fff' : 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.15)' }}
               >
                 <option value="">— Select pitcher —</option>
-                {pitcherOptions.map(([id, p]) => (
-                  <option key={id} value={id}>{p.name}</option>
-                ))}
+                <optgroup label="Roster">
+                  {pitcherOptions.map(([id, p]) => (
+                    <option key={id} value={id}>{p.name}</option>
+                  ))}
+                </optgroup>
+                {fieldingSubPitchers.length > 0 && (
+                  <optgroup label="Subs">
+                    {fieldingSubPitchers.map(s => (
+                      <option key={s.playerId} value={s.playerId}>{s.name} (sub)</option>
+                    ))}
+                  </optgroup>
+                )}
+                <option value="__add_sub__">+ Add sub pitcher…</option>
               </select>
             </div>
 
@@ -1981,18 +2031,36 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
               </span>
               <select
                 value={nextPitcherId}
-                onChange={e => setNextPitcherId(e.target.value)}
+                onChange={async e => {
+                  const v = e.target.value
+                  if (v === '__add_sub__') {
+                    const newId = await addSubPitcher(nextSubPitcherTeamId)
+                    if (newId) setNextPitcherId(newId)
+                    return
+                  }
+                  setNextPitcherId(v)
+                }}
                 className="w-full h-14 rounded-xl px-3 text-base font-medium"
                 style={{ background: '#1c2333', color: nextPitcherId ? '#fff' : 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.15)' }}
               >
                 <option value="">— Select pitcher —</option>
-                {Object.entries(players)
-                  .filter(([, p]) => p.teamId === (isTopInning ? game?.awayTeamId : game?.homeTeamId))
-                  .sort(([, a], [, b]) => a.name.localeCompare(b.name))
-                  .map(([id, p]) => (
-                    <option key={id} value={id}>{p.name}</option>
-                  ))
-                }
+                <optgroup label="Roster">
+                  {Object.entries(players)
+                    .filter(([, p]) => p.teamId === nextSubPitcherTeamId)
+                    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+                    .map(([id, p]) => (
+                      <option key={id} value={id}>{p.name}</option>
+                    ))
+                  }
+                </optgroup>
+                {nextSubPitchers.length > 0 && (
+                  <optgroup label="Subs">
+                    {nextSubPitchers.map(s => (
+                      <option key={s.playerId} value={s.playerId}>{s.name} (sub)</option>
+                    ))}
+                  </optgroup>
+                )}
+                <option value="__add_sub__">+ Add sub pitcher…</option>
               </select>
             </div>
 
@@ -2249,8 +2317,8 @@ function AtBatRow({ atBatId, ab, players, onEdit, onDelete }: {
 }
 
 function AtBatEditModal({
-  atBatId, ab, allAtBats, players, teams, game, battingLineup, fieldingLineup,
-  resolvePlayerName, currentInning, currentIsTop, onClose, applyRecompute,
+  atBatId, ab, allAtBats, players, teams, game, gameId, battingLineup, fieldingLineup,
+  subPitchers, resolvePlayerName, currentInning, currentIsTop, onClose, applyRecompute,
 }: {
   atBatId: string
   ab: AtBatRecord
@@ -2261,6 +2329,7 @@ function AtBatEditModal({
   gameId: string
   battingLineup: GameLineup
   fieldingLineup: GameLineup
+  subPitchers: Record<string, Record<string, SubPitcherEntry>>
   resolvePlayerName: (id: string) => string
   currentInning: number
   currentIsTop: boolean
@@ -2293,6 +2362,19 @@ function AtBatEditModal({
   const pitcherOptions = Object.entries(players)
     .filter(([, p]) => p.teamId === abFieldingTeamId)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+  const fieldingSubPitchers: SubPitcherEntry[] = Object.values(subPitchers[abFieldingTeamId] ?? {})
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const addSubPitcher = async (): Promise<string | null> => {
+    if (!gameId || !abFieldingTeamId) return null
+    const name = window.prompt('Sub pitcher name')?.trim()
+    if (!name) return null
+    const playerId = `subp_${Date.now()}`
+    await update(ref(db), {
+      [`games/${gameId}/subPitchers/${abFieldingTeamId}/${playerId}`]: { playerId, name },
+    })
+    return playerId
+  }
 
   const handleSelectResult = (r: AtBatResult) => {
     setResult(r)
@@ -2305,7 +2387,9 @@ function AtBatEditModal({
   const updatedRecord: AtBatRecord = useMemo(() => {
     const entry = abLineup.find(e => e.playerId === batterId)
     const isSub = !entry || entry.isSub
-    return {
+    const pitcherSubEntry = subPitchers[abFieldingTeamId]?.[pitcherId]
+    const pitcherIsSub = !!pitcherSubEntry
+    const next: AtBatRecord = {
       ...ab,
       batterId,
       pitcherId,
@@ -2315,8 +2399,13 @@ function AtBatEditModal({
       batterAdvancedTo,
       isSub,
       ...(entry?.subName ? { subName: entry.subName } : {}),
+      pitcherIsSub,
     }
-  }, [ab, batterId, pitcherId, result, runners, runnerOutcomes, batterAdvancedTo, abLineup])
+    if (pitcherIsSub) next.pitcherSubName = pitcherSubEntry!.name
+    else delete next.pitcherSubName
+    if (!entry?.subName) delete next.subName
+    return next
+  }, [ab, batterId, pitcherId, result, runners, runnerOutcomes, batterAdvancedTo, abLineup, subPitchers, abFieldingTeamId])
 
   // Preview the full replay with this edit applied
   const preview = useMemo(() => {
@@ -2414,13 +2503,31 @@ function AtBatEditModal({
           </p>
           <select
             value={pitcherId}
-            onChange={e => setPitcherId(e.target.value)}
+            onChange={async e => {
+              const v = e.target.value
+              if (v === '__add_sub__') {
+                const newId = await addSubPitcher()
+                if (newId) setPitcherId(newId)
+                return
+              }
+              setPitcherId(v)
+            }}
             className="w-full h-12 rounded-xl px-3 text-sm font-medium"
             style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
           >
-            {pitcherOptions.map(([id, p]) => (
-              <option key={id} value={id}>{p.name}</option>
-            ))}
+            <optgroup label="Roster">
+              {pitcherOptions.map(([id, p]) => (
+                <option key={id} value={id}>{p.name}</option>
+              ))}
+            </optgroup>
+            {fieldingSubPitchers.length > 0 && (
+              <optgroup label="Subs">
+                {fieldingSubPitchers.map(s => (
+                  <option key={s.playerId} value={s.playerId}>{s.name} (sub)</option>
+                ))}
+              </optgroup>
+            )}
+            <option value="__add_sub__">+ Add sub pitcher…</option>
           </select>
         </div>
 
@@ -2769,21 +2876,25 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
   return (
     <div className="min-h-screen px-4 py-4" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20 }}>‹</button>
-          <h1 className="text-white text-xl font-black uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <HomeButton />
+          <button onClick={onBack} style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20, lineHeight: 1 }}>‹</button>
+          <h1 className="text-white text-xl font-black uppercase tracking-widest truncate" style={{ fontFamily: 'var(--font-score)' }}>
             Lineup Editor
           </h1>
         </div>
-        <button
-          onClick={save}
-          disabled={saving}
-          className="px-4 py-2 rounded-lg font-bold text-sm"
-          style={{ background: '#2563eb', color: '#fff' }}
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg font-bold text-sm"
+            style={{ background: '#2563eb', color: '#fff' }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <AuthStatus />
+        </div>
       </div>
 
       {/* Team tabs */}
@@ -2924,17 +3035,23 @@ function GameSummaryView({ gameId, game, teams, players, onBack }: {
   return (
     <div className="min-h-screen px-4 py-4 pb-16" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
       {/* Nav */}
-      <div className="flex items-center justify-between mb-5">
-        <button onClick={onBack} className="flex items-center gap-2" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          <span style={{ fontSize: 22 }}>‹</span>
-          <span className="text-sm font-semibold">Games</span>
-        </button>
-        <span
-          className="text-xs font-black px-2.5 py-1 rounded-lg uppercase tracking-widest"
-          style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)', fontFamily: 'var(--font-score)' }}
-        >
-          Final
-        </span>
+      <div className="flex items-center justify-between mb-5 gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <HomeButton />
+          <button onClick={onBack} className="flex items-center gap-2" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            <span style={{ fontSize: 22, lineHeight: 1 }}>‹</span>
+            <span className="text-sm font-semibold">Games</span>
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className="text-xs font-black px-2.5 py-1 rounded-lg uppercase tracking-widest"
+            style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)', fontFamily: 'var(--font-score)' }}
+          >
+            Final
+          </span>
+          <AuthStatus />
+        </div>
       </div>
 
       {/* Score card */}

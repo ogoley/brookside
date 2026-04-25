@@ -1292,16 +1292,15 @@ export function GameEditorRoute() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f3f4f6', fontFamily: 'var(--font-ui)' }}>
-      <HomeButton />
-      <AuthStatus />
       {/* Header */}
       <div style={{ background: '#1e3a5f', borderBottom: '4px solid #c0392b' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 16px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <HomeButton />
             {config.leagueLogo && (
               <img src={config.leagueLogo} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} />
             )}
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <h1 style={{ fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 900, color: '#ffffff', letterSpacing: '0.05em', margin: 0 }}>
                 Game Editor
               </h1>
@@ -1309,6 +1308,7 @@ export function GameEditorRoute() {
                 Brookside Athletics — Stat Correction &amp; Paper Entry
               </p>
             </div>
+            <AuthStatus />
           </div>
 
           {/* Nav */}

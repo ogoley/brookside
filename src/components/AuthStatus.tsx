@@ -8,21 +8,18 @@ export function AuthStatus() {
   if (loading) return null
 
   const pillBase: React.CSSProperties = {
-    position: 'fixed',
-    top: 10,
-    right: 10,
-    zIndex: 1000,
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
-    gap: 8,
-    padding: '6px 10px',
-    background: 'rgba(0,0,0,0.55)',
-    border: '1px solid rgba(255,255,255,0.15)',
+    gap: 6,
+    padding: '4px 8px',
+    background: 'rgba(255,255,255,0.07)',
+    border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 8,
-    color: '#f3f4f6',
+    color: 'rgba(255,255,255,0.85)',
     fontFamily: 'var(--font-ui)',
-    fontSize: 12,
-    backdropFilter: 'blur(4px)',
+    fontSize: 11,
+    lineHeight: 1.2,
+    flexShrink: 0,
   }
 
   if (!user) {
@@ -33,25 +30,25 @@ export function AuthStatus() {
     )
   }
 
-  const username = user.email?.split('@')[0] ?? 'user'
-
   return (
     <div style={pillBase}>
-      <span style={{ color: 'rgba(255,255,255,0.8)' }}>
-        {username}{role ? ` · ${role}` : ''}
+      <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {role ?? 'user'}
       </span>
       <button
         onClick={() => signOut(auth)}
         style={{
           background: 'transparent',
-          border: '1px solid rgba(255,255,255,0.3)',
-          color: '#f3f4f6',
-          padding: '2px 8px',
+          border: '1px solid rgba(255,255,255,0.18)',
+          color: 'rgba(255,255,255,0.7)',
+          padding: '1px 6px',
           borderRadius: 4,
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: 600,
           cursor: 'pointer',
           fontFamily: 'var(--font-ui)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
         }}
       >
         Sign out

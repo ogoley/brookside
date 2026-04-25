@@ -166,9 +166,13 @@ Write the recap now.`
 
   return (
     <div style={{ fontFamily: 'var(--font-ui)', maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
-      <HomeButton />
-      <AuthStatus />
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Game Day Summary</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <HomeButton />
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Game Day Summary</h1>
+        </div>
+        <AuthStatus />
+      </div>
       <p style={{ color: '#888', marginBottom: 32 }}>
         Pick a date to generate an AI-written recap of all games played that day.
       </p>

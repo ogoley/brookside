@@ -173,6 +173,8 @@ export interface AtBatRecord {
   batterId: string
   pitcherId: string
   isSub: boolean           // denormalized from lineup at write time; excluded from season stats on finalization
+  pitcherIsSub?: boolean   // denormalized from sub-pitcher list at write time; pitcher excluded from season stats + W/L on finalization
+  pitcherSubName?: string  // display name for an ephemeral sub pitcher (pitcherId is fabricated subp_<ts>)
   inning: number
   isTopInning: boolean
   timestamp: number
@@ -186,6 +188,16 @@ export interface AtBatRecord {
   notes?: string
   subName?: string
 }
+
+// /games/{gameId}/subPitchers/{teamId}/{pitcherId} — ephemeral per-game sub pitcher entries
+// playerId is a fabricated `subp_<timestamp>` not present in /players. Stats are NOT
+// rolled into season totals on finalization; they only appear in per-game box scores.
+export interface SubPitcherEntry {
+  playerId: string
+  name: string
+}
+
+export type SubPitchersByTeam = Record<string, Record<string, SubPitcherEntry>>
 
 // One entry in a team's batting lineup
 export interface LineupEntry {

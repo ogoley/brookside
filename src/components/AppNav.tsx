@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
-import { signOut } from 'firebase/auth'
-import { auth } from '../firebase'
 import { useAuth, hasRole } from '../hooks/useAuth'
+import { AuthStatus } from './AuthStatus'
 
 interface NavLink {
   to: string
@@ -19,7 +18,7 @@ const LINKS: NavLink[] = [
 ]
 
 export function AppNav() {
-  const { user, role, loading } = useAuth()
+  const { role, loading } = useAuth()
   if (loading) return null
 
   // Hide admin-only links from non-admins. Scorer-level links stay visible
@@ -46,43 +45,7 @@ export function AppNav() {
         </Link>
       ))}
       <div style={{ flex: 1 }} />
-      {user ? (
-        <>
-          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, padding: '0 6px' }}>
-            {user.email?.split('@')[0]}{role ? ` · ${role}` : ''}
-          </span>
-          <button
-            onClick={() => signOut(auth)}
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.3)',
-              color: 'rgba(255,255,255,0.75)',
-              padding: '4px 10px',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'var(--font-ui)',
-            }}
-          >
-            Sign out
-          </button>
-        </>
-      ) : (
-        <Link
-          to="/controller"
-          style={{
-            color: 'rgba(255,255,255,0.75)',
-            textDecoration: 'none',
-            padding: '4px 10px',
-            borderRadius: 4,
-            border: '1px solid rgba(255,255,255,0.3)',
-            fontSize: 11,
-          }}
-        >
-          Sign in
-        </Link>
-      )}
+      <AuthStatus />
     </div>
   )
 }

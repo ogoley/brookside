@@ -415,25 +415,29 @@ export function ControllerRoute() {
       className="min-h-screen px-4 py-4 sm:px-6 lg:px-10 lg:py-8"
       style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}
     >
-      <HomeButton />
-      <AuthStatus />
       {/* ── HEADER ── */}
-      <div className="flex items-center justify-between mb-4">
-        <h1
-          className="text-white text-2xl font-black uppercase tracking-widest"
-          style={{ fontFamily: 'var(--font-score)' }}
-        >
-          Broadcast Control
-        </h1>
-        <Link
-          to="/config"
-          className="text-sm font-semibold transition-colors"
-          style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-ui)' }}
-          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
-          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
-        >
-          ⚙ Teams
-        </Link>
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <HomeButton />
+          <h1
+            className="text-white text-2xl font-black uppercase tracking-widest truncate"
+            style={{ fontFamily: 'var(--font-score)' }}
+          >
+            Broadcast Control
+          </h1>
+        </div>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/config"
+            className="text-sm font-semibold transition-colors"
+            style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-ui)' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.8)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.4)')}
+          >
+            ⚙ Teams
+          </Link>
+          <AuthStatus />
+        </div>
       </div>
 
       {/* ── INTERACTIVE SCOREBOARD (full width, top) ── */}
