@@ -380,11 +380,11 @@ export function ControllerRoute() {
   const fieldingTeamId = game.isTopInning ? game.homeTeamId : game.awayTeamId
 
   const matchupBatterPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === battingTeamId)
+    .filter(([, p]) => p.teamId === battingTeamId && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const matchupPitcherPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === fieldingTeamId)
+    .filter(([, p]) => p.teamId === fieldingTeamId && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const selectBatter = (playerId: string) => {

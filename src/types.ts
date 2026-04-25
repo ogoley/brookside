@@ -131,6 +131,10 @@ export interface Player {
   teamId: string
   jerseyNumber?: string
   stats: PlayerStats
+  /** Ephemeral one-game sub. Stats accumulate normally on finalization but
+   *  season-stat consumers (leaderboards, standings, totals) must filter
+   *  out players where isSub === true. */
+  isSub?: boolean
 }
 
 export interface PlayersMap {
@@ -143,12 +147,17 @@ export interface PlayersMap {
 //   single | double | triple | home_run | walk | strikeout | strikeout_looking
 //   groundout  — ground out or tag out; connected-chain rule applies (lead runner leaves, batter stays on 1st)
 //   popout     — ball caught in the air; no chain rule; runners may tag and advance
+// auto_out — recorded via the Forceful Actions UI, NOT the at-bat wizard. Used
+//   when a team has fewer players than required and the missing roster slot
+//   must take an automatic out. The record uses a sentinel batterId
+//   ('__auto_out__'); the pitcher still gets the out credit.
 // Legacy values kept in the type so historical records still deserialize correctly:
 //   flyout | hbp | sacrifice_fly | sacrifice_bunt | fielders_choice | pitchers_poison
 export type AtBatResult =
   | 'single' | 'double' | 'triple' | 'home_run'
   | 'walk' | 'strikeout' | 'strikeout_looking'
   | 'groundout' | 'popout'
+  | 'auto_out'
   | 'flyout' | 'hbp' | 'sacrifice_fly' | 'sacrifice_bunt'
   | 'fielders_choice' | 'pitchers_poison'
 

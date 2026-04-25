@@ -70,6 +70,8 @@ function buildHittingRows(
   const rows: HittingRow[] = []
 
   for (const [playerId, player] of Object.entries(players)) {
+    if (player.isSub) continue   // ephemeral one-game subs don't appear in season totals
+
     let hitting: HittingStats | null = player.stats?.hitting ?? null
 
     for (const atBats of Object.values(liveAtBats)) {
@@ -118,6 +120,8 @@ function buildPitchingRows(
   const rows: PitchingRow[] = []
 
   for (const [playerId, player] of Object.entries(players)) {
+    if (player.isSub) continue   // ephemeral one-game subs don't appear in season totals
+
     let pitching: PitchingStats | null = player.stats?.pitching ?? null
 
     for (const atBats of Object.values(liveAtBats)) {
@@ -242,7 +246,7 @@ function buildTeamRoster(
 ): TeamRosterRow[] {
   const hittingMap = new Map(hittingRows.map(r => [r.playerId, r]))
   return Object.entries(players)
-    .filter(([, p]) => p.teamId === teamId)
+    .filter(([, p]) => p.teamId === teamId && !p.isSub)
     .map(([id, p]) => {
       const h = hittingMap.get(id)
       return {

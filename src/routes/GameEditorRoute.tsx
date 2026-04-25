@@ -9,6 +9,7 @@ import { usePlayers } from '../hooks/usePlayers'
 import { useTeams } from '../hooks/useTeams'
 import { useGameStats } from '../hooks/useGameStats'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
+import { computeFinalization } from '../scoring/finalization'
 import type { GameSummary, GameRecord, PlayersMap, TeamsMap, AtBatRecord } from '../types'
 
 const INNINGS_PER_GAME = 7
@@ -735,9 +736,9 @@ function BoxScoreSection({
     return field in (edits[playerId] ?? {})
   }
 
-  // Players on this team
+  // Players on this team — exclude one-game subs from the "add to box score" picker
   const teamPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === teamId)
+    .filter(([, p]) => p.teamId === teamId && !p.isSub)
     .sort((a, b) => a[1].name.localeCompare(b[1].name))
 
   // Players who appear in summaries for this team
@@ -1145,6 +1146,145 @@ export function GameEditorRoute() {
     setExtraPitchers(prev => ({ ...prev, [teamId]: (prev[teamId] ?? []).filter(id => id !== playerId) }))
   }
 
+  // ── Sub-pitcher tools (game cleanup) ──────────────────────────────────────
+
+  // Distinct pitcherIds that actually appear in this game's at-bats.
+  // Used by the "Convert pitcher → sub" picker.
+  const distinctPitchersInAtBats = useMemo(() => {
+    const ids = new Set<string>()
+    for (const ab of atBats) if (ab.pitcherId) ids.add(ab.pitcherId)
+    return [...ids]
+  }, [atBats])
+
+  const [convertPitcherId, setConvertPitcherId] = useState<string>('')
+  const [refinalizing, setRefinalizing] = useState(false)
+  const [refinalizeMsg, setRefinalizeMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  /**
+   * Re-attribute every at-bat in this game where pitcherId matches the chosen
+   * regular player to a fabricated sub-pitcher identity. Creates a /players
+   * entry with isSub:true so finalization writes their stats there (where
+   * downstream consumers filter them out), leaving the regular player's
+   * season pitching stats clean.
+   */
+  const convertPitcherToSub = async () => {
+    if (!selectedGameId || !selectedGame || !convertPitcherId) return
+    const oldPlayer = players[convertPitcherId]
+    if (!oldPlayer) return
+    const proposedName = window.prompt(
+      `Sub display name for these ${atBats.filter(a => a.pitcherId === convertPitcherId).length} at-bat(s)?`,
+      oldPlayer.name,
+    )?.trim()
+    if (!proposedName) return
+
+    const newPitcherId = `subp_${Date.now()}`
+    const updates: Record<string, unknown> = {
+      [`players/${newPitcherId}`]: {
+        name: proposedName,
+        teamId: oldPlayer.teamId,
+        isSub: true,
+        stats: {},
+      },
+      [`games/${selectedGameId}/subPitchers/${oldPlayer.teamId}/${newPitcherId}`]: {
+        playerId: newPitcherId,
+        name: proposedName,
+      },
+    }
+
+    // Re-attribute at-bats. Iterate raw map (we have IDs there).
+    let count = 0
+    for (const [abId, ab] of Object.entries(atBatsRaw)) {
+      if (ab.pitcherId !== convertPitcherId) continue
+      updates[`gameStats/${selectedGameId}/${abId}/pitcherId`] = newPitcherId
+      updates[`gameStats/${selectedGameId}/${abId}/pitcherIsSub`] = true
+      updates[`gameStats/${selectedGameId}/${abId}/pitcherSubName`] = proposedName
+      count++
+    }
+
+    await update(ref(db), updates)
+    setConvertPitcherId('')
+    setRefinalizeMsg({
+      text: `Re-attributed ${count} at-bat(s) from ${oldPlayer.name} to "${proposedName}" (sub). Click "Re-finalize" to refresh stats.`,
+      ok: true,
+    })
+  }
+
+  /**
+   * Re-run computeFinalization against the current at-bat records. Idempotent —
+   * regenerates gameSummaries, season hitting/pitching, and W/L from scratch.
+   */
+  const refinalizeFromAtBats = async () => {
+    if (!selectedGameId || !selectedGame) return
+    setRefinalizing(true)
+    setRefinalizeMsg(null)
+    try {
+      // Migration safety: ensure any sub_/subp_ ID referenced anywhere in this
+      // game has a /players record with isSub:true. Older games may have sub
+      // IDs in at-bats or lineups without corresponding /players entries.
+      const migrationUpdates: Record<string, unknown> = {}
+      const ensureSubPlayer = (id: string, fallbackName: string, teamId: string) => {
+        if (players[id]) return
+        migrationUpdates[`players/${id}`] = {
+          name: fallbackName, teamId, isSub: true, stats: {},
+        }
+      }
+      for (const ab of atBats) {
+        if (ab.batterId.startsWith('sub_')) {
+          const teamId = ab.isTopInning ? selectedGame.awayTeamId : selectedGame.homeTeamId
+          ensureSubPlayer(ab.batterId, ab.subName ?? 'Sub', teamId)
+        }
+        if (ab.pitcherId?.startsWith('subp_')) {
+          const teamId = ab.isTopInning ? selectedGame.homeTeamId : selectedGame.awayTeamId
+          ensureSubPlayer(ab.pitcherId, ab.pitcherSubName ?? 'Sub Pitcher', teamId)
+        }
+      }
+      if (Object.keys(migrationUpdates).length > 0) {
+        await update(ref(db), migrationUpdates)
+      }
+
+      // Gather previously-finalized at-bats and game records (excluding this one).
+      const prevAtBats: Array<AtBatRecord & { gameId: string }> = []
+      const prevGames: Record<string, GameRecord> = {}
+      for (const { gameId: gId, game: g } of games) {
+        if (!g.finalized || gId === selectedGameId) continue
+        prevGames[gId] = g
+        const snap = await get(ref(db, `gameStats/${gId}`))
+        if (snap.exists()) {
+          for (const ab of Object.values(snap.val() as Record<string, AtBatRecord>)) {
+            prevAtBats.push({ ...ab, gameId: gId })
+          }
+        }
+      }
+
+      // Re-fetch /players to pick up the migration writes we just made.
+      const playersSnap = await get(ref(db, 'players'))
+      const playersFresh = (playersSnap.val() ?? {}) as PlayersMap
+
+      const { updates: finalizeUpdates, summary } = computeFinalization({
+        gameId: selectedGameId,
+        game: selectedGame,
+        currentGameAtBats: atBats,
+        previousAtBats: prevAtBats,
+        previousGames: prevGames,
+        players: playersFresh,
+      })
+
+      await update(ref(db), finalizeUpdates)
+      console.log('Re-finalize summary:\n' + summary.join('\n'))
+      setRefinalizeMsg({
+        text: `Re-finalized ${atBats.length} at-bat(s). ${Object.keys(finalizeUpdates).length} paths updated.`,
+        ok: true,
+      })
+    } catch (e) {
+      setRefinalizeMsg({
+        text: `Re-finalize failed: ${e instanceof Error ? e.message : String(e)}`,
+        ok: false,
+      })
+    } finally {
+      setRefinalizing(false)
+    }
+  }
+
   // ── Create paper game ──
 
   const handleCreateGame = async () => {
@@ -1523,6 +1663,23 @@ export function GameEditorRoute() {
                 onRemovePitcher={id => removeExtraPitcher(selectedGame.awayTeamId, id)}
               />
 
+              {/* Home team box score */}
+              <BoxScoreSection
+                teamId={selectedGame.homeTeamId}
+                teamName={teams[selectedGame.homeTeamId]?.name ?? selectedGame.homeTeamId}
+                teamColor={teams[selectedGame.homeTeamId]?.primaryColor ?? '#374151'}
+                players={players}
+                summaries={gameSummaries}
+                edits={edits}
+                onEdit={handleEdit}
+                extraBatters={extraBatters[selectedGame.homeTeamId] ?? []}
+                extraPitchers={extraPitchers[selectedGame.homeTeamId] ?? []}
+                onAddBatter={id => addExtraBatter(selectedGame.homeTeamId, id)}
+                onAddPitcher={id => addExtraPitcher(selectedGame.homeTeamId, id)}
+                onRemoveBatter={id => removeExtraBatter(selectedGame.homeTeamId, id)}
+                onRemovePitcher={id => removeExtraPitcher(selectedGame.homeTeamId, id)}
+              />
+
               {/* W/L Assignment */}
               <div style={{
                 background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
@@ -1569,22 +1726,77 @@ export function GameEditorRoute() {
                 )}
               </div>
 
-              {/* Home team box score */}
-              <BoxScoreSection
-                teamId={selectedGame.homeTeamId}
-                teamName={teams[selectedGame.homeTeamId]?.name ?? selectedGame.homeTeamId}
-                teamColor={teams[selectedGame.homeTeamId]?.primaryColor ?? '#374151'}
-                players={players}
-                summaries={gameSummaries}
-                edits={edits}
-                onEdit={handleEdit}
-                extraBatters={extraBatters[selectedGame.homeTeamId] ?? []}
-                extraPitchers={extraPitchers[selectedGame.homeTeamId] ?? []}
-                onAddBatter={id => addExtraBatter(selectedGame.homeTeamId, id)}
-                onAddPitcher={id => addExtraPitcher(selectedGame.homeTeamId, id)}
-                onRemoveBatter={id => removeExtraBatter(selectedGame.homeTeamId, id)}
-                onRemovePitcher={id => removeExtraPitcher(selectedGame.homeTeamId, id)}
-              />
+              {/* Cleanup Tools */}
+              <div style={{
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
+                padding: '14px 20px', marginBottom: 16,
+                display: 'flex', flexDirection: 'column', gap: 12,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Cleanup Tools
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, color: '#374151' }}>Convert pitcher → sub:</span>
+                  <select
+                    value={convertPitcherId}
+                    onChange={e => setConvertPitcherId(e.target.value)}
+                    style={{
+                      padding: '6px 10px', fontSize: 13, border: '1px solid #d1d5db',
+                      borderRadius: 6, fontFamily: 'var(--font-ui)', minWidth: 200,
+                    }}
+                  >
+                    <option value="">— Pick a pitcher —</option>
+                    {distinctPitchersInAtBats
+                      .filter(id => !players[id]?.isSub)
+                      .map(id => {
+                        const count = atBats.filter(a => a.pitcherId === id).length
+                        return (
+                          <option key={id} value={id}>
+                            {players[id]?.name ?? id} ({count} at-bat{count !== 1 ? 's' : ''})
+                          </option>
+                        )
+                      })}
+                  </select>
+                  <button
+                    onClick={convertPitcherToSub}
+                    disabled={!convertPitcherId}
+                    style={{
+                      padding: '6px 12px', fontSize: 13, fontWeight: 600,
+                      background: convertPitcherId ? '#f59e0b' : '#e5e7eb',
+                      color: convertPitcherId ? '#fff' : '#9ca3af',
+                      border: 'none', borderRadius: 6, cursor: convertPitcherId ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Convert
+                  </button>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    onClick={refinalizeFromAtBats}
+                    disabled={refinalizing}
+                    style={{
+                      padding: '6px 14px', fontSize: 13, fontWeight: 700,
+                      background: refinalizing ? '#9ca3af' : '#16a34a',
+                      color: '#fff', border: 'none', borderRadius: 6,
+                      cursor: refinalizing ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {refinalizing ? 'Re-finalizing…' : 'Re-finalize from at-bats'}
+                  </button>
+                </div>
+                {refinalizeMsg && (
+                  <div style={{
+                    fontSize: 12,
+                    color: refinalizeMsg.ok ? '#15803d' : '#b91c1c',
+                    background: refinalizeMsg.ok ? '#f0fdf4' : '#fef2f2',
+                    padding: '8px 10px', borderRadius: 4,
+                  }}>
+                    {refinalizeMsg.text}
+                  </div>
+                )}
+                <p style={{ fontSize: 11, color: '#9ca3af', margin: 0 }}>
+                  "Convert" reassigns a pitcher's at-bats in this game to a one-game sub identity, so their season pitching stats stay clean. "Re-finalize" rebuilds the box score, team scores, and season totals from the raw at-bat log — the source of truth. Use it any time stats look off.
+                </p>
+              </div>
 
               {/* Save bar */}
               <div style={{

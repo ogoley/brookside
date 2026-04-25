@@ -448,7 +448,7 @@ function RosterModal({ teamId, teamName, players, onClose }: {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const teamPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === teamId)
+    .filter(([, p]) => p.teamId === teamId && !p.isSub)
     .sort((a, b) => a[1].name.localeCompare(b[1].name))
 
   const startNew = () => {

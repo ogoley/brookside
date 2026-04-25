@@ -70,48 +70,63 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
   summary.push(`Finalizing game ${gameId} (${game.awayTeamId} @ ${game.homeTeamId})`)
   summary.push(`  Total at-bats to process: ${allAtBats.length} (${previousAtBats.length} from prev games + ${currentGameAtBats.length} current)`)
 
-  // ── Season stats accumulators (non-sub at-bats only) ─────────────────────
+  // ── Season stats accumulators ────────────────────────────────────────────
+  // We accumulate stats for EVERY player who batted, pitched, or scored —
+  // including subs. The sub players' stats end up written to their own
+  // /players/{subId} record (which has isSub:true), and downstream consumers
+  // filter on that flag. This makes finalize idempotent: a sub batter's
+  // at-bat no longer erases the regular runners who scored on that play.
   const batting: Record<string, BatAcc> = {}
   const runs: RunAcc = {}
   const pitching: Record<string, PitchAcc> = {}
 
   for (const ab of allAtBats) {
-    // Skip sub at-bats for season stats
-    if (ab.isSub) continue
+    const { batterId, pitcherId, result, rbiCount, batterAdvancedTo, outsOnPlay } = ab
 
-    const { batterId, pitcherId, result, runnersScored = [], rbiCount, batterAdvancedTo, outsOnPlay } = ab
+    // ── Hitting (skip auto-out sentinel batter — not a real player) ─────
+    if (batterId !== '__auto_out__') {
+      if (!batting[batterId]) batting[batterId] = { pa: 0, ab: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, games: new Set() }
+      const b = batting[batterId]
+      b.games.add(ab.gameId)
+      b.pa++
+      if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(result)) b.ab++
+      if (['single', 'double', 'triple', 'home_run'].includes(result)) b.h++
+      if (result === 'double') b.doubles++
+      if (result === 'triple') b.triples++
+      if (result === 'home_run') b.hr++
+      if (result === 'walk') b.bb++
+      if (result === 'strikeout' || result === 'strikeout_looking') b.k++
+      b.rbi += rbiCount
+      if (batterAdvancedTo === 'home') runs[batterId] = (runs[batterId] ?? 0) + 1
+    }
 
-    // ── Hitting ─────────────────────────────────────────────────────────
-    if (!batting[batterId]) batting[batterId] = { pa: 0, ab: 0, h: 0, doubles: 0, triples: 0, hr: 0, rbi: 0, bb: 0, k: 0, games: new Set() }
-    const b = batting[batterId]
-    b.games.add(ab.gameId)
-    b.pa++
-    if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(result)) b.ab++
-    if (['single', 'double', 'triple', 'home_run'].includes(result)) b.h++
-    if (result === 'double') b.doubles++
-    if (result === 'triple') b.triples++
-    if (result === 'home_run') b.hr++
-    if (result === 'walk') b.bb++
-    if (result === 'strikeout' || result === 'strikeout_looking') b.k++
-    b.rbi += rbiCount
-    if (batterAdvancedTo === 'home') runs[batterId] = (runs[batterId] ?? 0) + 1
-
-    for (const runnerId of (runnersScored ?? [])) {
-      runs[runnerId] = (runs[runnerId] ?? 0) + 1
+    // Runs scored by runners on base — derive from the source of truth
+    // (runnersOnBase + runnerOutcomes), NOT from the cached runnersScored
+    // array. runnersScored has writer-convention drift (sometimes contains
+    // the batter spuriously, sometimes correctly excludes them) and cannot
+    // distinguish a genuine ghost-of-self score from a stale cache entry.
+    // onBase + outcomes are the ground truth for what happened on the play.
+    const onBase = ab.runnersOnBase ?? { first: null, second: null, third: null }
+    const outcomes = ab.runnerOutcomes ?? {}
+    let runnerRunsThisPlay = 0
+    for (const base of ['first', 'second', 'third'] as const) {
+      if (outcomes[base] === 'scored' && onBase[base]) {
+        runs[onBase[base]!] = (runs[onBase[base]!] ?? 0) + 1
+        runnerRunsThisPlay++
+      }
     }
 
     // ── Pitching ─────────────────────────────────────────────────────────
-    // Skip ephemeral sub pitchers — their stats are stripped on finalization
-    // and they're not eligible for season totals or W/L credit.
-    if (pitcherId && !ab.pitcherIsSub) {
+    if (pitcherId) {
       if (!pitching[pitcherId]) pitching[pitcherId] = { outs: 0, k: 0, bb: 0, runs: 0, games: new Set() }
       const p = pitching[pitcherId]
       p.games.add(ab.gameId)
       p.outs += outsOnPlay
       if (result === 'strikeout' || result === 'strikeout_looking') p.k++
       if (result === 'walk' || result === 'hbp') p.bb++
-      // All runs allowed (no earned/unearned distinction in wiffle ball)
-      p.runs += (runnersScored ?? []).length
+      // All runs allowed (no earned/unearned distinction in wiffle ball).
+      // Use the same onBase+outcomes derivation as hitting runs.
+      p.runs += runnerRunsThisPlay
       if (batterAdvancedTo === 'home') p.runs++
     }
   }
@@ -198,6 +213,31 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     updates[path] = value
   }
 
+  // Re-derive the team scores from the at-bat log so re-finalize is the
+  // authoritative recovery tool. (Past versions of the GameEditor "Save"
+  // flow could write incorrect homeScore/awayScore if sub gameSummaries
+  // had blank teamIds — re-finalize must repair that.)
+  let derivedHomeScore = 0
+  let derivedAwayScore = 0
+  for (const ab of currentGameAtBats) {
+    // Derive runs from the source of truth: which bases had a runner whose
+    // outcome was 'scored', plus the batter if they advanced home. This
+    // ignores the unreliable runnersScored cache entirely and correctly
+    // handles ghost-of-self runners.
+    const onBase = ab.runnersOnBase ?? { first: null, second: null, third: null }
+    const outcomes = ab.runnerOutcomes ?? {}
+    let plays = 0
+    for (const base of ['first', 'second', 'third'] as const) {
+      if (outcomes[base] === 'scored' && onBase[base]) plays++
+    }
+    if (ab.batterAdvancedTo === 'home') plays++
+    if (ab.isTopInning) derivedAwayScore += plays
+    else derivedHomeScore += plays
+  }
+  updates[`games/${gameId}/homeScore`] = derivedHomeScore
+  updates[`games/${gameId}/awayScore`] = derivedAwayScore
+  summary.push(`  Recomputed score: away ${derivedAwayScore}, home ${derivedHomeScore}`)
+
   // Finalize flags
   updates[`games/${gameId}/finalized`] = true
   updates[`games/${gameId}/finalizedAt`] = Date.now()
@@ -222,7 +262,9 @@ function findWinningPitcher(
 
   for (const ab of atBats) {
     if (!ab.pitcherId) continue
-    if (ab.pitcherIsSub) continue   // sub pitchers are not eligible for W/L
+    // Sub pitchers are not eligible for W/L — players[id].isSub is the
+    // canonical source of truth; ab.pitcherIsSub is a denormalized fallback.
+    if (players[ab.pitcherId]?.isSub || ab.pitcherIsSub) continue
     const pitcherTeam = players[ab.pitcherId]?.teamId
     if (pitcherTeam !== teamId) continue
     outsByPitcher[ab.pitcherId] = (outsByPitcher[ab.pitcherId] ?? 0) + ab.outsOnPlay
@@ -270,7 +312,11 @@ function computeGameSummaries(
   }
 
   for (const ab of atBats) {
-    const b = ensureBatter(ab.batterId)
+    // Fallback the batter's team to the team that was batting on this at-bat,
+    // in case /players doesn't have a record for them (legacy sub IDs from
+    // before sub players were promoted to first-class /players entries).
+    const battingTeamId = ab.isTopInning ? game.awayTeamId : game.homeTeamId
+    const b = ensureBatter(ab.batterId, battingTeamId)
     b.pa++
     if (!['walk', 'hbp', 'sacrifice_fly', 'sacrifice_bunt'].includes(ab.result)) b.ab++
     if (['single', 'double', 'triple', 'home_run'].includes(ab.result)) b.h++
@@ -282,9 +328,17 @@ function computeGameSummaries(
     b.rbi += ab.rbiCount
     if (ab.batterAdvancedTo === 'home') b.r++
 
-    for (const runnerId of (ab.runnersScored ?? [])) {
-      const s = ensureBatter(runnerId)
-      s.r++
+    // Runs scored by runners on base — derive from runnersOnBase + outcomes
+    // (the source of truth) instead of the unreliable runnersScored cache.
+    const onBase = ab.runnersOnBase ?? { first: null, second: null, third: null }
+    const outcomes = ab.runnerOutcomes ?? {}
+    let runnerRunsThisPlay = 0
+    for (const base of ['first', 'second', 'third'] as const) {
+      if (outcomes[base] === 'scored' && onBase[base]) {
+        const s = ensureBatter(onBase[base]!, battingTeamId)
+        s.r++
+        runnerRunsThisPlay++
+      }
     }
 
     if (ab.pitcherId) {
@@ -294,7 +348,7 @@ function computeGameSummaries(
       pitchingOuts[ab.pitcherId] = (pitchingOuts[ab.pitcherId] ?? 0) + ab.outsOnPlay
       if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') ps.pitchingK = (ps.pitchingK ?? 0) + 1
       if (ab.result === 'walk' || ab.result === 'hbp') ps.pitchingBb = (ps.pitchingBb ?? 0) + 1
-      ps.runsAllowed = (ps.runsAllowed ?? 0) + (ab.runnersScored ?? []).length + (ab.batterAdvancedTo === 'home' ? 1 : 0)
+      ps.runsAllowed = (ps.runsAllowed ?? 0) + runnerRunsThisPlay + (ab.batterAdvancedTo === 'home' ? 1 : 0)
     }
   }
 

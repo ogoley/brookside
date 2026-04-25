@@ -76,6 +76,42 @@ export function applyAtBat(input: ApplyAtBatInput): ApplyAtBatResult {
   const lines: string[] = []
   const warnings: string[] = []
 
+  // ── Auto Out (Forceful Action) ────────────────────────────────────────────
+  // No batter is associated with this play (sentinel batterId). Runners stay
+  // put — pitcher gets +1 out via outsOnPlay. Bypass the regular per-runner
+  // outcome loop and batter-on-base check.
+  if (result === 'auto_out') {
+    lines.push(`${isHomeTeamBatting ? '🏠' : '✈️'} Inning ${record.inning} ${record.isTopInning ? 'Top' : 'Bot'} — Auto Out (no batter, pitcher credited)`)
+    const bases: Array<'first' | 'second' | 'third'> = ['first', 'second', 'third']
+    const nextRunners: RunnersState = {
+      first: runnersOnBase?.first ?? null,
+      second: runnersOnBase?.second ?? null,
+      third: runnersOnBase?.third ?? null,
+    }
+    const occupied = bases.filter(b => nextRunners[b])
+    if (occupied.length > 0) {
+      lines.push(`  Runners on base stay put: ${occupied.map(b => `${getPlayerName(nextRunners[b]!)} on ${b}`).join(', ')}.`)
+    } else {
+      lines.push(`  No runners on base.`)
+    }
+    lines.push(`  outsOnPlay = 1 (auto out — counts toward pitcher's IP).`)
+    return {
+      nextRunners,
+      outsOnPlay: 1,
+      runsScored: 0,
+      rbiCount: 0,
+      logEntry: {
+        timestamp: record.timestamp,
+        inning: record.inning,
+        isTopInning: record.isTopInning,
+        batterName: '(Auto Out)',
+        result,
+        lines,
+        warnings,
+      },
+    }
+  }
+
   lines.push(`${isHomeTeamBatting ? '🏠' : '✈️'} Inning ${record.inning} ${record.isTopInning ? 'Top' : 'Bot'} — ${batterName} — ${formatResult(result)}`)
 
   // ── Pitcher's Poison special handling ─────────────────────────────────
@@ -345,6 +381,7 @@ export function formatResult(result: AtBatResult): string {
     strikeout_looking: 'Strikeout Looking (ꓘ)',
     groundout: 'Ground / Tag Out',
     popout: 'Pop Out',
+    auto_out: 'Auto Out',
     flyout: 'Fly Out',
     hbp: 'Hit By Pitch',
     sacrifice_fly: 'Sac Fly',
@@ -403,9 +440,19 @@ export function computeGameStats(
       if (ab.batterAdvancedTo === 'home') runs++
     }
 
-    // Count runs scored by this player as a runner on base
-    // Guard against missing runnersScored on older/pre-scorekeeper records
-    if ((ab.runnersScored ?? []).includes(playerId)) runs++
+    // Count runs scored by this player as a runner on base — derive from
+    // runnersOnBase + runnerOutcomes (source of truth), not runnersScored.
+    // This correctly counts ghost-of-self scores (player both batting and on
+    // base as a ghost runner) and ignores stale/spurious runnersScored cache.
+    const onBaseMap = ab.runnersOnBase ?? { first: null, second: null, third: null }
+    const outcomesMap = ab.runnerOutcomes ?? {}
+    let runnerRunsOnPlay = 0
+    for (const base of ['first', 'second', 'third'] as const) {
+      if (outcomesMap[base] === 'scored' && onBaseMap[base]) {
+        if (onBaseMap[base] === playerId) runs++
+        runnerRunsOnPlay++
+      }
+    }
 
     // Pitching
     if (ab.pitcherId === playerId) {
@@ -413,8 +460,8 @@ export function computeGameStats(
       pitchOuts += ab.outsOnPlay
       if (ab.result === 'strikeout' || ab.result === 'strikeout_looking') pitchK++
       if (ab.result === 'walk' || ab.result === 'hbp') pitchBb++
-      // Runs allowed: all runners who scored + batter if they scored
-      runsAllowed += (ab.runnersScored ?? []).length
+      // Runs allowed: runners-on-base who scored + batter if they scored.
+      runsAllowed += runnerRunsOnPlay
       if (ab.batterAdvancedTo === 'home') runsAllowed++
     }
   }
@@ -640,16 +687,17 @@ export function recomputeGameState(
         isHomeTeamBatting: isHomeBatting,
       })
 
-      // Rebuild runnersScored list (player IDs) from the migrated outcomes
+      // Rebuild runnersScored list (player IDs) from the migrated outcomes.
+      // CONVENTION: runnersScored is ONLY the runners-on-base who scored, NOT
+      // the batter. The batter is tracked separately via batterAdvancedTo.
+      // Mixing the batter in here causes downstream double-counts (the batter
+      // gets +1 for advancing home AND +1 for being in runnersScored).
       const scoredIds: string[] = []
       for (const base of ['first', 'second', 'third'] as const) {
         if (newOutcomes[base] === 'scored') {
           const rid = runners[base]
           if (rid) scoredIds.push(rid)
         }
-      }
-      if (updatedRecord.result === 'home_run' || updatedRecord.batterAdvancedTo === 'home') {
-        scoredIds.push(updatedRecord.batterId)
       }
 
       updatedRecord.runnersScored = scoredIds

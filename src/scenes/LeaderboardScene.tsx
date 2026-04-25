@@ -213,6 +213,7 @@ export function LeaderboardScene({ teams, players, standings }: Props) {
   // Top 10 batters — min 2 AB per team game, sorted by AVG desc
   const topBatters = Object.entries(players)
     .filter(([, p]) => {
+      if (p.isSub) return false   // ephemeral subs never appear on leaderboards
       const teamGames = teamGamesMap[p.teamId] ?? 0
       const minAb = Math.max(1, teamGames * MIN_AB_PER_GAME)
       return (p.stats.hitting?.ab ?? 0) >= minAb && p.stats.hitting?.avg !== undefined
@@ -227,6 +228,7 @@ export function LeaderboardScene({ teams, players, standings }: Props) {
   // Top 6 pitchers — qualification filter, sorted by ERA asc
   const topPitchers = Object.entries(players)
     .filter(([, p]) => {
+      if (p.isSub) return false
       const ip        = p.stats.pitching?.inningsPitched ?? 0
       const teamGames = teamGamesMap[p.teamId] ?? 0
       const minIP     = teamGames * MIN_IP_PCTG * GAME_INNINGS

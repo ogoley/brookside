@@ -16,8 +16,8 @@ export function StatCardScene({ game, teams, players }: Props) {
   const byAvgDesc = ([, a]: [string, { stats: { hitting?: { avg?: number } } }], [, b]: [string, { stats: { hitting?: { avg?: number } } }]) =>
     (b.stats.hitting?.avg ?? -1) - (a.stats.hitting?.avg ?? -1)
 
-  const homePlayers = Object.entries(players).filter(([, p]) => p.teamId === game.homeTeamId).sort(byAvgDesc)
-  const awayPlayers = Object.entries(players).filter(([, p]) => p.teamId === game.awayTeamId).sort(byAvgDesc)
+  const homePlayers = Object.entries(players).filter(([, p]) => p.teamId === game.homeTeamId && !p.isSub).sort(byAvgDesc)
+  const awayPlayers = Object.entries(players).filter(([, p]) => p.teamId === game.awayTeamId && !p.isSub).sort(byAvgDesc)
 
   const awayColor = awayTeam?.primaryColor ?? '#c0392b'
   const homeColor = homeTeam?.primaryColor ?? '#1a3a6b'

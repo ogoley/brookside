@@ -150,8 +150,8 @@ describe('computeFinalization — single game', () => {
 
 // ── Sub exclusion ──────────────────────────────────────────────────────
 
-describe('computeFinalization — sub exclusion', () => {
-  it('excludes isSub at-bats from season stats', () => {
+describe('computeFinalization — sub handling', () => {
+  it('writes sub stats to /players (consumers filter on player.isSub)', () => {
     const atBats: AtBatRecord[] = [
       makeAtBat({ batterId: 'b1', result: 'single', batterAdvancedTo: 'first', isSub: false }),
       makeAtBat({ batterId: 'sub_123', result: 'home_run', batterAdvancedTo: 'home', isSub: true }),
@@ -166,10 +166,104 @@ describe('computeFinalization — sub exclusion', () => {
       players: basePlayers,
     })
 
-    // Sub should NOT appear in season stats
-    expect(getUpdatedHitting(output, 'sub_123')).toBeUndefined()
-    // Regular player should appear
+    // Sub stats ARE written — finalize is now idempotent. The sub's
+    // /players/{id} record carries isSub:true; downstream consumers filter.
+    expect(getUpdatedHitting(output, 'sub_123')).toBeDefined()
+    // Regular player still appears
     expect(getUpdatedHitting(output, 'b1')).toBeDefined()
+  })
+
+  it('ignores spurious batter in runnersScored when batter was not on base', () => {
+    // BOT 1 of YBY game: Ryan HR with sub on first. runnersScored cache had
+    // [sub, Ryan] even though Ryan wasn't on base. Pre-fix code counted +2
+    // for Ryan (batterAdvancedTo='home' AND in runnersScored).
+    const atBats: AtBatRecord[] = [
+      makeAtBat({ batterId: 'r_on_first', result: 'single', batterAdvancedTo: 'first' }),
+      makeAtBat({
+        batterId: 'b1',
+        result: 'home_run',
+        batterAdvancedTo: 'home',
+        runnersOnBase: { first: 'r_on_first', second: null, third: null },
+        runnerOutcomes: { first: 'scored' },
+        runnersScored: ['r_on_first', 'b1'],   // batter spuriously cached in
+      }),
+    ]
+
+    const output = computeFinalization({
+      gameId: 'g1',
+      game: makeGame({ homeScore: 0, awayScore: 2 }),
+      currentGameAtBats: atBats,
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+
+    expect(getUpdatedHitting(output, 'b1')?.r).toBe(1)
+    expect(getUpdatedHitting(output, 'r_on_first')?.r).toBe(1)
+    // 2 runs scored on this play (runner on first + batter)
+    expect(output.updates['games/g1/awayScore']).toBe(2)
+  })
+
+  it('credits ghost-of-self when batter is also on base and that base scores', () => {
+    // BOT 3 of YBY game: Ryan on third (ghost-of-self), Ryan bats double,
+    // ghost-Ryan + Dragon score. Ryan should get +1 run from the ghost score
+    // even though batterId === runnersOnBase[third]. Earlier de-dup attempt
+    // incorrectly stripped this.
+    const atBats: AtBatRecord[] = [
+      makeAtBat({ batterId: 'r2', result: 'single', batterAdvancedTo: 'first' }),
+      makeAtBat({
+        batterId: 'b1',  // also on third as ghost
+        result: 'double',
+        batterAdvancedTo: 'second',
+        runnersOnBase: { first: null, second: 'r2', third: 'b1' },
+        runnerOutcomes: { second: 'scored', third: 'scored' },
+        runnersScored: ['r2', 'b1'],
+      }),
+    ]
+
+    const output = computeFinalization({
+      gameId: 'g1',
+      game: makeGame(),
+      currentGameAtBats: atBats,
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+
+    // Ghost-of-self on third scores → b1 gets +1 even though they're the batter
+    expect(getUpdatedHitting(output, 'b1')?.r).toBe(1)
+    expect(getUpdatedHitting(output, 'r2')?.r).toBe(1)
+    // 2 runs scored on this play
+    expect(output.updates['games/g1/awayScore']).toBe(2)
+  })
+
+  it('credits regular runners who score on a sub-batter at-bat', () => {
+    // b1 (regular) singles, then sub_123 (sub) hits a HR scoring b1.
+    // Under the old "skip sub at-bat entirely" rule, b1's run was lost.
+    const atBats: AtBatRecord[] = [
+      makeAtBat({ batterId: 'b1', result: 'single', batterAdvancedTo: 'first', isSub: false }),
+      makeAtBat({
+        batterId: 'sub_123',
+        result: 'home_run',
+        batterAdvancedTo: 'home',
+        isSub: true,
+        runnersOnBase: { first: 'b1', second: null, third: null },
+        runnerOutcomes: { first: 'scored' },
+        runnersScored: ['b1'],
+      }),
+    ]
+
+    const output = computeFinalization({
+      gameId: 'g1',
+      game: makeGame({ homeScore: 2, awayScore: 0 }),
+      currentGameAtBats: atBats,
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+
+    const b1Hitting = getUpdatedHitting(output, 'b1')
+    expect(b1Hitting?.r).toBe(1)
   })
 
   it('includes sub at-bats in game summaries', () => {

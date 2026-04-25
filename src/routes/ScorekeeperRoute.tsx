@@ -26,12 +26,21 @@ import type {
 type WizardStep = 'batter' | 'result' | 'runner_outcomes' | 'confirm' | 'inning_end'
 type NewGameStep = 'teams' | 'home_lineup' | 'away_lineup' | 'confirm'
 
+// Sentinel batter ID for auto-outs (Forceful Actions). Auto-outs are not
+// associated with a real player — using a sentinel keeps AtBatRecord.batterId
+// non-nullable while ensuring the value won't match any real player in lookups
+// (batting stats, lineup pointer walk-back, etc.).
+const AUTO_OUT_BATTER_ID = '__auto_out__'
+
 // Legacy values (flyout, hbp, sacrifice_fly, sacrifice_bunt, fielders_choice, pitchers_poison)
 // are kept here only so historical records render correctly. They are not selectable.
+// auto_out is also intentionally NOT in RESULTS — it's only reachable via the
+// Forceful Actions UI, never the at-bat result picker.
 const RESULT_LABELS: Record<AtBatResult, string> = {
   single: 'Single', double: 'Double', triple: 'Triple', home_run: 'Home Run',
   walk: 'Walk', strikeout: 'Strikeout (K)', strikeout_looking: 'Strikeout (ꓘ)',
   groundout: 'Ground / Tag Out', popout: 'Pop Out',
+  auto_out: 'Auto Out',
   flyout: 'Fly Out', hbp: 'Hit By Pitch', sacrifice_fly: 'Sac Fly',
   sacrifice_bunt: 'Sac Bunt', fielders_choice: "Fielder's Choice", pitchers_poison: "Pitcher's Poison",
 }
@@ -480,6 +489,27 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
         },
       })
 
+      // Promote any custom subs in the lineups to /players entries with isSub:true.
+      // Stats accumulate normally on finalize; downstream consumers filter by isSub.
+      const subPlayerUpdates: Record<string, unknown> = {}
+      for (const e of homeLineup) {
+        if (e.playerId.startsWith('sub_') && e.subName) {
+          subPlayerUpdates[`players/${e.playerId}`] = {
+            name: e.subName, teamId: homeTeamId, isSub: true, stats: {},
+          }
+        }
+      }
+      for (const e of awayLineup) {
+        if (e.playerId.startsWith('sub_') && e.subName) {
+          subPlayerUpdates[`players/${e.playerId}`] = {
+            name: e.subName, teamId: awayTeamId, isSub: true, stats: {},
+          }
+        }
+      }
+      if (Object.keys(subPlayerUpdates).length > 0) {
+        await update(ref(db), subPlayerUpdates)
+      }
+
       // Write sibling paths separately
       await set(ref(db, `liveRunners/${gameId}`), { first: null, second: null, third: null })
       if (isStreamed) {
@@ -657,7 +687,7 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
   const [showCustomSub, setShowCustomSub] = useState(false)
 
   const teamPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === teamId)
+    .filter(([, p]) => p.teamId === teamId && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const lineupIds = lineup.map(e => e.playerId)
@@ -842,6 +872,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   // Resolve player name: checks real players first, then lineup subName entries,
   // then per-game sub pitcher entries (which use fabricated subp_<ts> ids).
   const resolvePlayerName = (id: string) => {
+    if (id === AUTO_OUT_BATTER_ID) return '(Auto Out)'
     if (players[id]?.name) return players[id].name
     const entry = [...battingLineup, ...fieldingLineup].find(e => e.playerId === id)
     if (entry?.subName) return entry.subName
@@ -1308,6 +1339,18 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   // ── At-bat editing modal state ───────────────────────────────────────────
   const [editingAtBatId, setEditingAtBatId] = useState<string | null>(null)
 
+  // ── Forceful Actions modal state ─────────────────────────────────────────
+  // Open the modal when the scorer needs to record game data outside the
+  // normal at-bat flow (e.g. an auto-out for a missing roster slot).
+  const [forcefulActionsOpen, setForcefulActionsOpen] = useState(false)
+  const [softReminderDismissed, setSoftReminderDismissed] = useState(false)
+
+  // Reset the dismiss when the lineup pointer moves off slot 0 — that means a
+  // regular at-bat happened, and the next wrap should re-trigger the reminder.
+  useEffect(() => {
+    if (lineupPosition !== 0) setSoftReminderDismissed(false)
+  }, [lineupPosition])
+
   /**
    * Commit a recomputed game state to Firebase. Used by deleteAtBat and the
    * edit modal. Writes all recomputed at-bat records, game aggregates,
@@ -1379,6 +1422,60 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     }
   }
 
+  /**
+   * Record an auto-out via the Forceful Actions modal. Uses the sentinel batter
+   * ID so no real player is debited a plate appearance. The pitcher (who must
+   * already be set on the matchup or selected in the modal) gets +1 toward
+   * outs recorded / IP via the existing pitching-stat pipeline.
+   */
+  const recordAutoOut = async (autoPitcherId: string) => {
+    if (!gameId || !game || !autoPitcherId) return
+
+    // Preserve current runners — auto-out doesn't move them.
+    const currentRunners: RunnersState = {
+      first: liveRunners.first ?? null,
+      second: liveRunners.second ?? null,
+      third: liveRunners.third ?? null,
+    }
+    const stayedOutcomes: RunnerOutcomes = {}
+    if (currentRunners.first) stayedOutcomes.first = 'stayed'
+    if (currentRunners.second) stayedOutcomes.second = 'stayed'
+    if (currentRunners.third) stayedOutcomes.third = 'stayed'
+
+    const pitcherSubEntry = subPitchers[fieldingTeamId]?.[autoPitcherId]
+    const pitcherIsSub = !!pitcherSubEntry
+    const pitcherSubName = pitcherSubEntry?.name
+
+    const record: AtBatRecord = {
+      batterId: AUTO_OUT_BATTER_ID,
+      pitcherId: autoPitcherId,
+      isSub: false,
+      inning,
+      isTopInning,
+      timestamp: Date.now(),
+      result: 'auto_out',
+      runnersOnBase: currentRunners,
+      runnerOutcomes: stayedOutcomes,
+      runnersScored: [],
+      outsOnPlay: 1,
+      rbiCount: 0,
+      batterAdvancedTo: 'out',
+      ...(pitcherIsSub ? { pitcherIsSub: true } : {}),
+      ...(pitcherSubName ? { pitcherSubName } : {}),
+    }
+
+    // Push first, then re-derive game state via the same replay path used for
+    // edits/deletes. Keeps outs/runners/lineupPosition consistent and triggers
+    // the inning-end interstitial automatically when this is the 3rd out.
+    const newRef = await push(ref(db, `gameStats/${gameId}`), record)
+    const newId = newRef.key
+    if (!newId) return
+
+    const updatedAtBats = { ...atBats, [newId]: record }
+    const recompute = recomputeGameState(updatedAtBats, resolvePlayerName, inning, isTopInning)
+    await applyRecompute(recompute)
+  }
+
   const deleteAtBat = async (atBatId: string) => {
     if (!gameId || !game) return
     if (!atBats[atBatId]) return
@@ -1407,8 +1504,10 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   }
 
   // ── Pitcher options ──────────────────────────────────────────────────────
+  // Roster pickers exclude isSub players — those come through their own
+  // "Subs" optgroup sourced from the per-game subPitchers map.
   const pitcherOptions = Object.entries(players)
-    .filter(([, p]) => p.teamId === fieldingTeamId)
+    .filter(([, p]) => p.teamId === fieldingTeamId && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
   const fieldingSubPitchers: SubPitcherEntry[] = Object.values(subPitchers[fieldingTeamId] ?? {})
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -1423,6 +1522,10 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const playerId = `subp_${Date.now()}`
     await update(ref(db), {
       [`games/${gameId}/subPitchers/${teamId}/${playerId}`]: { playerId, name },
+      // Promote to /players so finalization writes stats here, name renders
+      // everywhere via the standard players[id] lookup, and downstream
+      // consumers filter on player.isSub.
+      [`players/${playerId}`]: { name, teamId, isSub: true, stats: {} },
     })
     return playerId
   }
@@ -1430,7 +1533,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   // ── Batter options ───────────────────────────────────────────────────────
   const regularBatters = battingLineup.filter(e => !e.isSub).map(e => e.playerId)
   const subBatters = battingLineup.filter(e => e.isSub).map(e => e.playerId)
-  const allTeamPlayers = Object.entries(players).filter(([, p]) => p.teamId === battingTeamId)
+  const allTeamPlayers = Object.entries(players).filter(([, p]) => p.teamId === battingTeamId && !p.isSub)
   const hasLineup = battingLineup.length > 0
 
   if (gameLoading) {
@@ -1445,6 +1548,26 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
 
   return (
     <div className="min-h-screen px-4 py-4" style={{ background: '#0d1117', fontFamily: 'var(--font-ui)' }}>
+
+      {/* Forceful Actions modal — out-of-flow game-data controls (auto-out, etc.) */}
+      {forcefulActionsOpen && (
+        <ForcefulActionsModal
+          fieldingTeamShortName={teams[fieldingTeamId]?.shortName ?? fieldingTeamId}
+          battingTeamShortName={teams[battingTeamId]?.shortName ?? battingTeamId}
+          inning={inning}
+          isTopInning={isTopInning}
+          currentPitcherId={pitcherId}
+          pitcherOptions={pitcherOptions}
+          fieldingSubPitchers={fieldingSubPitchers}
+          onAddSubPitcher={() => addSubPitcher(fieldingTeamId)}
+          onClose={() => setForcefulActionsOpen(false)}
+          onConfirmAutoOut={async (selectedPitcherId) => {
+            await recordAutoOut(selectedPitcherId)
+            setForcefulActionsOpen(false)
+            setSoftReminderDismissed(true)
+          }}
+        />
+      )}
 
       {/* At-bat edit modal */}
       {editingAtBatId && atBats[editingAtBatId] && (
@@ -1531,6 +1654,15 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
           >
             Lineup
           </button>
+          {!game?.finalized && (
+            <button
+              onClick={() => setForcefulActionsOpen(true)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+              style={{ background: 'rgba(234,179,8,0.12)', color: '#facc15', border: '1px solid rgba(234,179,8,0.25)' }}
+            >
+              ⚡ Actions
+            </button>
+          )}
           <button
             onClick={resetWizard}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg"
@@ -1628,6 +1760,51 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
         {step === 'batter' && (
           <div className="flex flex-col gap-4">
             <StepLabel step={1} label="Who's Up?" />
+
+            {/* Soft reminder: batting team is shorter than fielding team and the
+                lineup just wrapped — suggest an auto-out for the missing slot.
+                Non-blocking; scorer can ignore and bat the regular slot 0 player. */}
+            {(() => {
+              if (softReminderDismissed) return null
+              if (battingLineup.length === 0 || fieldingLineup.length === 0) return null
+              if (battingLineup.length >= fieldingLineup.length) return null
+              if (lineupPosition !== 0) return null
+              const battingTeamAtBatCount = Object.values(atBats).filter(ab =>
+                (ab.isTopInning ? game?.awayTeamId : game?.homeTeamId) === battingTeamId
+              ).length
+              if (battingTeamAtBatCount < battingLineup.length) return null
+              return (
+                <div className="rounded-xl px-3 py-3 flex items-start gap-3"
+                  style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}>
+                  <span className="text-yellow-300 text-lg leading-none mt-0.5">⚡</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-yellow-200 text-xs leading-relaxed mb-2">
+                      <span className="font-bold">{teams[battingTeamId]?.shortName ?? battingTeamId}</span> has{' '}
+                      <span className="font-bold">{battingLineup.length}</span> players;{' '}
+                      <span className="font-bold">{teams[fieldingTeamId]?.shortName ?? fieldingTeamId}</span> has{' '}
+                      <span className="font-bold">{fieldingLineup.length}</span>. The missing slot would bat now —
+                      record an auto-out?
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setForcefulActionsOpen(true)}
+                        className="text-xs font-bold px-3 h-8 rounded-lg uppercase tracking-wider"
+                        style={{ background: '#ca8a04', color: '#fff', border: '1px solid rgba(234,179,8,0.5)' }}
+                      >
+                        Record Auto Out
+                      </button>
+                      <button
+                        onClick={() => setSoftReminderDismissed(true)}
+                        className="text-xs font-bold px-3 h-8 rounded-lg"
+                        style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
 
             <div className="flex flex-col gap-1">
               <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
@@ -2046,7 +2223,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
                 <option value="">— Select pitcher —</option>
                 <optgroup label="Roster">
                   {Object.entries(players)
-                    .filter(([, p]) => p.teamId === nextSubPitcherTeamId)
+                    .filter(([, p]) => p.teamId === nextSubPitcherTeamId && !p.isSub)
                     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
                     .map(([id, p]) => (
                       <option key={id} value={id}>{p.name}</option>
@@ -2272,21 +2449,40 @@ function AtBatRow({ atBatId, ab, players, onEdit, onDelete }: {
   onDelete: (id: string) => void
 }) {
   const [confirming, setConfirming] = useState(false)
+  const isAutoOut = ab.result === 'auto_out'
   const batter = players[ab.batterId]
+  const batterDisplay = isAutoOut ? '(Auto Out)' : (ab.subName ?? batter?.name ?? ab.batterId)
   const label = RESULT_LABELS[ab.result] ?? ab.result
 
   return (
     <div className="px-4 py-3 flex items-center justify-between gap-3">
       <div className="flex flex-col gap-0.5 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-white font-semibold text-sm truncate">{ab.subName ?? batter?.name ?? ab.batterId}</span>
+          <span
+            className="font-semibold text-sm truncate"
+            style={{
+              color: isAutoOut ? 'rgba(234,179,8,0.85)' : '#fff',
+              fontStyle: isAutoOut ? 'italic' : 'normal',
+            }}
+          >
+            {batterDisplay}
+          </span>
           <span className="text-white/60 text-xs font-semibold shrink-0" style={{ fontFamily: 'var(--font-score)' }}>
             {ab.isTopInning ? '▲' : '▼'}{ab.inning}
           </span>
           {ab.isSub && <span className="text-white/30 text-xs">sub</span>}
+          {isAutoOut && <span className="text-yellow-500/70 text-xs">⚡ forceful</span>}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-blue-400 text-xs font-bold" style={{ fontFamily: 'var(--font-score)' }}>{label}</span>
+          <span
+            className="text-xs font-bold"
+            style={{
+              fontFamily: 'var(--font-score)',
+              color: isAutoOut ? '#facc15' : '#60a5fa',
+            }}
+          >
+            {label}
+          </span>
           {ab.rbiCount > 0 && <span className="text-green-400 text-xs font-semibold">{ab.rbiCount} RBI</span>}
           {ab.outsOnPlay > 1 && <span className="text-red-400 text-xs font-semibold">{ab.outsOnPlay === 2 ? 'DP' : 'TP'}</span>}
         </div>
@@ -2357,10 +2553,10 @@ function AtBatEditModal({
   const abLineup: GameLineup = ab.isTopInning === currentIsTop ? battingLineup : fieldingLineup
 
   const batterOptions = Object.entries(players)
-    .filter(([, p]) => p.teamId === abBattingTeamId)
+    .filter(([, p]) => p.teamId === abBattingTeamId && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
   const pitcherOptions = Object.entries(players)
-    .filter(([, p]) => p.teamId === abFieldingTeamId)
+    .filter(([, p]) => p.teamId === abFieldingTeamId && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
   const fieldingSubPitchers: SubPitcherEntry[] = Object.values(subPitchers[abFieldingTeamId] ?? {})
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -2372,6 +2568,7 @@ function AtBatEditModal({
     const playerId = `subp_${Date.now()}`
     await update(ref(db), {
       [`games/${gameId}/subPitchers/${abFieldingTeamId}/${playerId}`]: { playerId, name },
+      [`players/${playerId}`]: { name, teamId: abFieldingTeamId, isSub: true, stats: {} },
     })
     return playerId
   }
@@ -2385,6 +2582,18 @@ function AtBatEditModal({
 
   // Construct the hypothetical updated record for cascade preview
   const updatedRecord: AtBatRecord = useMemo(() => {
+    // Auto-out has no real batter — only pitcher is editable. Preserve all
+    // other fields verbatim from the original record.
+    if (ab.result === 'auto_out') {
+      const pitcherSubEntry = subPitchers[abFieldingTeamId]?.[pitcherId]
+      const pitcherIsSub = !!pitcherSubEntry
+      const next: AtBatRecord = { ...ab, pitcherId, isSub: false, pitcherIsSub }
+      if (pitcherIsSub) next.pitcherSubName = pitcherSubEntry!.name
+      else delete next.pitcherSubName
+      delete next.subName
+      return next
+    }
+
     const entry = abLineup.find(e => e.playerId === batterId)
     const isSub = !entry || entry.isSub
     const pitcherSubEntry = subPitchers[abFieldingTeamId]?.[pitcherId]
@@ -2455,6 +2664,101 @@ function AtBatEditModal({
     } finally {
       setSaving(false)
     }
+  }
+
+  // Auto-out edits use a simplified form — no batter, no result, no runner
+  // outcomes. The only editable field is the pitcher (who gets the out credit).
+  // Saving still funnels through applyRecompute via the same `preview`.
+  const isAutoOut = ab.result === 'auto_out'
+  if (isAutoOut) {
+    const handleAutoOutSave = async () => {
+      setSaving(true)
+      try {
+        await applyRecompute(preview)
+        onClose()
+      } finally {
+        setSaving(false)
+      }
+    }
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)' }}>
+        <div
+          className="w-full max-w-md rounded-2xl p-5"
+          style={{ background: '#1a1f2e', border: '1px solid rgba(234,179,8,0.35)' }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white text-xl font-black uppercase tracking-wide" style={{ fontFamily: 'var(--font-score)' }}>
+              ⚡ Edit Auto Out
+            </h2>
+            <span className="text-white/50 text-sm font-semibold" style={{ fontFamily: 'var(--font-score)' }}>
+              {ab.isTopInning ? '▲' : '▼'}{ab.inning}
+            </span>
+          </div>
+
+          <p className="text-white/60 text-xs mb-4 leading-relaxed">
+            Auto-outs are not tied to a batter. Pitcher gets the out credit.
+          </p>
+
+          <div className="mb-4">
+            <p className="text-white/40 text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-score)' }}>
+              ⚾ Pitcher — {teams[abFieldingTeamId]?.shortName ?? abFieldingTeamId}
+            </p>
+            <select
+              value={pitcherId}
+              onChange={async e => {
+                const v = e.target.value
+                if (v === '__add_sub__') {
+                  const newId = await addSubPitcher()
+                  if (newId) setPitcherId(newId)
+                  return
+                }
+                setPitcherId(v)
+              }}
+              className="w-full h-12 rounded-xl px-3 text-sm font-medium"
+              style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+            >
+              <optgroup label="Roster">
+                {pitcherOptions.map(([id, p]) => (
+                  <option key={id} value={id}>{p.name}</option>
+                ))}
+              </optgroup>
+              {fieldingSubPitchers.length > 0 && (
+                <optgroup label="Subs">
+                  {fieldingSubPitchers.map(s => (
+                    <option key={s.playerId} value={s.playerId}>{s.name} (sub)</option>
+                  ))}
+                </optgroup>
+              )}
+              <option value="__add_sub__">+ Add sub pitcher…</option>
+            </select>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              disabled={saving}
+              className="flex-1 h-11 rounded-xl font-bold text-sm"
+              style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAutoOutSave}
+              disabled={saving || !pitcherId || pitcherId === ab.pitcherId}
+              className="flex-1 h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
+              style={{
+                background: saving ? 'rgba(202,138,4,0.4)' : '#ca8a04',
+                color: '#fff',
+                border: '1px solid rgba(234,179,8,0.5)',
+                opacity: (!pitcherId || pitcherId === ab.pitcherId) ? 0.4 : 1,
+              }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const renderDelta = (delta: number) => {
@@ -2725,6 +3029,130 @@ function AtBatEditModal({
   )
 }
 
+// ── Forceful Actions modal ──────────────────────────────────────────────────
+// Out-of-flow game-data controls. Today: Auto Out (records an out tied to the
+// team — pitcher gets the out credit, no batter is debited a plate appearance).
+// Designed to host more forceful actions later (e.g. forfeit, manual run adj).
+function ForcefulActionsModal({
+  fieldingTeamShortName, battingTeamShortName, inning, isTopInning,
+  currentPitcherId, pitcherOptions, fieldingSubPitchers, onAddSubPitcher,
+  onClose, onConfirmAutoOut,
+}: {
+  fieldingTeamShortName: string
+  battingTeamShortName: string
+  inning: number
+  isTopInning: boolean
+  currentPitcherId: string
+  pitcherOptions: Array<[string, { name: string }]>
+  fieldingSubPitchers: SubPitcherEntry[]
+  onAddSubPitcher: () => Promise<string | null>
+  onClose: () => void
+  onConfirmAutoOut: (pitcherId: string) => Promise<void>
+}) {
+  const [selectedPitcherId, setSelectedPitcherId] = useState(currentPitcherId)
+  const [submitting, setSubmitting] = useState(false)
+
+  const canConfirm = !!selectedPitcherId && !submitting
+
+  const confirm = async () => {
+    if (!canConfirm) return
+    setSubmitting(true)
+    try {
+      await onConfirmAutoOut(selectedPitcherId)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)' }}>
+      <div
+        className="w-full max-w-md rounded-2xl p-5"
+        style={{ background: '#1a1f2e', border: '1px solid rgba(234,179,8,0.35)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-white text-xl font-black uppercase tracking-wide" style={{ fontFamily: 'var(--font-score)' }}>
+            ⚡ Forceful Actions
+          </h2>
+          <span className="text-white/50 text-sm font-semibold" style={{ fontFamily: 'var(--font-score)' }}>
+            {isTopInning ? '▲' : '▼'}{inning}
+          </span>
+        </div>
+
+        <p className="text-white/60 text-xs mb-4 leading-relaxed">
+          Record game data outside the at-bat flow. Use sparingly — these actions
+          are not tied to a batter.
+        </p>
+
+        <div className="rounded-xl p-3 mb-4" style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)' }}>
+          <p className="text-yellow-300 text-sm font-bold uppercase tracking-wider mb-2" style={{ fontFamily: 'var(--font-score)' }}>
+            Auto Out
+          </p>
+          <p className="text-white/60 text-xs mb-3 leading-relaxed">
+            Records an out for <span className="text-white font-semibold">{battingTeamShortName}</span>.
+            Pitcher gets the out credit. Use when a roster slot is empty (e.g. only 3 of 4 players present).
+          </p>
+
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-1" style={{ fontFamily: 'var(--font-score)' }}>
+            ⚾ Pitcher — {fieldingTeamShortName}
+          </p>
+          <select
+            value={selectedPitcherId}
+            onChange={async e => {
+              const v = e.target.value
+              if (v === '__add_sub__') {
+                const newId = await onAddSubPitcher()
+                if (newId) setSelectedPitcherId(newId)
+                return
+              }
+              setSelectedPitcherId(v)
+            }}
+            className="w-full h-12 rounded-xl px-3 text-sm font-medium mb-3"
+            style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+          >
+            <option value="">— Select pitcher —</option>
+            <optgroup label="Roster">
+              {pitcherOptions.map(([id, p]) => (
+                <option key={id} value={id}>{p.name}</option>
+              ))}
+            </optgroup>
+            {fieldingSubPitchers.length > 0 && (
+              <optgroup label="Subs">
+                {fieldingSubPitchers.map(s => (
+                  <option key={s.playerId} value={s.playerId}>{s.name} (sub)</option>
+                ))}
+              </optgroup>
+            )}
+            <option value="__add_sub__">+ Add sub pitcher…</option>
+          </select>
+
+          <button
+            onClick={confirm}
+            disabled={!canConfirm}
+            className="w-full h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
+            style={{
+              background: canConfirm ? '#ca8a04' : 'rgba(234,179,8,0.25)',
+              color: canConfirm ? '#fff' : 'rgba(255,255,255,0.4)',
+              border: '1px solid rgba(234,179,8,0.5)',
+            }}
+          >
+            {submitting ? 'Recording…' : 'Record Auto Out'}
+          </button>
+        </div>
+
+        <button
+          onClick={onClose}
+          disabled={submitting}
+          className="w-full h-11 rounded-xl font-bold text-sm"
+          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function SkDevTools({ gameId, confirmAbandon, setConfirmAbandon, onAbandon }: {
   gameId: string
   confirmAbandon: boolean
@@ -2814,7 +3242,7 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
   }, [editingSide, homeLineup, awayLineup])
 
   const teamPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === teamId)
+    .filter(([, p]) => p.teamId === teamId && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const inLineup = new Set(localLineup.map(e => e.playerId))
