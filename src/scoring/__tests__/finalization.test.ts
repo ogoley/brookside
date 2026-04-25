@@ -50,12 +50,16 @@ const basePlayers: PlayersMap = {
   p_away: { name: 'Pitcher Away', teamId: 'away', stats: {} },
 }
 
+// Stat writes are routed by player.isSub: regulars → /players, subs → /subPlayers.
+// Helpers check both paths so tests don't need to know which root was used.
 function getUpdatedHitting(output: FinalizeOutput, playerId: string): HittingStats | undefined {
-  return output.updates[`players/${playerId}/stats/hitting`] as HittingStats | undefined
+  return (output.updates[`players/${playerId}/stats/hitting`]
+    ?? output.updates[`subPlayers/${playerId}/stats/hitting`]) as HittingStats | undefined
 }
 
 function getUpdatedPitching(output: FinalizeOutput, playerId: string): PitchingStats | undefined {
-  return output.updates[`players/${playerId}/stats/pitching`] as PitchingStats | undefined
+  return (output.updates[`players/${playerId}/stats/pitching`]
+    ?? output.updates[`subPlayers/${playerId}/stats/pitching`]) as PitchingStats | undefined
 }
 
 // ── Single game finalization ────────────────────────────────────────────
@@ -152,7 +156,7 @@ describe('computeFinalization — single game', () => {
 // ── Sub exclusion ──────────────────────────────────────────────────────
 
 describe('computeFinalization — sub handling', () => {
-  it('writes sub stats to /players (consumers filter on player.isSub)', () => {
+  it('writes sub stats to /subPlayers (regulars stay in /players)', () => {
     const atBats: AtBatRecord[] = [
       makeAtBat({ batterId: 'b1', result: 'single', batterAdvancedTo: 'first', isSub: false }),
       makeAtBat({ batterId: 'sub_123', result: 'home_run', batterAdvancedTo: 'home', isSub: true }),
@@ -164,14 +168,14 @@ describe('computeFinalization — sub handling', () => {
       currentGameAtBats: atBats,
       previousAtBats: [],
       previousGames: {},
-      players: basePlayers,
+      players: { ...basePlayers, sub_123: { name: 'Sub Batter', teamId: 'away', isSub: true, stats: {} } },
     })
 
-    // Sub stats ARE written — finalize is now idempotent. The sub's
-    // /players/{id} record carries isSub:true; downstream consumers filter.
-    expect(getUpdatedHitting(output, 'sub_123')).toBeDefined()
-    // Regular player still appears
-    expect(getUpdatedHitting(output, 'b1')).toBeDefined()
+    // Sub stats are written under /subPlayers, regulars under /players.
+    expect(output.updates['subPlayers/sub_123/stats/hitting']).toBeDefined()
+    expect(output.updates['players/sub_123/stats/hitting']).toBeUndefined()
+    expect(output.updates['players/b1/stats/hitting']).toBeDefined()
+    expect(output.updates['subPlayers/b1/stats/hitting']).toBeUndefined()
   })
 
   it('ignores spurious batter in runnersScored when batter was not on base', () => {

@@ -284,6 +284,9 @@ export function ControllerRoute() {
     for (const id of playerIds) {
       updates[`players/${id}/stats`] = null
     }
+    // Sub players are season-ephemeral — wipe the whole /subPlayers tree
+    // alongside the regulars' stats reset.
+    updates['subPlayers'] = null
     await update(ref(db), updates)
     setConfirmSeasonReset(false)
   }

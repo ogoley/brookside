@@ -484,19 +484,21 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
         },
       })
 
-      // Promote any custom subs in the lineups to /players entries with isSub:true.
-      // Stats accumulate normally on finalize; downstream consumers filter by isSub.
+      // Promote any custom subs in the lineups to /subPlayers entries.
+      // /subPlayers is the dedicated path for ephemeral one-game subs, kept
+      // separate from /players so external consumers reading /players get a
+      // clean roster without needing to filter on isSub.
       const subPlayerUpdates: Record<string, unknown> = {}
       for (const e of homeLineup) {
         if (e.playerId.startsWith('sub_') && e.subName) {
-          subPlayerUpdates[`players/${e.playerId}`] = {
+          subPlayerUpdates[`subPlayers/${e.playerId}`] = {
             name: e.subName, teamId: homeTeamId, isSub: true, stats: {},
           }
         }
       }
       for (const e of awayLineup) {
         if (e.playerId.startsWith('sub_') && e.subName) {
-          subPlayerUpdates[`players/${e.playerId}`] = {
+          subPlayerUpdates[`subPlayers/${e.playerId}`] = {
             name: e.subName, teamId: awayTeamId, isSub: true, stats: {},
           }
         }
@@ -1517,10 +1519,9 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const playerId = `subp_${Date.now()}`
     await update(ref(db), {
       [`games/${gameId}/subPitchers/${teamId}/${playerId}`]: { playerId, name },
-      // Promote to /players so finalization writes stats here, name renders
-      // everywhere via the standard players[id] lookup, and downstream
-      // consumers filter on player.isSub.
-      [`players/${playerId}`]: { name, teamId, isSub: true, stats: {} },
+      // Sub identity lives in /subPlayers (separate from regulars in /players).
+      // The merged usePlayers() hook makes name lookups transparent internally.
+      [`subPlayers/${playerId}`]: { name, teamId, isSub: true, stats: {} },
     })
     return playerId
   }
@@ -2563,7 +2564,7 @@ function AtBatEditModal({
     const playerId = `subp_${Date.now()}`
     await update(ref(db), {
       [`games/${gameId}/subPitchers/${abFieldingTeamId}/${playerId}`]: { playerId, name },
-      [`players/${playerId}`]: { name, teamId: abFieldingTeamId, isSub: true, stats: {} },
+      [`subPlayers/${playerId}`]: { name, teamId: abFieldingTeamId, isSub: true, stats: {} },
     })
     return playerId
   }

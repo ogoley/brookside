@@ -23,10 +23,10 @@
       ".write": "auth != null && auth.token.role === 'admin'"
     },
     "players": {
-      ".write": "auth != null && auth.token.role === 'admin'",
-      "$playerId": {
-        ".write": "auth != null && auth.token.role === 'scorer' && ($playerId.beginsWith('sub_') || $playerId.beginsWith('subp_'))"
-      }
+      ".write": "auth != null && auth.token.role === 'admin'"
+    },
+    "subPlayers": {
+      ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
     "config": {
       ".write": "auth != null && auth.token.role === 'admin'"

@@ -107,13 +107,17 @@ function recalcSeasonStats(
 
   const updates: Record<string, unknown> = {}
 
+  // Route stat writes by isSub — subs live under /subPlayers, regulars under /players.
+  const statsRoot = (playerId: string): 'players' | 'subPlayers' =>
+    players[playerId]?.isSub ? 'subPlayers' : 'players'
+
   for (const [playerId, agg] of Object.entries(hAgg)) {
     const avg = agg.ab > 0 ? Math.round((agg.h / agg.ab) * 1000) / 1000 : 0
     const obp = agg.pa > 0 ? Math.round(((agg.h + agg.bb) / agg.pa) * 1000) / 1000 : 0
     const singles = agg.h - agg.doubles - agg.triples - agg.hr
     const tb = singles + agg.doubles * 2 + agg.triples * 3 + agg.hr * 4
     const slg = agg.ab > 0 ? Math.round((tb / agg.ab) * 1000) / 1000 : 0
-    updates[`players/${playerId}/stats/hitting`] = {
+    updates[`${statsRoot(playerId)}/${playerId}/stats/hitting`] = {
       gp: agg.gp, pa: agg.pa, ab: agg.ab, h: agg.h,
       doubles: agg.doubles, triples: agg.triples, hr: agg.hr,
       r: agg.r, rbi: agg.rbi, bb: agg.bb, k: agg.k,
@@ -125,7 +129,7 @@ function recalcSeasonStats(
     const ip = Math.floor(agg.outs / 3) + (agg.outs % 3) / 3
     const era = ip > 0 ? Math.round((agg.ra / ip) * INNINGS_PER_GAME * 100) / 100 : 0
     const existing = players[playerId]?.stats?.pitching ?? {}
-    updates[`players/${playerId}/stats/pitching`] = {
+    updates[`${statsRoot(playerId)}/${playerId}/stats/pitching`] = {
       ...existing,
       gp: agg.gp,
       inningsPitched: Math.round(ip * 100) / 100,
@@ -1254,7 +1258,7 @@ export function GameEditorRoute() {
 
     const newPitcherId = `subp_${Date.now()}`
     const updates: Record<string, unknown> = {
-      [`players/${newPitcherId}`]: {
+      [`subPlayers/${newPitcherId}`]: {
         name: proposedName,
         teamId: oldPlayer.teamId,
         isSub: true,
@@ -1331,13 +1335,13 @@ export function GameEditorRoute() {
 
       const migrationUpdates: Record<string, unknown> = {}
       const upsertSubIdentity = (id: string, name: string, teamId: string) => {
-        const existing = players[id]
-        // Always force the identity fields. Partial-key update preserves stats.
-        if (!existing || existing.name !== name) migrationUpdates[`players/${id}/name`] = name
-        if (!existing || existing.teamId !== teamId) migrationUpdates[`players/${id}/teamId`] = teamId
-        if (!existing || existing.isSub !== true) migrationUpdates[`players/${id}/isSub`] = true
-        // Preserve any existing stats; if none, initialize empty so the record is well-formed.
-        if (!existing) migrationUpdates[`players/${id}/stats`] = {}
+        // Sub identities live under /subPlayers. Use partial-key updates so we
+        // don't disturb any existing /subPlayers/{id}/stats subtree.
+        const existing = players[id]   // merged map: covers both /players and /subPlayers
+        if (!existing || existing.name !== name) migrationUpdates[`subPlayers/${id}/name`] = name
+        if (!existing || existing.teamId !== teamId) migrationUpdates[`subPlayers/${id}/teamId`] = teamId
+        if (!existing || existing.isSub !== true) migrationUpdates[`subPlayers/${id}/isSub`] = true
+        if (!existing) migrationUpdates[`subPlayers/${id}/stats`] = {}
       }
       const seen = new Set<string>()
       for (const ab of atBats) {
@@ -1385,9 +1389,19 @@ export function GameEditorRoute() {
         }
       }
 
-      // Re-fetch /players to pick up the migration writes we just made.
-      const playersSnap = await get(ref(db, 'players'))
-      const playersFresh = (playersSnap.val() ?? {}) as PlayersMap
+      // Re-fetch both /players and /subPlayers to pick up the migration writes
+      // and merge into the unified PlayersMap that computeFinalization expects.
+      const [playersSnap, subPlayersSnap] = await Promise.all([
+        get(ref(db, 'players')),
+        get(ref(db, 'subPlayers')),
+      ])
+      const regulars = (playersSnap.val() ?? {}) as PlayersMap
+      const subsRaw = (subPlayersSnap.val() ?? {}) as PlayersMap
+      const subsForced: PlayersMap = {}
+      for (const [id, p] of Object.entries(subsRaw)) {
+        subsForced[id] = { ...p, isSub: true }
+      }
+      const playersFresh: PlayersMap = { ...regulars, ...subsForced }
 
       const { updates: finalizeUpdates, summary } = computeFinalization({
         gameId: selectedGameId,
@@ -1523,7 +1537,10 @@ export function GameEditorRoute() {
       const prevL = selectedGame.lPitcherId ?? null
 
       const applyWLDelta = (pitcherId: string, field: 'w' | 'l', delta: 1 | -1) => {
-        const path = `players/${pitcherId}/stats/pitching`
+        // Sub pitchers shouldn't get W/L credit, but route by isSub for safety
+        // so a stray write lands at /subPlayers (not at the wrong path entirely).
+        const root = players[pitcherId]?.isSub ? 'subPlayers' : 'players'
+        const path = `${root}/${pitcherId}/stats/pitching`
         const cur = (updates[path] as Record<string, unknown> | undefined)
           ?? { ...(players[pitcherId]?.stats?.pitching ?? {}) }
         const current = (cur[field] as number | undefined) ?? 0

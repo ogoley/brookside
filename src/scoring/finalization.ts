@@ -176,6 +176,12 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
   // ── Build Firebase update object ─────────────────────────────────────────
   const updates: Record<string, unknown> = {}
 
+  // Stats live under /players/{id}/stats/* for regulars and /subPlayers/{id}/stats/*
+  // for ephemeral one-game subs, so external readers of /players get a clean
+  // roster without needing to filter on isSub.
+  const statsRoot = (playerId: string): 'players' | 'subPlayers' =>
+    players[playerId]?.isSub ? 'subPlayers' : 'players'
+
   // Season hitting stats
   for (const [playerId, b] of Object.entries(batting)) {
     const r = runs[playerId] ?? 0
@@ -190,7 +196,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
       r, rbi: b.rbi, bb: b.bb, k: b.k,
       avg, obp, slg, ops: Math.round((obp + slg) * 1000) / 1000,
     }
-    updates[`players/${playerId}/stats/hitting`] = hs
+    updates[`${statsRoot(playerId)}/${playerId}/stats/hitting`] = hs
     summary.push(`  Hitting → ${players[playerId]?.name ?? playerId}: ${b.ab}AB ${b.h}H .${String(Math.round(avg * 1000)).padStart(3, '0')}`)
   }
 
@@ -205,7 +211,7 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
       w: wl.w,
       l: wl.l,
     }
-    updates[`players/${playerId}/stats/pitching`] = ps
+    updates[`${statsRoot(playerId)}/${playerId}/stats/pitching`] = ps
     summary.push(`  Pitching → ${players[playerId]?.name ?? playerId}: ${ip}IP ${era}ERA ${p.k}K ${wl.w}W-${wl.l}L`)
   }
 
