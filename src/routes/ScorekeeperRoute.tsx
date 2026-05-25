@@ -1484,7 +1484,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   }
 
   const undoLastAtBat = async () => {
-    if (!lastAtBatId) return
+    if (!lastAtBatId || !gameId || !game) return
     const ab = atBats[lastAtBatId]
     if (!ab) return
     // Pre-fill wizard with the undone at-bat's data so they can correct and re-submit
@@ -1493,6 +1493,33 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     setResult(ab.result)
     setRunnerOutcomes(ab.runnerOutcomes ?? {})
     setBatterAdvancedTo(ab.batterAdvancedTo)
+
+    // If the scorer already advanced the half-inning past the at-bat being
+    // undone (mistaken 3rd out → advance → realize), roll inning/half back
+    // to the at-bat's half before recomputing. Otherwise recompute runs
+    // against the empty next half, the record is silently stripped, and
+    // the scorer is stranded post-advance with no path back.
+    if (ab.inning !== inning || ab.isTopInning !== isTopInning) {
+      const updatedAtBats = { ...atBats }
+      delete updatedAtBats[lastAtBatId]
+      const recompute = recomputeGameState(
+        updatedAtBats, resolvePlayerName, ab.inning, ab.isTopInning,
+      )
+      const rollback: Record<string, unknown> = {
+        [`games/${gameId}/inning`]: ab.inning,
+        [`games/${gameId}/isTopInning`]: ab.isTopInning,
+        [`games/${gameId}/matchup/pitcherId`]: ab.pitcherId,
+      }
+      if (game.isStreamed) {
+        rollback['game/meta/inning'] = ab.inning
+        rollback['game/meta/isTopInning'] = ab.isTopInning
+        rollback['game/matchup/pitcherId'] = ab.pitcherId
+      }
+      await update(ref(db), rollback)
+      await applyRecompute(recompute, [lastAtBatId])
+      return
+    }
+
     await deleteAtBat(lastAtBatId)
   }
 
@@ -1757,12 +1784,16 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
           <div className="flex flex-col gap-4">
             <StepLabel step={1} label="Who's Up?" />
 
-            {/* Soft reminder: batting team is shorter than fielding team and the
-                lineup just wrapped — suggest an auto-out for the missing slot.
-                Non-blocking; scorer can ignore and bat the regular slot 0 player. */}
+            {/* Soft reminder: batting team is short-handed (fewer than 4 players)
+                and the lineup just wrapped — suggest an auto-out for the missing
+                slot. League rule: a team with only 3 fielders takes an automatic
+                out in the missing roster slot each time around. Teams with 4+
+                players never trigger this — they just play with whoever they
+                have, no auto-out needed. Non-blocking; scorer can dismiss. */}
             {(() => {
               if (softReminderDismissed) return null
               if (battingLineup.length === 0 || fieldingLineup.length === 0) return null
+              if (battingLineup.length >= 4) return null
               if (battingLineup.length >= fieldingLineup.length) return null
               if (lineupPosition !== 0) return null
               const battingTeamAtBatCount = Object.values(atBats).filter(ab =>
@@ -1996,7 +2027,23 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
                     if (!runnerId) return null
                     const outcome = runnerOutcomes[base]
                     const setOutcome = (v: RunnerOutcomes[typeof base]) => {
-                      setRunnerOutcomes(prev => ({ ...prev, [base]: v }))
+                      setRunnerOutcomes(prev => {
+                        // Chain-rule auto-unlock: the chain rule defaults the
+                        // lead runner to 'sits' and the batter to 'first'.
+                        // Flipping the lead runner away from 'sits' means the
+                        // chain rule didn't actually occur — the batter must
+                        // have been the out — so release the 'first' lock to
+                        // 'out'. Without this the play records 0 outs.
+                        if (
+                          result === 'groundout' &&
+                          prev[base] === 'sits' &&
+                          v !== 'sits' &&
+                          batterAdvancedTo === 'first'
+                        ) {
+                          setBatterAdvancedTo('out')
+                        }
+                        return { ...prev, [base]: v }
+                      })
                     }
 
                     // Bases the batter is taking — runner cannot land there
