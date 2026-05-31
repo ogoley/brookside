@@ -106,7 +106,6 @@ export function SummaryRoute() {
   // have to count plate appearances vs at-bats itself (which is where it errs).
   function computePlayerLines(
     atBats: AtBatRecord[],
-    awayTeamId: string,
     homeTeamId: string,
   ): PlayerLine[] {
     const playerIds = new Set<string>()
@@ -268,7 +267,7 @@ Write the recap now.`
 
         const awayTeam = teams[game.awayTeamId]?.name ?? game.awayTeamId
         const homeTeam = teams[game.homeTeamId]?.name ?? game.homeTeamId
-        const playerLines = computePlayerLines(atBats, game.awayTeamId, game.homeTeamId)
+        const playerLines = computePlayerLines(atBats, game.homeTeamId)
         const g: GameData = {
           awayTeam, homeTeam,
           awayScore: game.awayScore, homeScore: game.homeScore,
@@ -327,7 +326,7 @@ Write the recap now.`
           const raw: Record<string, AtBatRecord> = snap.exists() ? snap.val() : {}
           atBats = Object.values(raw).sort((a, b) => a.timestamp - b.timestamp)
         }
-        const playerLines = computePlayerLines(atBats, game.awayTeamId, game.homeTeamId)
+        const playerLines = computePlayerLines(atBats, game.homeTeamId)
 
         gameDatas.push({
           awayTeam: teams[game.awayTeamId]?.name ?? game.awayTeamId,

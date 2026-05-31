@@ -79,6 +79,30 @@ export function ControllerRoute() {
     if (homerunDismissRef.current) clearTimeout(homerunDismissRef.current)
   }, [])
 
+  // Self-healing homerun dismiss watcher. The scorekeeper can write
+  // overlay/homerun.active=true directly when it logs a home run, in which case
+  // no setTimeout was scheduled by the controller and the overlay would hang
+  // forever. This effect also recovers if the controller tab refreshes mid-
+  // animation. Uses triggeredAt to compute remaining time so a HR that fired
+  // 3 seconds ago dismisses 7 seconds later, not 10.
+  const handledHomerunTriggerRef = useRef<number>(0)
+  useEffect(() => {
+    if (!overlay.homerun.active) {
+      handledHomerunTriggerRef.current = 0
+      return
+    }
+    const triggeredAt = overlay.homerun.triggeredAt || Date.now()
+    if (handledHomerunTriggerRef.current === triggeredAt) return  // already scheduled for this HR
+    handledHomerunTriggerRef.current = triggeredAt
+    const elapsed = Date.now() - triggeredAt
+    const remaining = 10_000 - elapsed
+    if (remaining <= 0) {
+      update(ref(db, 'overlay/homerun'), { active: false })
+    } else {
+      scheduleHomerunDismiss(remaining)
+    }
+  }, [overlay.homerun.active, overlay.homerun.triggeredAt])
+
   useEffect(() => {
     // New batter — reset the shown flag and clear any pending reminder
     if (statReminderTimerRef.current) clearTimeout(statReminderTimerRef.current)
