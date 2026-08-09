@@ -273,3 +273,30 @@ export interface GameSummary {
   pitchingBb?: number
   runsAllowed?: number
 }
+
+// ── Home Run Derby (50/50 charity pool) ──────────────────────────────────────
+
+// /derby/entries/{entryId}
+export interface DerbyEntry {
+  name: string       // person who entered
+  playerId: string   // hitter they're betting on
+  totalHr: number    // their guess at the winner's total HR across all 3 rounds
+  paid: boolean
+  createdAt: number
+}
+
+// /derby/result — set by admin after the derby ends
+export interface DerbyResult {
+  winnerPlayerId: string
+  totalHr: number    // the winner's actual total HR across all 3 rounds
+  finalized: boolean
+}
+
+// /derby
+export interface DerbyState {
+  entries?: Record<string, DerbyEntry>
+  result?: DerbyResult
+  // playerIds marked as not present at the derby — hidden from the public
+  // leaders grid and never selectable in entry/result dropdowns
+  disabledPlayers?: Record<string, true>
+}

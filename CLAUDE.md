@@ -74,6 +74,18 @@ Full type definitions in `src/types.ts`.
 - **Live game stats** — collapsible "Game Stats" panel shows AB/H/RBI/HR/O per batter in a two-column away|home table. "O" (outs) uses result-based check: `['strikeout', 'strikeout_looking', 'groundout', 'popout', 'flyout', 'sacrifice_fly', 'sacrifice_bunt'].includes(result)`.
 - **`scoring/engine.ts`** — pure functions, no Firebase/React. `applyAtBat` → narrated log + next runner state. `replayHalfInning` → replays ordered at-bat list. `computeGameStats` → per-player hitting/pitching stats from a list of at-bats. `mergeHittingStats` → merges season totals with a game's stats; OBP uses PA as denominator (`(h + bb) / pa`) since HBP/SF aren't separately tracked in stored season stats.
 
+## Home Run Derby page (DerbyRoute.tsx)
+- **`/derby` is a public web page** (like `/stats`), not an overlay — annual 50/50 charity event ($10/entry, half the pot to the winner, half to the Valley Impact Project). A derby *overlay* scene is a separate future project.
+- **Entries are submitted via Venmo** (`@emvee311` — `VENMO_HANDLE` constant) — a bold CTA banner at the top tells people to send $10 with note "First Last <HR guess>" (e.g. "Mike Verteramo 25"); admins then record the entry via admin mode. There is no public entry form.
+- **The page is deliberately stand-alone** — no `AppNav`, no links to other routes, not listed in `AppNav`'s links either. It's shared by direct link only.
+- **`totalHr` means the derby WINNER's personal HR total across all 3 rounds** — not a derby-wide total. Both the entry guess and the posted result use this meaning.
+- **Data lives at `/derby`** — `entries/{entryId}` (`DerbyEntry`: name, playerId, totalHr, paid, createdAt) and `result` (`DerbyResult`: winnerPlayerId, totalHr, finalized). `useDerby` hook owns the path.
+- **`/derby` is publicly writable at the rules layer** — intentional. Admin mode is a front-end plain-text gate only: a small "Admin" link in the footer (next to the Home Run Derby text) opens a plain password prompt (`ADMIN_PASSWORD` constant at the top of `DerbyRoute.tsx`), state kept in sessionStorage. It is NOT the real `AuthGate` login. Accepted risk: worst case someone edits derby entries.
+- **Winner logic** — eligible entries are paid + picked `result.winnerPlayerId`; among those, minimum `|totalHr - result.totalHr|` wins (ties all highlighted). If no eligible entry, banner says the full pot goes to charity.
+- **Player presence toggle** — `derby/disabledPlayers/{playerId}: true` marks a player as not at the derby. Admin mode shows every player with a HR in the leaders grid with tap-to-toggle IN/OUT badges; public mode hides disabled players entirely; all player dropdowns (add entry, edit entry, result) offer enabled players only. Entries referencing a since-disabled player still display via `fallbackLabel` on `PlayerCombobox`.
+- **"Eligible Players" grid** shows ONLY players with ≥1 season HR (a homer is the ticket into the derby — 0-HR players never appear even if bet on). A "Sort by: Home Runs | Bets" chip toggle re-sorts the grid; the tile's big number is the active sort metric and the other metric shows as a small pill (`🔥 N BETS` in HR mode, `N HR` in bets mode). HR totals merge season `stats.hitting.hr` with live non-finalized games' `gameStats` (same pattern as StatsRoute), skip `isSub` players/at-bats, and filter out player records with no `name` (stale nodes exist in `/players` — sorting on `p.name` without the guard crashes the page).
+- **Mobile-first** — most bettors open the page on a phone: CTA text uses `clamp()`, pot tiles use `auto-fit` grid, the public entries table has no forced min-width (admin table scrolls horizontally instead).
+
 ## File map
 ```
 src/

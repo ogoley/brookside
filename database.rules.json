@@ -30,6 +30,9 @@
     },
     "config": {
       ".write": "auth != null && auth.token.role === 'admin'"
+    },
+    "derby": {
+      ".write": true
     }
   }
 }

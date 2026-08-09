@@ -6,6 +6,7 @@ import { ConfigRoute } from './routes/ConfigRoute'
 import { StatsRoute } from './routes/StatsRoute'
 import { GameEditorRoute } from './routes/GameEditorRoute'
 import { SummaryRoute } from './routes/SummaryRoute'
+import { DerbyRoute } from './routes/DerbyRoute'
 import { AuthGate } from './components/AuthGate'
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/" element={<StatsRoute />} />
         <Route path="/stats" element={<StatsRoute />} />
         <Route path="/overlay" element={<OverlayRoute />} />
+        <Route path="/derby" element={<DerbyRoute />} />
         <Route
           path="/controller"
           element={<AuthGate requiredRole="scorer"><ControllerRoute /></AuthGate>}
