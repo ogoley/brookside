@@ -253,6 +253,9 @@ export function DerbyRoute() {
               Pay on Venmo →
             </a>
           </div>
+          <div style={{ marginTop: 12, fontFamily: 'var(--font-score)', fontSize: 14, fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Limit 10 entries per person
+          </div>
         </div>
 
         {/* ── How it works ─────────────────────────────────────────────── */}
