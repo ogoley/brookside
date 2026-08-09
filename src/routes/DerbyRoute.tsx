@@ -36,6 +36,8 @@ export function DerbyRoute() {
   const [adminMode, setAdminMode] = useState(() => sessionStorage.getItem('derbyAdmin') === '1')
   const [showPwPrompt, setShowPwPrompt] = useState(false)
 
+  useEffect(() => { document.title = 'Brookside 2026 Derby' }, [])
+
   const enterAdmin = () => {
     sessionStorage.setItem('derbyAdmin', '1')
     setAdminMode(true)

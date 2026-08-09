@@ -4,6 +4,16 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        // Separate HTML entry so /derby gets its own <title>/og tags in link
+        // previews (crawlers don't run JS); served via firebase.json rewrite
+        derby: 'derby.html',
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {
