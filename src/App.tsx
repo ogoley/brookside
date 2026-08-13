@@ -7,6 +7,8 @@ import { StatsRoute } from './routes/StatsRoute'
 import { GameEditorRoute } from './routes/GameEditorRoute'
 import { SummaryRoute } from './routes/SummaryRoute'
 import { DerbyRoute } from './routes/DerbyRoute'
+import { DerbyOverlayRoute } from './routes/DerbyOverlayRoute'
+import { DerbyControllerRoute } from './routes/DerbyControllerRoute'
 import { AuthGate } from './components/AuthGate'
 
 export default function App() {
@@ -17,6 +19,17 @@ export default function App() {
         <Route path="/stats" element={<StatsRoute />} />
         <Route path="/overlay" element={<OverlayRoute />} />
         <Route path="/derby" element={<DerbyRoute />} />
+        <Route path="/derby-overlay" element={<DerbyOverlayRoute />} />
+        <Route path="/derby-controller" element={<DerbyControllerRoute />} />
+        {/* All-star routes: the overlay is the same OBS source (it renders whatever
+            the scorebug state says); the controller runs in allstar mode — team
+            pickers restricted to Rist/Hiller, exhibition-only game list, one-tap
+            matchup setup. */}
+        <Route path="/allstar-overlay" element={<OverlayRoute />} />
+        <Route
+          path="/allstar-controller"
+          element={<AuthGate requiredRole="scorer"><ControllerRoute allstar /></AuthGate>}
+        />
         <Route
           path="/controller"
           element={<AuthGate requiredRole="scorer"><ControllerRoute /></AuthGate>}

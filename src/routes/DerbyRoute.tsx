@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { ref, onValue, push, update, remove, set } from 'firebase/database'
 import { db } from '../firebase'
+import { useConnectionStatus } from '../hooks/useConnectionStatus'
 import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
 import { useGames } from '../hooks/useGames'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { useDerby } from '../hooks/useDerby'
+import { isExhibitionGame } from '../allstar'
 import type { AtBatRecord, DerbyEntry } from '../types'
 
 // Front-end gate only — the /derby path is intentionally open at the rules
@@ -31,6 +33,7 @@ export function DerbyRoute() {
   const { games } = useGames()
   const { config } = useLeagueConfig()
   const { derby } = useDerby()
+  const connected = useConnectionStatus()
 
   // ── Admin mode (front-end plain-text gate, per session) ──────────────
   const [adminMode, setAdminMode] = useState(() => sessionStorage.getItem('derbyAdmin') === '1')
@@ -50,8 +53,8 @@ export function DerbyRoute() {
 
   // ── Season HR totals (finalized stats + live in-progress games) ──────
   const liveGameIds = useMemo(
-    () => games.filter(g => !g.game.finalized).map(g => g.gameId),
-    [games],
+    () => games.filter(g => !g.game.finalized && !isExhibitionGame(g.game, teams)).map(g => g.gameId),
+    [games, teams],
   )
   const [liveHr, setLiveHr] = useState<Record<string, number>>({})
 
@@ -150,8 +153,12 @@ export function DerbyRoute() {
   }, [entryList, result])
 
   // ── Firebase writes (admin) ───────────────────────────────────────────
-  const addEntry = (entry: Omit<DerbyEntry, 'createdAt'>) =>
-    push(ref(db, 'derby/entries'), { ...entry, createdAt: Date.now() })
+  // Resolves only when the server acks the write — the SDK's local echo
+  // updates the UI immediately even when offline, so callers must not treat
+  // "it's on screen" as saved.
+  const addEntry = async (entry: Omit<DerbyEntry, 'createdAt'>): Promise<void> => {
+    await push(ref(db, 'derby/entries'), { ...entry, createdAt: Date.now() })
+  }
   const updateEntry = (id: string, patch: Partial<DerbyEntry>) =>
     update(ref(db, `derby/entries/${id}`), patch)
   const deleteEntry = (id: string, name: string) => {
@@ -161,6 +168,31 @@ export function DerbyRoute() {
     set(ref(db, 'derby/result'), { winnerPlayerId, totalHr, finalized: true })
   const clearResult = () => {
     if (window.confirm('Clear the final result?')) remove(ref(db, 'derby/result'))
+  }
+
+  // Move the whole live derby (entries, result, player toggles, broadcast
+  // scores) into a frozen per-year archive and clear the slate for next
+  // season. This is the ONLY yearly cleanup the derby needs.
+  const archiveAndReset = async () => {
+    const year = String(new Date().getFullYear())
+    if (derby.archive?.[year]) {
+      if (!window.confirm(`An archive for ${year} already exists — archiving again will OVERWRITE it with the current page state. Continue?`)) return
+    } else if (!window.confirm(`Archive the ${year} derby and reset this page for a new season? Entries, result, player toggles, and broadcast scores all move to the archive.`)) {
+      return
+    }
+    await update(ref(db), {
+      [`derby/archive/${year}`]: {
+        archivedAt: Date.now(),
+        entries: derby.entries ?? null,
+        result: derby.result ?? null,
+        disabledPlayers: derby.disabledPlayers ?? null,
+        broadcast: derby.broadcast ?? null,
+      },
+      'derby/entries': null,
+      'derby/result': null,
+      'derby/disabledPlayers': null,
+      'derby/broadcast': null,
+    })
   }
 
   return (
@@ -191,6 +223,20 @@ export function DerbyRoute() {
           </div>
         </div>
       </div>
+
+      {/* ── Offline warning (admin) — writes queue in this tab only ───── */}
+      {adminMode && !connected && (
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 90,
+          background: '#c0392b', color: '#ffffff', padding: '10px 16px', textAlign: 'center',
+          fontSize: 13, fontWeight: 700, lineHeight: 1.5,
+        }}>
+          ⚠ Offline — changes are NOT reaching the database.
+          <span style={{ fontWeight: 500 }}>
+            {' '}Keep this tab open: pending changes send automatically when the connection returns. Do not refresh.
+          </span>
+        </div>
+      )}
 
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '16px 12px', width: '100%', boxSizing: 'border-box', flex: 1 }}>
 
@@ -397,6 +443,25 @@ export function DerbyRoute() {
           <>
             <AddEntryForm hitters={selectableHitters} onAdd={addEntry} />
             <ResultForm hitters={selectableHitters} current={result ?? null} onSave={saveResult} onClear={clearResult} />
+
+            {/* ── Admin: season rollover ─────────────────────────────── */}
+            <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e5e7eb', padding: '14px 16px', marginBottom: 16 }}>
+              <div style={{ fontFamily: 'var(--font-score)', fontWeight: 800, fontSize: 14, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Season tools
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                <button
+                  onClick={archiveAndReset}
+                  style={{ ...smallBtn, padding: '8px 16px', fontSize: 13, background: '#1e3a5f', color: '#ffffff', border: 'none' }}
+                >
+                  Archive this derby &amp; reset for next season
+                </button>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                  Moves everything to a frozen archive — do this once the payout is settled.
+                  {derby.archive && ` Archived seasons: ${Object.keys(derby.archive).sort().join(', ')}.`}
+                </span>
+              </div>
+            </div>
           </>
         )}
 
@@ -568,22 +633,62 @@ function EntryRow({ entry, hitter, hitters, isWinner, striped, adminMode, onPatc
 
 // ── Admin: add entry ─────────────────────────────────────────────────────────
 
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'unconfirmed' | 'error'
+
+const CONFIRM_TIMEOUT_MS = 8000
+
 function AddEntryForm({ hitters, onAdd }: {
   hitters: HitterOption[]
-  onAdd: (entry: Omit<DerbyEntry, 'createdAt'>) => void
+  onAdd: (entry: Omit<DerbyEntry, 'createdAt'>) => Promise<void>
 }) {
   const [name, setName] = useState('')
   const [playerId, setPlayerId] = useState('')
   const [totalHr, setTotalHr] = useState('')
   const [paid, setPaid] = useState(true)
+  const [status, setStatus] = useState<SaveStatus>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
+
+  // Monotonic id per submit so a late server ack from an old submission
+  // can't clobber the status/fields of a newer one.
+  const submitSeq = useRef(0)
+  const fields = useRef({ name, playerId, totalHr })
+  fields.current = { name, playerId, totalHr }
 
   const hrNum = parseInt(totalHr, 10)
   const valid = name.trim() !== '' && playerId !== '' && !isNaN(hrNum) && hrNum >= 0
 
   const submit = () => {
-    if (!valid) return
-    onAdd({ name: name.trim(), playerId, totalHr: hrNum, paid })
-    setName(''); setPlayerId(''); setTotalHr(''); setPaid(true)
+    if (!valid || status === 'saving') return
+    const seq = ++submitSeq.current
+    const entry = { name: name.trim(), playerId, totalHr: hrNum, paid }
+    setStatus('saving')
+    let acked = false
+
+    onAdd(entry)
+      .then(() => {
+        acked = true
+        if (submitSeq.current !== seq) return
+        setStatus('saved')
+        // Clear the form only if it still holds this entry — if the ack came
+        // late (after the unconfirmed warning) the admin may be mid-edit.
+        const f = fields.current
+        if (f.name.trim() === entry.name && f.playerId === entry.playerId && parseInt(f.totalHr, 10) === entry.totalHr) {
+          setName(''); setPlayerId(''); setTotalHr(''); setPaid(true)
+        }
+        setTimeout(() => {
+          if (submitSeq.current === seq) setStatus(s => (s === 'saved' ? 'idle' : s))
+        }, 4000)
+      })
+      .catch((err: unknown) => {
+        if (submitSeq.current !== seq) return
+        setErrorMsg(err instanceof Error ? err.message : String(err))
+        setStatus('error')
+      })
+
+    // Offline, the write promise never settles — it just queues in this tab.
+    setTimeout(() => {
+      if (!acked && submitSeq.current === seq) setStatus('unconfirmed')
+    }, CONFIRM_TIMEOUT_MS)
   }
 
   return (
@@ -615,16 +720,37 @@ function AddEntryForm({ hitters, onAdd }: {
         </label>
         <button
           onClick={submit}
-          disabled={!valid}
+          disabled={!valid || status === 'saving'}
           style={{
             ...smallBtn, padding: '8px 20px', fontSize: 13,
-            background: valid ? '#1e3a5f' : '#cbd5e1', color: '#ffffff', border: 'none',
-            cursor: valid ? 'pointer' : 'not-allowed',
+            background: valid && status !== 'saving' ? '#1e3a5f' : '#cbd5e1', color: '#ffffff', border: 'none',
+            cursor: valid && status !== 'saving' ? 'pointer' : 'not-allowed',
           }}
         >
-          Add — ${ENTRY_FEE}
+          {status === 'saving' ? 'Saving…' : `Add — $${ENTRY_FEE}`}
         </button>
       </div>
+      {status === 'saved' && (
+        <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#15803d' }}>
+          ✓ Entry saved to the database.
+        </div>
+      )}
+      {status === 'unconfirmed' && (
+        <div style={{
+          marginTop: 8, fontSize: 13, fontWeight: 600, color: '#b45309',
+          background: 'rgba(180,83,9,0.08)', border: '1px solid rgba(180,83,9,0.35)',
+          borderRadius: 8, padding: '8px 12px', lineHeight: 1.5,
+        }}>
+          ⚠ Not confirmed by the server yet — check your connection. Keep this tab open
+          (don't refresh): the entry sends automatically when you're back online, and this
+          message will flip to "saved" once it goes through.
+        </div>
+      )}
+      {status === 'error' && (
+        <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#c0392b' }}>
+          ✗ Save failed — the entry was NOT recorded. ({errorMsg})
+        </div>
+      )}
     </div>
   )
 }

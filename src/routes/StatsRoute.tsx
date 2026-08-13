@@ -8,6 +8,7 @@ import { usePlayers } from '../hooks/usePlayers'
 import { useGames } from '../hooks/useGames'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { computeGameStats, mergeHittingStats, mergePitchingStats } from '../scoring/engine'
+import { isExhibitionGame } from '../allstar'
 import type { GameRecord, PlayersMap, TeamsMap, AtBatRecord, HittingStats, PitchingStats } from '../types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -295,12 +296,14 @@ export function StatsRoute() {
   const [resultsFilter, setResultsFilter] = useState<string>('')
   const [selectedTeam, setSelectedTeam] = useState<string>('')
 
-  // Subscribe to at-bats for any non-finalized games so live stats merge in real-time
+  // Subscribe to at-bats for any non-finalized games so live stats merge in real-time.
+  // All-star exhibitions are excluded — they never finalize and must not leak
+  // into season stats.
   const [liveAtBats, setLiveAtBats] = useState<Record<string, AtBatRecord[]>>({})
 
   const liveGameIds = useMemo(
-    () => games.filter(g => !g.game.finalized).map(g => g.gameId),
-    [games],
+    () => games.filter(g => !g.game.finalized && !isExhibitionGame(g.game, teams)).map(g => g.gameId),
+    [games, teams],
   )
 
   useEffect(() => {

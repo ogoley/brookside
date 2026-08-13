@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import type { GameMeta, TeamsMap, PlayersMap, Team, Player } from '../types'
 import { TeamColorInjector } from '../components/TeamColorInjector'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { playerOnTeam } from '../allstar'
 
 interface Props {
   game: GameMeta
@@ -12,12 +14,17 @@ interface Props {
 export function StatCardScene({ game, teams, players }: Props) {
   const homeTeam = teams[game.homeTeamId]
   const awayTeam = teams[game.awayTeamId]
+  const allstarRosters = useAllstarRosters()
 
   const byAvgDesc = ([, a]: [string, { stats: { hitting?: { avg?: number } } }], [, b]: [string, { stats: { hitting?: { avg?: number } } }]) =>
     (b.stats.hitting?.avg ?? -1) - (a.stats.hitting?.avg ?? -1)
 
-  const homePlayers = Object.entries(players).filter(([, p]) => p.teamId === game.homeTeamId && !p.isSub).sort(byAvgDesc)
-  const awayPlayers = Object.entries(players).filter(([, p]) => p.teamId === game.awayTeamId && !p.isSub).sort(byAvgDesc)
+  const homePlayers = Object.entries(players).filter(([id, p]) => playerOnTeam(id, p, game.homeTeamId, allstarRosters) && !p.isSub).sort(byAvgDesc)
+  const awayPlayers = Object.entries(players).filter(([id, p]) => playerOnTeam(id, p, game.awayTeamId, allstarRosters) && !p.isSub).sort(byAvgDesc)
+
+  // All-star: show each player's league-team logo (who they're representing)
+  const leagueLogoFor = (gameTeamId: string) => ([, p]: [string, Player]) =>
+    p.teamId !== gameTeamId ? teams[p.teamId]?.logoUrl : undefined
 
   const awayColor = awayTeam?.primaryColor ?? '#c0392b'
   const homeColor = homeTeam?.primaryColor ?? '#1a3a6b'
@@ -39,9 +46,9 @@ export function StatCardScene({ game, teams, players }: Props) {
 
       {/* Two-column layout */}
       <div className="relative z-10 flex w-full h-full gap-6 px-12 py-10">
-        <TeamColumn team={awayTeam} players={awayPlayers} side="away" />
+        <TeamColumn team={awayTeam} players={awayPlayers} side="away" leagueLogoFor={leagueLogoFor(game.awayTeamId)} />
         <div className="w-px bg-white/20 self-stretch" />
-        <TeamColumn team={homeTeam} players={homePlayers} side="home" />
+        <TeamColumn team={homeTeam} players={homePlayers} side="home" leagueLogoFor={leagueLogoFor(game.homeTeamId)} />
       </div>
     </div>
   )
@@ -80,10 +87,12 @@ function TeamColumn({
   team,
   players,
   side,
+  leagueLogoFor,
 }: {
   team?: Team
   players: [string, Player][]
   side: 'away' | 'home'
+  leagueLogoFor: (entry: [string, Player]) => string | undefined
 }) {
   const headerX = side === 'away' ? -80 : 80
   const rowXBase = side === 'away' ? -120 : 120
@@ -151,8 +160,11 @@ function TeamColumn({
             animate={{ x: 0, opacity: 1 }}
             transition={{ type: 'spring', damping: 20, stiffness: 260, delay: 0.5 + i * 0.06 }}
           >
-            <span className="col-span-1 text-white font-semibold text-lg truncate" style={{ fontFamily: 'var(--font-ui)' }}>
-              {player.name}
+            <span className="col-span-1 flex items-center gap-2 text-white font-semibold text-lg truncate" style={{ fontFamily: 'var(--font-ui)' }}>
+              {leagueLogoFor([id, player]) && (
+                <img src={leagueLogoFor([id, player])} alt="" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
+              )}
+              <span className="truncate">{player.name}</span>
             </span>
             <span className="text-center text-white font-bold text-xl" style={{ fontFamily: 'var(--font-score)' }}>
               {player.stats.hitting?.avg !== undefined ? player.stats.hitting.avg.toFixed(3).replace(/^0/, '') : '---'}

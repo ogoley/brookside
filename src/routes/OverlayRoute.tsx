@@ -7,8 +7,9 @@ import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { useStandings } from '../hooks/useStandings'
-import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene } from '../scenes'
+import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene } from '../scenes'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
+import { isExhibitionGame, ALLSTAR_LOGO_URL } from '../allstar'
 
 function OverlayContent() {
   const { game } = useGameData()
@@ -100,6 +101,18 @@ function OverlayContent() {
             <InsightsScene insights={overlay.insights} />
           </motion.div>
         )}
+        {sceneKey === 'allstarLineups' && (
+          <motion.div
+            key="allstarLineups"
+            className="absolute inset-0"
+            initial={{ y: '-100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+          >
+            <AllStarLineupScene game={game} teams={teams} players={players} />
+          </motion.div>
+        )}
         {sceneKey === 'idle' && (
           <motion.div
             key="idle"
@@ -125,6 +138,25 @@ function OverlayContent() {
             right: 32,
             width: 96,
             height: 96,
+            objectFit: 'contain',
+            opacity: 0.7,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* All-Star Weekend watermark — appears automatically whenever an
+          exhibition matchup is on the scorebug, on any overlay route.
+          Top-left: bottom-left would collide with the batter stat strip. */}
+      {isExhibitionGame(game, teams) && (
+        <img
+          src={ALLSTAR_LOGO_URL}
+          alt=""
+          style={{
+            position: 'absolute',
+            top: 24,
+            left: 32,
+            height: 92,
             objectFit: 'contain',
             opacity: 0.7,
             pointerEvents: 'none',

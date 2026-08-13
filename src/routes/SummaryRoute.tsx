@@ -6,6 +6,8 @@ import { AuthStatus } from '../components/AuthStatus'
 import { useGames } from '../hooks/useGames'
 import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { playerOnTeam } from '../allstar'
 import { computeGameStats } from '../scoring/engine'
 import type { AtBatRecord } from '../types'
 
@@ -78,6 +80,7 @@ export function SummaryRoute() {
   const { games, loading: gamesLoading } = useGames()
   const { teams } = useTeams()
   const { players } = usePlayers()
+  const allstarRosters = useAllstarRosters()
 
   const [selectedVenue, setSelectedVenue] = useState<VenueId>('soccer_city')
   const [selectedDate, setSelectedDate] = useState<string>('')
@@ -118,8 +121,7 @@ export function SummaryRoute() {
     for (const pid of playerIds) {
       const stats = computeGameStats(atBats, pid)
       const player = players[pid]
-      const teamId = player?.teamId
-      const team: 'away' | 'home' = teamId === homeTeamId ? 'home' : 'away'
+      const team: 'away' | 'home' = playerOnTeam(pid, player, homeTeamId, allstarRosters) ? 'home' : 'away'
       const name = player?.name ?? pid
 
       const line: PlayerLine = { name, team }

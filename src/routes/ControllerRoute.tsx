@@ -11,6 +11,8 @@ import { useOverlayState } from '../hooks/useOverlayState'
 import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { useGames } from '../hooks/useGames'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { playerOnTeam, isExhibitionGame, isExhibitionTeam, ALLSTAR_LOGO_URL } from '../allstar'
 import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
 import type { SceneName, TimerState, AtBatRecord } from '../types'
 import { computeFinalization } from '../scoring/finalization'
@@ -21,17 +23,24 @@ const SCENES: { id: SceneName; label: string }[] = [
   { id: 'matchup', label: 'Matchup' },
   { id: 'standings', label: 'Standings' },
   { id: 'leaderboard', label: 'Leaders' },
+  { id: 'allstarLineups', label: '⭐ Lineups' },
   { id: 'idle', label: 'Idle' },
 ]
 
 
-export function ControllerRoute() {
+// allstar mode (/allstar-controller): same controls, but team pickers offer ONLY
+// Team Rist / Team Hiller, the live-game list shows only exhibition games, and a
+// one-tap setup banner appears until the scorebug is on the all-star matchup.
+// Season mode (/controller) is the inverse: all-star teams and exhibition games
+// are hidden so nobody accidentally runs the exhibition from the season panel.
+export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
   const { game } = useGameData()
   const { teams } = useTeams()
   const { overlay } = useOverlayState()
   const { players } = usePlayers()
   const { matchup } = useMatchup()
   const { games } = useGames()
+  const allstarRosters = useAllstarRosters()
 
   const [dismissDelay, setDismissDelay] = useState(20000)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -401,17 +410,31 @@ export function ControllerRoute() {
   const homeTeam = teams[game.homeTeamId]
   const awayTeam = teams[game.awayTeamId]
 
+  // Mode-scoped pickers: all-star panel offers only the two all-star teams,
+  // season panel hides them (and vice versa for the live-game list).
+  const pickerTeams = Object.fromEntries(
+    Object.entries(teams).filter(([id]) => isExhibitionTeam(id, teams) === allstar)
+  )
+  const pickerGames = games.filter(({ game: g }) => !g.finalized && isExhibitionGame(g, teams) === allstar)
+  const allstarTeamsSeeded = Object.keys(pickerTeams).length >= 2
+  const allstarMatchupSet = isExhibitionTeam(game.homeTeamId, teams) && isExhibitionTeam(game.awayTeamId, teams)
+    && game.homeTeamId !== game.awayTeamId
+
+  const setAllstarMatchup = (awayTeamId: string, homeTeamId: string) => {
+    update(ref(db, 'game/meta'), { awayTeamId, homeTeamId })
+  }
+
   const battingTeamId = game.isTopInning ? game.awayTeamId : game.homeTeamId
   const battingTeamObj = game.isTopInning ? awayTeam : homeTeam
 
   const fieldingTeamId = game.isTopInning ? game.homeTeamId : game.awayTeamId
 
   const matchupBatterPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === battingTeamId && !p.isSub)
+    .filter(([id, p]) => playerOnTeam(id, p, battingTeamId, allstarRosters) && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const matchupPitcherPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === fieldingTeamId && !p.isSub)
+    .filter(([id, p]) => playerOnTeam(id, p, fieldingTeamId, allstarRosters) && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const selectBatter = (playerId: string) => {
@@ -430,7 +453,7 @@ export function ControllerRoute() {
       return
     }
     const pitcher = players[playerId]
-    const isHome = pitcher?.teamId === game.homeTeamId
+    const isHome = playerOnTeam(playerId, pitcher, game.homeTeamId, allstarRosters)
     update(ref(db, 'game/matchup'), {
       pitcherId: playerId,
       ...(isHome ? { lastPitcherHome: playerId } : { lastPitcherAway: playerId }),
@@ -446,11 +469,14 @@ export function ControllerRoute() {
       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <HomeButton />
+          {allstar && (
+            <img src={ALLSTAR_LOGO_URL} alt="" style={{ height: 44, flexShrink: 0 }} />
+          )}
           <h1
             className="text-white text-2xl font-black uppercase tracking-widest truncate"
             style={{ fontFamily: 'var(--font-score)' }}
           >
-            Broadcast Control
+            {allstar ? 'All-Star Control' : 'Broadcast Control'}
           </h1>
         </div>
         <div className="flex items-center gap-3">
@@ -467,13 +493,55 @@ export function ControllerRoute() {
         </div>
       </div>
 
+      {/* ── ALL-STAR SETUP BANNER ── */}
+      {allstar && !allstarTeamsSeeded && (
+        <div className="mb-4 rounded-2xl px-4 py-3" style={{ background: '#1c1010', border: '1px solid #7f1d1d' }}>
+          <p className="text-red-300 text-sm font-semibold text-center">
+            All-star teams aren't in the database yet — go to{' '}
+            <Link to="/config" className="underline">Config → All-Star Game</Link> and hit
+            "Create All-Star Teams + Rosters".
+          </p>
+        </div>
+      )}
+      {allstar && allstarTeamsSeeded && !allstarMatchupSet && (() => {
+        // Derived from whichever exhibition teams are seeded — works for any
+        // future year's captains without touching this code.
+        const [a, b] = Object.entries(pickerTeams)
+        return (
+          <div
+            className="mb-4 rounded-2xl px-4 py-3 flex flex-col sm:flex-row items-center justify-center gap-3"
+            style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)' }}
+          >
+            <span className="text-sm font-bold uppercase tracking-wider" style={{ color: '#fbbf24', fontFamily: 'var(--font-score)' }}>
+              ⭐ Put the All-Star Game on the scorebug:
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAllstarMatchup(a[0], b[0])}
+                className="h-11 px-4 rounded-xl font-bold text-sm uppercase tracking-wider"
+                style={{ background: a[1].primaryColor, color: '#fff' }}
+              >
+                {a[1].shortName} @ {b[1].shortName}
+              </button>
+              <button
+                onClick={() => setAllstarMatchup(b[0], a[0])}
+                className="h-11 px-4 rounded-xl font-bold text-sm uppercase tracking-wider"
+                style={{ background: b[1].primaryColor, color: '#fff' }}
+              >
+                {b[1].shortName} @ {a[1].shortName}
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ── INTERACTIVE SCOREBOARD (full width, top) ── */}
       <div className="mb-4">
         <InteractiveScoreboard
           game={game}
           homeTeam={homeTeam}
           awayTeam={awayTeam}
-          teams={teams}
+          teams={pickerTeams}
           onSetOuts={setOuts}
           onToggleBase={toggleBase}
           onAdvanceHalfInning={advanceHalfInning}
@@ -792,7 +860,7 @@ export function ControllerRoute() {
                   style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
                 >
                   <option value="">— None —</option>
-                  {games.filter(({ game: g }) => !g.finalized).map(({ gameId, game: g }) => {
+                  {pickerGames.map(({ gameId, game: g }) => {
                     const home = teams[g.homeTeamId]?.shortName ?? g.homeTeamId
                     const away = teams[g.awayTeamId]?.shortName ?? g.awayTeamId
                     return (
@@ -807,7 +875,11 @@ export function ControllerRoute() {
                 )}
               </div>
 
-              {!confirmFinalize ? (
+              {isExhibitionGame(game, teams) ? (
+                <p className="text-xs text-center font-semibold rounded-xl py-3 px-3" style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}>
+                  ⭐ All-Star exhibition — this game is never finalized and won't touch season stats.
+                </p>
+              ) : !confirmFinalize ? (
                 <TouchBtn
                   onClick={() => setConfirmFinalize(true)}
                   className="h-11 text-sm font-bold"

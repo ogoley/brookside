@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { GameMeta, Team, TimerState, MatchupState, PlayersMap } from '../types'
 import { BaseDiamond } from './BaseDiamond'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { playerOnTeam } from '../allstar'
 
 interface Props {
   game: GameMeta
@@ -34,12 +36,21 @@ function useCountdown(timer?: TimerState): string {
 }
 
 function WiffleBall() {
+  // Traced from the approved Noun Project reference (see ALLSTAR.md): a
+  // perspective band of six slots arcing across the sphere. Same geometry as
+  // the all-star logos — drawn in reference units, scaled down by the viewBox.
   return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="11" cy="11" r="10" fill="white" stroke="rgba(0,0,0,0.2)" strokeWidth="1" />
-      <circle cx="8"  cy="9"  r="1.8" fill="rgba(0,0,0,0.18)" />
-      <circle cx="14" cy="9"  r="1.8" fill="rgba(0,0,0,0.18)" />
-      <circle cx="11" cy="14" r="1.8" fill="rgba(0,0,0,0.18)" />
+    <svg width="22" height="22" viewBox="95 50 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <clipPath id="wiffleNotchClip"><circle cx="345" cy="300" r="245" /></clipPath>
+      <circle cx="345" cy="300" r="240" fill="white" stroke="rgba(0,0,0,0.2)" strokeWidth="10" />
+      <g clipPath="url(#wiffleNotchClip)" fill="rgba(0,0,0,0.4)">
+        <rect x="302" y="52.5" width="66" height="19" rx="9.5" transform="rotate(8 335 62)" />
+        <rect x="172" y="104" width="112" height="36" rx="18" transform="rotate(-19 228 122)" />
+        <rect x="152" y="235" width="132" height="54" rx="27" transform="rotate(-33 218 262)" />
+        <rect x="250" y="339" width="136" height="58" rx="29" transform="rotate(-57 318 368)" />
+        <rect x="418" y="374" width="100" height="48" rx="24" transform="rotate(-73 468 398)" />
+        <rect x="509" y="317.5" width="114" height="25" rx="12.5" transform="rotate(-86 566 330)" />
+      </g>
     </svg>
   )
 }
@@ -120,6 +131,7 @@ function PlayerNotch({
 
 export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true, matchup, players, statOverlayVisible }: Props) {
   const countdown = useCountdown(timer)
+  const allstarRosters = useAllstarRosters()
 
   const awayPrimary = 'var(--team-away-primary)'
   const awaySecondary = 'var(--team-away-secondary)'
@@ -134,9 +146,11 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true,
   const pitcher = matchup?.pitcherId ? players?.[matchup.pitcherId] : undefined
 
   // Batter notch: only show after stat overlay dismisses
-  const showBatterNotch = !!batter && !statOverlayVisible && batter.teamId === battingTeamId
+  const showBatterNotch = !!batter && !statOverlayVisible
+    && playerOnTeam(matchup!.batterId!, batter, battingTeamId, allstarRosters)
   // Pitcher notch: only show if pitcher is on the fielding team
-  const showPitcherNotch = !!pitcher && pitcher.teamId === fieldingTeamId
+  const showPitcherNotch = !!pitcher
+    && playerOnTeam(matchup!.pitcherId!, pitcher, fieldingTeamId, allstarRosters)
 
   const awayIsBatting = game.isTopInning
   const awayNotch = awayIsBatting

@@ -10,6 +10,7 @@ import { useTeams } from '../hooks/useTeams'
 import { useGameStats } from '../hooks/useGameStats'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { computeFinalization } from '../scoring/finalization'
+import { isExhibitionGame } from '../allstar'
 import type { GameSummary, GameRecord, PlayersMap, TeamsMap, AtBatRecord } from '../types'
 import { AUTO_OUT_BATTER_ID } from '../types'
 
@@ -1294,6 +1295,10 @@ export function GameEditorRoute() {
    */
   const refinalizeFromAtBats = async () => {
     if (!selectedGameId || !selectedGame) return
+    if (isExhibitionGame(selectedGame, teams)) {
+      setRefinalizeMsg({ text: 'All-Star exhibition — never finalized, never written to season stats.', ok: false })
+      return
+    }
     setRefinalizing(true)
     setRefinalizeMsg(null)
     try {

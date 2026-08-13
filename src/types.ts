@@ -23,6 +23,9 @@ export interface Team {
   primaryColor: string
   secondaryColor: string
   logoUrl: string
+  /** Exhibition (all-star) team — hidden from season pickers; games involving
+   *  it are never finalized into season stats. */
+  isExhibition?: boolean
 }
 
 export interface TeamsMap {
@@ -79,7 +82,7 @@ export interface InsightsState {
 }
 
 export interface OverlayState {
-  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'idle'
+  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'allstarLineups' | 'idle'
   statOverlay: StatOverlayState
   timer: TimerState
   homerun: HomrunState
@@ -88,7 +91,7 @@ export interface OverlayState {
   scoreboardScale: number
 }
 
-export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'idle'
+export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'allstarLineups' | 'idle'
 
 export interface HittingStats {
   gp?: number       // games played
@@ -228,6 +231,9 @@ export interface GameRecord {
   awayTeamId: string
   date: string              // "YYYY-MM-DD" in Eastern Time
   isStreamed: boolean       // true = mirrors state to /game/meta for scorebug
+  /** Denormalized at creation when either team is an exhibition team; makes
+   *  exhibition detection survive team deletion. */
+  isExhibition?: boolean
   finalized: boolean
   finalizedAt?: number
   startedAt: number         // epoch ms — used for 90-min game completion check
@@ -292,6 +298,17 @@ export interface DerbyResult {
   finalized: boolean
 }
 
+// /derby/archive/{year} — frozen snapshot of a past season's derby, written by
+// the admin "Archive & reset" action. Lives under /derby so it shares that
+// path's open-write rule (same accepted risk as the rest of the derby).
+export interface DerbyArchiveEntry {
+  archivedAt: number
+  entries?: Record<string, DerbyEntry>
+  result?: DerbyResult
+  disabledPlayers?: Record<string, true>
+  broadcast?: DerbyBroadcastState
+}
+
 // /derby
 export interface DerbyState {
   entries?: Record<string, DerbyEntry>
@@ -299,4 +316,34 @@ export interface DerbyState {
   // playerIds marked as not present at the derby — hidden from the public
   // leaders grid and never selectable in entry/result dropdowns
   disabledPlayers?: Record<string, true>
+  broadcast?: DerbyBroadcastState
+  archive?: Record<string, DerbyArchiveEntry>
+}
+
+// ── Home Run Derby broadcast (overlay + controller) ──────────────────────────
+
+export type DerbyRoundNum = 1 | 2 | 3
+export type DerbyRoundKey = 'r1' | 'r2' | 'r3'
+
+// A missing key means the player hasn't hit in that round yet — 0 is a real
+// recorded result and must never be conflated with "not yet".
+export interface DerbyRoundScores {
+  r1?: number
+  r2?: number
+  r3?: number
+}
+
+export type DerbyBroadcastView = 'hidden' | 'player' | 'leaderboard' | 'upNext'
+
+// /derby/broadcast — written by /derby-controller, read by /derby-overlay.
+// Lives under /derby so it shares that path's open write rule (front-end
+// password gate only, same accepted risk as the 50/50 page).
+export interface DerbyBroadcastState {
+  view: DerbyBroadcastView
+  activeRound: DerbyRoundNum        // the round currently being hit
+  leaderboardRound: DerbyRoundNum   // which round the leaderboard view shows
+  featuredPlayerId: string | null   // who the player card shows
+  battingOrder: string[]            // playerIds in hitting order for the active round
+  currentBatterIndex: number        // pointer into battingOrder
+  scores: Record<string, DerbyRoundScores>  // playerId → per-round HR
 }

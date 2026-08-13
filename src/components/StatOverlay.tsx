@@ -1,5 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { useLivePlayerStats } from '../hooks/useLivePlayerStats'
+import { useGameData } from '../hooks/useGameData'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { effectiveGameTeamId, isExhibitionTeam } from '../allstar'
 import type { StatOverlayState, PlayersMap, TeamsMap } from '../types'
 
 interface Props {
@@ -12,8 +15,20 @@ interface Props {
 export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
   const { visible, playerId, type } = statOverlay
 
+  const { game } = useGameData()
+  const allstarRosters = useAllstarRosters()
+
   const player = players[playerId]
-  const team = player ? teams[player.teamId] : undefined
+  // For all-star games the accent team is the player's all-star side, not
+  // their league team — effectiveGameTeamId falls back to player.teamId
+  // whenever the game teams have no roster entry.
+  const gameTeamId = player
+    ? effectiveGameTeamId(playerId, player, game.homeTeamId, game.awayTeamId, allstarRosters)
+    : undefined
+  const team = player ? teams[gameTeamId ?? player.teamId] : undefined
+  // All-star: the player's league team differs from the team they're playing
+  // for tonight — show who they're representing.
+  const leagueTeam = player && gameTeamId && gameTeamId !== player.teamId ? teams[player.teamId] : undefined
   const isPitcher = type === 'pitcher'
   const primary = team?.primaryColor ?? '#1a3a6b'
   const secondary = team?.secondaryColor ?? '#ffffff'
@@ -107,7 +122,7 @@ export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
                 animate={{ x: 0, opacity: 0.9 }}
                 transition={{ delay: 0.18, duration: 0.3, ease: 'easeOut' }}
               >
-                {team?.shortName ?? ''} · {isPitcher ? 'Pitcher' : 'Batter'}
+                {(isExhibitionTeam(gameTeamId, teams) ? team?.name : team?.shortName) ?? ''} · {isPitcher ? 'Pitcher' : 'Batter'}
               </motion.p>
               <motion.p
                 className="uppercase font-black leading-none"
@@ -118,6 +133,24 @@ export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
               >
                 {player.name}
               </motion.p>
+              {leagueTeam && (
+                <motion.div
+                  className="flex items-center gap-3 mt-3"
+                  initial={{ x: -40, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.32, duration: 0.3, ease: 'easeOut' }}
+                >
+                  {leagueTeam.logoUrl && (
+                    <img src={leagueTeam.logoUrl} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} />
+                  )}
+                  <span
+                    className="uppercase leading-none font-bold"
+                    style={{ fontFamily: 'var(--font-score)', color: 'rgba(255,255,255,0.85)', fontSize: 28, letterSpacing: '0.08em' }}
+                  >
+                    Representing the {leagueTeam.name}
+                  </span>
+                </motion.div>
+              )}
             </div>
 
             {/* Divider */}

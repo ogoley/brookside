@@ -11,6 +11,8 @@ import { useGames } from '../hooks/useGames'
 import { useGameRecord } from '../hooks/useGameRecord'
 import { useGameLineup } from '../hooks/useGameLineup'
 import { useSubPitchers } from '../hooks/useSubPitchers'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { playerOnTeam, buildPlayerTeamMap, isExhibitionGame, isExhibitionTeam } from '../allstar'
 import { applyAtBat, recomputeGameState, computeLineupPosition, type PlayLogEntry, type RecomputeGameResult } from '../scoring/engine'
 import { computeFinalization } from '../scoring/finalization'
 import { generateGameId, getEasternDateString } from '../scoring/gameId'
@@ -467,6 +469,10 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
         awayTeamId,
         date: getEasternDateString(),
         isStreamed,
+        // Stamped at creation so exhibition detection survives team deletion
+        ...(isExhibitionTeam(homeTeamId, teams) || isExhibitionTeam(awayTeamId, teams)
+          ? { isExhibition: true }
+          : {}),
         finalized: false,
         startedAt: now,
         inning: 1,
@@ -683,8 +689,9 @@ function LineupBuilder({ teamId, players, lineup, onChange }: {
   const [customSubName, setCustomSubName] = useState('')
   const [showCustomSub, setShowCustomSub] = useState(false)
 
+  const allstarRosters = useAllstarRosters()
   const teamPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === teamId && !p.isSub)
+    .filter(([id, p]) => playerOnTeam(id, p, teamId, allstarRosters) && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const lineupIds = lineup.map(e => e.playerId)
@@ -854,6 +861,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   const { game, loading: gameLoading } = useGameRecord(gameId)
   const { atBats } = useGameStats(gameId)
   const { liveRunners } = useLiveRunners(gameId)
+  const allstarRosters = useAllstarRosters()
 
   // Determine batting/fielding teams
   const inning = game?.inning ?? 1
@@ -1223,6 +1231,10 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
 
   const finalizeGame = async () => {
     if (!gameId || !game) return
+    if (isExhibitionGame(game, teams)) {
+      alert('All-Star exhibition — this game is never finalized and does not count toward season stats.')
+      return
+    }
     setFinalizing(true)
     try {
       const gamesSnap = await get(ref(db, 'games'))
@@ -1377,8 +1389,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     // Recompute lineup positions for both teams from the full at-bat list.
     // Subs are real slots in the rotation, so we pass the full lineup orders.
     const allAtBatList = Object.values(recompute.recomputedAtBats)
-    const playerTeamMap: Record<string, string> = {}
-    for (const [id, p] of Object.entries(players)) playerTeamMap[id] = p.teamId
+    const playerTeamMap = buildPlayerTeamMap(players, game.homeTeamId, game.awayTeamId, allstarRosters)
     const homeLineup = game.homeTeamId === battingTeamId ? battingLineup : fieldingLineup
     const awayLineup = game.awayTeamId === battingTeamId ? battingLineup : fieldingLineup
     const homeOrder = homeLineup.map(e => e.playerId)
@@ -1531,7 +1542,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   // Roster pickers exclude isSub players — those come through their own
   // "Subs" optgroup sourced from the per-game subPitchers map.
   const pitcherOptions = Object.entries(players)
-    .filter(([, p]) => p.teamId === fieldingTeamId && !p.isSub)
+    .filter(([id, p]) => playerOnTeam(id, p, fieldingTeamId, allstarRosters) && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
   const fieldingSubPitchers: SubPitcherEntry[] = Object.values(subPitchers[fieldingTeamId] ?? {})
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -1556,7 +1567,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   // ── Batter options ───────────────────────────────────────────────────────
   const regularBatters = battingLineup.filter(e => !e.isSub).map(e => e.playerId)
   const subBatters = battingLineup.filter(e => e.isSub).map(e => e.playerId)
-  const allTeamPlayers = Object.entries(players).filter(([, p]) => p.teamId === battingTeamId && !p.isSub)
+  const allTeamPlayers = Object.entries(players).filter(([id, p]) => playerOnTeam(id, p, battingTeamId, allstarRosters) && !p.isSub)
   const hasLineup = battingLineup.length > 0
 
   if (gameLoading) {
@@ -2266,7 +2277,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
                 <option value="">— Select pitcher —</option>
                 <optgroup label="Roster">
                   {Object.entries(players)
-                    .filter(([, p]) => p.teamId === nextSubPitcherTeamId && !p.isSub)
+                    .filter(([id, p]) => playerOnTeam(id, p, nextSubPitcherTeamId, allstarRosters) && !p.isSub)
                     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
                     .map(([id, p]) => (
                       <option key={id} value={id}>{p.name}</option>
@@ -2341,7 +2352,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
 
         const renderSide = (teamId: string) => {
           const rows = Object.entries(tally)
-            .filter(([id]) => players[id]?.teamId === teamId)
+            .filter(([id]) => playerOnTeam(id, players[id], teamId, allstarRosters))
             .sort(([, a], [, b]) => b.pa - a.pa)
           if (rows.length === 0) return <p className="text-white/20 text-xs text-center py-2">No at-bats yet</p>
           return (
@@ -2575,6 +2586,7 @@ function AtBatEditModal({
   onClose: () => void
   applyRecompute: (recompute: RecomputeGameResult, deletedIds?: string[]) => Promise<void>
 }) {
+  const allstarRosters = useAllstarRosters()
   const [batterId, setBatterId] = useState(ab.batterId)
   const [pitcherId, setPitcherId] = useState(ab.pitcherId)
   const [result, setResult] = useState<AtBatResult>(ab.result)
@@ -2596,10 +2608,10 @@ function AtBatEditModal({
   const abLineup: GameLineup = ab.isTopInning === currentIsTop ? battingLineup : fieldingLineup
 
   const batterOptions = Object.entries(players)
-    .filter(([, p]) => p.teamId === abBattingTeamId && !p.isSub)
+    .filter(([id, p]) => playerOnTeam(id, p, abBattingTeamId, allstarRosters) && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
   const pitcherOptions = Object.entries(players)
-    .filter(([, p]) => p.teamId === abFieldingTeamId && !p.isSub)
+    .filter(([id, p]) => playerOnTeam(id, p, abFieldingTeamId, allstarRosters) && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
   const fieldingSubPitchers: SubPitcherEntry[] = Object.values(subPitchers[abFieldingTeamId] ?? {})
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -3349,6 +3361,7 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
   const { lineup: homeLineup } = useGameLineup(gameId, homeTeamId)
   const { lineup: awayLineup } = useGameLineup(gameId, awayTeamId)
   const { atBats } = useGameStats(gameId)
+  const allstarRosters = useAllstarRosters()
 
   const [editingSide, setEditingSide] = useState<'home' | 'away'>('home')
   const [saving, setSaving] = useState(false)
@@ -3363,7 +3376,7 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
   }, [editingSide, homeLineup, awayLineup])
 
   const teamPlayers = Object.entries(players)
-    .filter(([, p]) => p.teamId === teamId && !p.isSub)
+    .filter(([id, p]) => playerOnTeam(id, p, teamId, allstarRosters) && !p.isSub)
     .sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
   const inLineup = new Set(localLineup.map(e => e.playerId))
@@ -3402,8 +3415,7 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
       // so removals/reorders immediately re-sync the pointer. Subs count
       // as real slots, so we pass the full order.
       const lineupOrder = localLineup.map(e => e.playerId)
-      const playerTeamMap: Record<string, string> = {}
-      for (const [id, p] of Object.entries(players)) playerTeamMap[id] = p.teamId
+      const playerTeamMap = buildPlayerTeamMap(players, homeTeamId, awayTeamId, allstarRosters)
       const allAtBatList = Object.values(atBats)
       const nextPos = lineupOrder.length > 0
         ? computeLineupPosition(allAtBatList, teamId, playerTeamMap, lineupOrder)

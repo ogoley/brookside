@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { ref, push, set, remove } from 'firebase/database'
+import { ref, push, set, remove, update } from 'firebase/database'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import { HomeButton } from '../components/HomeButton'
 import { AuthStatus } from '../components/AuthStatus'
@@ -9,7 +9,9 @@ import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { TeamPillPreview } from '../components/TeamPillPreview'
-import type { Team, Player } from '../types'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { ALLSTAR_SEED_TEAMS, ALLSTAR_SEED_ROSTERS, ALLSTAR_TEAM_IDS } from '../allstar'
+import type { Team, Player, PlayersMap, TeamsMap } from '../types'
 
 function deleteStorageLogo(url: string) {
   try {
@@ -116,6 +118,9 @@ export function ConfigRoute() {
           </Field>
         </div>
       </div>
+
+      {/* ── All-Star Game ── */}
+      <AllstarSection teams={teams} players={players} />
 
       <div className="flex flex-col gap-3" style={{ maxWidth: 640 }}>
         {/* Empty state */}
@@ -672,6 +677,127 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {label}
       </label>
       {children}
+    </div>
+  )
+}
+
+/* ── All-Star Game seeding ── */
+
+function AllstarSection({ teams, players }: { teams: TeamsMap; players: PlayersMap }) {
+  const rosters = useAllstarRosters()
+  const [busy, setBusy] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+
+  const seeded = ALLSTAR_TEAM_IDS.every(id => !!teams[id]) && !!rosters
+
+  const seed = async () => {
+    setBusy(true)
+    try {
+      const updates: Record<string, unknown> = {}
+      for (const id of ALLSTAR_TEAM_IDS) {
+        updates[`teams/${id}`] = ALLSTAR_SEED_TEAMS[id]
+        updates[`config/allstar/rosters/${id}`] = ALLSTAR_SEED_ROSTERS[id]
+      }
+      await update(ref(db), updates)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeAllstar = async () => {
+    setBusy(true)
+    try {
+      const updates: Record<string, unknown> = { 'config/allstar': null }
+      for (const id of ALLSTAR_TEAM_IDS) updates[`teams/${id}`] = null
+      await update(ref(db), updates)
+      setConfirmRemove(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const missing = ALLSTAR_TEAM_IDS.flatMap(id =>
+    ALLSTAR_SEED_ROSTERS[id].filter(pid => !players[pid]).map(pid => `${id}: ${pid}`))
+
+  return (
+    <div className="flex flex-col gap-3 mb-8" style={{ maxWidth: 640 }}>
+      <h2 className="text-white/50 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
+        All-Star Game
+      </h2>
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <p className="text-white/50 text-xs leading-relaxed">
+          Creates <span className="text-white/80 font-semibold">Team Rist</span> (red) and{' '}
+          <span className="text-white/80 font-semibold">Team Hiller</span> (blue) with their drafted
+          rosters. Pick them as home/away on the controller or scorekeeper like any other matchup.
+          All-star games are exhibitions: they can't be finalized and never touch season stats.
+        </p>
+
+        {missing.length > 0 && (
+          <p className="text-xs font-semibold" style={{ color: '#f87171' }}>
+            Unknown player ids (fix in src/allstar.ts): {missing.join(', ')}
+          </p>
+        )}
+
+        {!seeded ? (
+          <button
+            onClick={seed}
+            disabled={busy}
+            className="h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
+            style={{ background: '#16a34a', color: '#fff' }}
+          >
+            {busy ? 'Seeding…' : 'Create All-Star Teams + Rosters'}
+          </button>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {ALLSTAR_TEAM_IDS.map(id => (
+                <div key={id} className="rounded-xl p-3 flex flex-col gap-1.5" style={{ background: '#1c2333', border: `1px solid ${ALLSTAR_SEED_TEAMS[id].primaryColor}55` }}>
+                  <div className="flex items-center gap-2">
+                    <img src={teams[id]?.logoUrl} alt="" style={{ width: 34, height: 34, objectFit: 'contain' }} />
+                    <span className="text-white font-bold text-sm" style={{ fontFamily: 'var(--font-score)', letterSpacing: '0.04em' }}>
+                      {teams[id]?.name}
+                    </span>
+                  </div>
+                  <ol className="text-white/60 text-xs leading-relaxed pl-4" style={{ listStyle: 'decimal' }}>
+                    {(rosters?.[id] ?? []).map(pid => (
+                      <li key={pid}>{players[pid]?.name ?? <span style={{ color: '#f87171' }}>{pid} (missing)</span>}</li>
+                    ))}
+                  </ol>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={seed}
+                disabled={busy}
+                className="flex-1 h-10 rounded-xl font-semibold text-xs uppercase tracking-wider"
+                style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                Re-seed from code
+              </button>
+              {!confirmRemove ? (
+                <button
+                  onClick={() => setConfirmRemove(true)}
+                  disabled={busy}
+                  className="h-10 px-4 rounded-xl font-semibold text-xs uppercase tracking-wider"
+                  style={{ background: 'rgba(127,29,29,0.3)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+                >
+                  Remove
+                </button>
+              ) : (
+                <button
+                  onClick={removeAllstar}
+                  disabled={busy}
+                  className="h-10 px-4 rounded-xl font-bold text-xs uppercase tracking-wider"
+                  style={{ background: '#b91c1c', color: '#fff' }}
+                >
+                  Confirm remove
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

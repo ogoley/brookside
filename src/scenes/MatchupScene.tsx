@@ -2,6 +2,8 @@ import { useMemo, useState, useEffect } from 'react'
 import { motion, AnimatePresence, usePresence } from 'framer-motion'
 import { computeGameStats } from '../scoring/engine'
 import { useGameStats } from '../hooks/useGameStats'
+import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { effectiveGameTeamId } from '../allstar'
 import type { GameMeta, TeamsMap, PlayersMap, MatchupState, HittingStats, PitchingStats } from '../types'
 import { TeamColorInjector } from '../components/TeamColorInjector'
 
@@ -141,11 +143,21 @@ export function MatchupScene({ game, teams, players, matchup }: Props) {
     [atBats],
   )
 
+  const allstarRosters = useAllstarRosters()
   const { batterId, pitcherId } = matchup
   const batter = batterId ? players[batterId] : null
   const pitcher = pitcherId ? players[pitcherId] : null
-  const batterTeam = batter ? teams[batter.teamId] : null
-  const pitcherTeam = pitcher ? teams[pitcher.teamId] : null
+  const batterGameTeamId = batter
+    ? effectiveGameTeamId(batterId!, batter, game.homeTeamId, game.awayTeamId, allstarRosters) ?? batter.teamId
+    : null
+  const pitcherGameTeamId = pitcher
+    ? effectiveGameTeamId(pitcherId!, pitcher, game.homeTeamId, game.awayTeamId, allstarRosters) ?? pitcher.teamId
+    : null
+  const batterTeam = batter ? teams[batterGameTeamId!] : null
+  const pitcherTeam = pitcher ? teams[pitcherGameTeamId!] : null
+  // All-star: league team the player is representing (differs from tonight's team)
+  const batterLeagueTeam = batter && batterGameTeamId !== batter.teamId ? teams[batter.teamId] : null
+  const pitcherLeagueTeam = pitcher && pitcherGameTeamId !== pitcher.teamId ? teams[pitcher.teamId] : null
 
   const batterGameStats = useMemo(
     () => (batterId ? computeGameStats(atBatList, batterId) : null),
@@ -252,6 +264,14 @@ export function MatchupScene({ game, teams, players, matchup }: Props) {
                   {batterTeam?.name ?? ''}
                 </span>
               </div>
+              {batterLeagueTeam && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                  {batterLeagueTeam.logoUrl && <img src={batterLeagueTeam.logoUrl} alt="" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
+                  <span style={{ fontFamily: 'var(--font-score)', fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Representing the {batterLeagueTeam.name}
+                  </span>
+                </div>
+              )}
               <div style={{ fontFamily: 'var(--font-score)', fontSize: 22, fontWeight: 700, color: 'rgba(255,255,255,0.72)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 4 }}>
                 Batter
               </div>
@@ -307,6 +327,14 @@ export function MatchupScene({ game, teams, players, matchup }: Props) {
                   {pitcherTeam?.name ?? ''}
                 </span>
               </div>
+              {pitcherLeagueTeam && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                  {pitcherLeagueTeam.logoUrl && <img src={pitcherLeagueTeam.logoUrl} alt="" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
+                  <span style={{ fontFamily: 'var(--font-score)', fontSize: 16, fontWeight: 700, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Representing the {pitcherLeagueTeam.name}
+                  </span>
+                </div>
+              )}
               <div style={{ fontFamily: 'var(--font-score)', fontSize: 22, fontWeight: 700, color: 'rgba(255,255,255,0.72)', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 4 }}>
                 Pitcher
               </div>
