@@ -97,7 +97,7 @@ at-bat edit modal, both lineup-position computations), SummaryRoute.
    (Roster wrong? Edit `ALLSTAR_SEED_ROSTERS` in `src/allstar.ts`, deploy, hit
    *Re-seed from code*. In-game lineup tweaks don't need that — the scorekeeper
    lineup editor works as usual.)
-2. **Scorekeeper**: New Game → pick Team Rist / Team Hiller → build lineups (the
+2. **Scorekeeper**: New Game → pick Team Risty / Team Hiller → build lineups (the
    player pickers show each all-star roster) → score normally.
 3. **Controller**: link the game as Live Game for the scorebug, run scenes as usual.
    The **⭐ Lineups** scene shows both batting orders with season stats and each
@@ -116,7 +116,7 @@ dropdowns: **Overlays** (Season `/overlay`, Derby `/derby-overlay`, All-Star
 `/allstar-overlay` renders the same `OverlayRoute` as `/overlay` — there is only one
 scorebug state (`/game/meta`), and the overlay reflects whatever the controller puts
 on it. `/allstar-controller` is `ControllerRoute` in **allstar mode** (`allstar`
-prop): team pickers offer ONLY Team Rist / Team Hiller, the live-game dropdown lists
+prop): team pickers offer ONLY Team Risty / Team Hiller, the live-game dropdown lists
 only exhibition games, the header carries the All-Star lockup, and a one-tap setup
 banner ("Rist @ Hiller" / "Hiller @ Rist") appears until the scorebug is on the
 all-star matchup (or a red warning if the teams haven't been seeded). The season

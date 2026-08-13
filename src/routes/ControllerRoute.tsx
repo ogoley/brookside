@@ -29,7 +29,7 @@ const SCENES: { id: SceneName; label: string }[] = [
 
 
 // allstar mode (/allstar-controller): same controls, but team pickers offer ONLY
-// Team Rist / Team Hiller, the live-game list shows only exhibition games, and a
+// Team Risty / Team Hiller, the live-game list shows only exhibition games, and a
 // one-tap setup banner appears until the scorebug is on the all-star matchup.
 // Season mode (/controller) is the inverse: all-star teams and exhibition games
 // are hidden so nobody accidentally runs the exhibition from the season panel.

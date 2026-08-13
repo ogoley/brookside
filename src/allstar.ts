@@ -1,7 +1,7 @@
 import type { Player, PlayersMap, Team, TeamsMap } from './types'
 
 // ── 2026 Brookside All-Star Game ─────────────────────────────────────────────
-// Team Rist and Team Hiller are exhibition teams whose players keep their
+// Team Risty and Team Hiller are exhibition teams whose players keep their
 // regular-season teamId in /players. Membership lives in a roster mapping at
 // /config/allstar/rosters (admin-writable), seeded from the constants below
 // via the "All-Star Game" section in /config. All player-by-team filtering
@@ -16,8 +16,8 @@ export type AllstarRosters = Record<string, string[]>
 
 export const ALLSTAR_SEED_TEAMS: Record<AllstarTeamId, Team> = {
   team_rist: {
-    name: 'Team Rist',
-    shortName: 'RIST',
+    name: 'Team Risty',
+    shortName: 'RISTY',
     primaryColor: '#c8102e',
     secondaryColor: '#ffffff',
     logoUrl: '/logos/team-rist.svg',

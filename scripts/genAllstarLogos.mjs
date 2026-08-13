@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync } from 'fs'
 // ── YEARLY CONFIG ────────────────────────────────────────────────────────────
 const YEAR = 2026
 const TEAMS = [
-  { id: 'team_rist',   banner: 'TEAM RIST',   color: '#c8102e', bannerFontSize: 62, bannerLs: 3 },
+  { id: 'team_rist',   banner: 'TEAM RISTY',  color: '#c8102e', bannerFontSize: 58, bannerLs: 2 },
   { id: 'team_hiller', banner: 'TEAM HILLER', color: '#1e40af', bannerFontSize: 60, bannerLs: 2 },
 ]
 // ─────────────────────────────────────────────────────────────────────────────

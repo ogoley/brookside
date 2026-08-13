@@ -726,7 +726,7 @@ function AllstarSection({ teams, players }: { teams: TeamsMap; players: PlayersM
       </h2>
       <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)' }}>
         <p className="text-white/50 text-xs leading-relaxed">
-          Creates <span className="text-white/80 font-semibold">Team Rist</span> (red) and{' '}
+          Creates <span className="text-white/80 font-semibold">Team Risty</span> (red) and{' '}
           <span className="text-white/80 font-semibold">Team Hiller</span> (blue) with their drafted
           rosters. Pick them as home/away on the controller or scorekeeper like any other matchup.
           All-star games are exhibitions: they can't be finalized and never touch season stats.
