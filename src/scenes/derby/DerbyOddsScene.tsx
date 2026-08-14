@@ -34,7 +34,7 @@ interface Props {
 }
 
 const GOLD = '#fbbf24'
-const PANEL_W = 560
+const PANEL_W = 440
 
 function lastName(name: string) {
   const parts = name.trim().split(/\s+/)
@@ -74,24 +74,24 @@ export function DerbyOddsScene({
       // about 60px tall — the two share this corner now.
       position: 'absolute', top: 108, right: 40, width: PANEL_W,
       background: 'rgba(8,13,24,0.94)',
-      borderRadius: 16,
-      borderRight: `6px solid ${GOLD}`,
-      boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
-      padding: '16px 18px 14px',
+      borderRadius: 13,
+      borderRight: `5px solid ${GOLD}`,
+      boxShadow: '0 14px 40px rgba(0,0,0,0.5)',
+      padding: '12px 14px 11px',
       boxSizing: 'border-box',
       overflow: 'hidden',
     }}>
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
         <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 22, fontWeight: 900,
-          color: GOLD, letterSpacing: '0.14em', textTransform: 'uppercase', lineHeight: 1,
+          fontFamily: 'var(--font-score)', fontSize: 18, fontWeight: 900,
+          color: GOLD, letterSpacing: '0.13em', textTransform: 'uppercase', lineHeight: 1,
         }}>
           50/50 Watch
         </span>
         <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 800,
-          color: 'rgba(255,255,255,0.42)', letterSpacing: '0.14em',
+          fontFamily: 'var(--font-score)', fontSize: 10, fontWeight: 800,
+          color: 'rgba(255,255,255,0.42)', letterSpacing: '0.13em',
           textTransform: 'uppercase', lineHeight: 1,
         }}>
           {ROUND_LABEL[round]} · Live odds
@@ -99,35 +99,35 @@ export function DerbyOddsScene({
       </div>
 
       <div style={{
-        marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        marginTop: 5, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
       }}>
         <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 900,
-          color: '#080d18', background: GOLD, borderRadius: 4, padding: '3px 8px',
+          fontFamily: 'var(--font-score)', fontSize: 10, fontWeight: 900,
+          color: '#080d18', background: GOLD, borderRadius: 3, padding: '2px 6px',
           letterSpacing: '0.1em', textTransform: 'uppercase', lineHeight: 1,
         }}>
           ${toWinners} to the winner
         </span>
         <span style={{
-          fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 600,
+          fontFamily: 'var(--font-ui)', fontSize: 11, fontWeight: 600,
           color: 'rgba(255,255,255,0.5)', lineHeight: 1,
         }}>
           ${pot} pot · chance of holding the ticket
         </span>
       </div>
 
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '12px 0 8px' }} />
+      <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '9px 0 6px' }} />
 
       {/* ── The five ── */}
       {top.length === 0 ? (
         <div style={{
-          fontFamily: 'var(--font-ui)', fontSize: 15, color: 'rgba(255,255,255,0.45)',
-          padding: '14px 2px',
+          fontFamily: 'var(--font-ui)', fontSize: 13, color: 'rgba(255,255,255,0.45)',
+          padding: '10px 2px',
         }}>
           No entries in the pool yet.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {/* The board sits on screen for the whole derby, so the interesting
               moment is a bettor CHANGING places, not the panel arriving.
               `layout` glides a row to its new slot instead of the list
@@ -152,10 +152,10 @@ export function DerbyOddsScene({
                 }}
                 style={{
                   position: 'relative', overflow: 'hidden',
-                  borderRadius: 10, height: 62,
+                  borderRadius: 8, height: 50,
                   background: leader ? 'rgba(251,191,36,0.14)' : 'rgba(255,255,255,0.05)',
-                  borderLeft: `4px solid ${leader ? GOLD : accent}`,
-                  display: 'flex', alignItems: 'center', paddingRight: 14,
+                  borderLeft: `3px solid ${leader ? GOLD : accent}`,
+                  display: 'flex', alignItems: 'center', paddingRight: 11,
                 }}
               >
                 {/* Probability bar, behind the text. Scales on the compositor
@@ -177,9 +177,9 @@ export function DerbyOddsScene({
                 />
 
                 {/* Rank */}
-                <div style={{ width: 40, flexShrink: 0, textAlign: 'center', position: 'relative' }}>
+                <div style={{ width: 30, flexShrink: 0, textAlign: 'center', position: 'relative' }}>
                   <span style={{
-                    fontFamily: 'var(--font-score)', fontSize: 24, fontWeight: 900,
+                    fontFamily: 'var(--font-score)', fontSize: 19, fontWeight: 900,
                     color: leader ? GOLD : 'rgba(255,255,255,0.42)', lineHeight: 1,
                   }}>
                     {i + 1}
@@ -187,9 +187,9 @@ export function DerbyOddsScene({
                 </div>
 
                 {/* Bettor over the pick */}
-                <div style={{ flex: 1, minWidth: 0, position: 'relative', paddingRight: 10 }}>
+                <div style={{ flex: 1, minWidth: 0, position: 'relative', paddingRight: 8 }}>
                   <div style={{
-                    fontFamily: 'var(--font-score)', fontSize: 25, fontWeight: 800,
+                    fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 800,
                     color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.02em',
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     lineHeight: 1.05,
@@ -197,14 +197,14 @@ export function DerbyOddsScene({
                     {row.bettorName}
                   </div>
                   <div style={{
-                    marginTop: 3, display: 'flex', alignItems: 'center', gap: 6,
-                    fontFamily: 'var(--font-score)', fontSize: 14, fontWeight: 700,
-                    color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em',
+                    marginTop: 2, display: 'flex', alignItems: 'center', gap: 5,
+                    fontFamily: 'var(--font-score)', fontSize: 11.5, fontWeight: 700,
+                    color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em',
                     textTransform: 'uppercase', lineHeight: 1,
                     whiteSpace: 'nowrap', overflow: 'hidden',
                   }}>
                     {row.team?.logoUrl && (
-                      <img src={row.team.logoUrl} alt="" style={{ width: 16, height: 16, objectFit: 'contain', flexShrink: 0 }} />
+                      <img src={row.team.logoUrl} alt="" style={{ width: 13, height: 13, objectFit: 'contain', flexShrink: 0 }} />
                     )}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {lastName(row.playerName)}
@@ -215,17 +215,17 @@ export function DerbyOddsScene({
                 </div>
 
                 {/* Chance */}
-                <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0, width: 84 }}>
+                <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0, width: 66 }}>
                   <div style={{
-                    fontFamily: 'var(--font-score)', fontSize: 30, fontWeight: 900,
+                    fontFamily: 'var(--font-score)', fontSize: 24, fontWeight: 900,
                     color: leader ? GOLD : '#ffffff', lineHeight: 1,
                   }}>
                     {pct(row.winProb)}
                   </div>
                   <div style={{
-                    fontFamily: 'var(--font-score)', fontSize: 10, fontWeight: 800,
-                    color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em',
-                    textTransform: 'uppercase', lineHeight: 1, marginTop: 3,
+                    fontFamily: 'var(--font-score)', fontSize: 9, fontWeight: 800,
+                    color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em',
+                    textTransform: 'uppercase', lineHeight: 1, marginTop: 2,
                   }}>
                     Hitter {pct(row.playerWinProb)}
                   </div>
@@ -238,12 +238,12 @@ export function DerbyOddsScene({
       )}
 
       {/* ── Footer: what the model thinks actually happens ── */}
-      <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+      <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
         {favourite && (
           <div style={{
-            display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10,
-            fontFamily: 'var(--font-score)', fontSize: 14, fontWeight: 800,
-            letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.3,
+            display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8,
+            fontFamily: 'var(--font-score)', fontSize: 11.5, fontWeight: 800,
+            letterSpacing: '0.05em', textTransform: 'uppercase', lineHeight: 1.3,
           }}>
             <span style={{ color: 'rgba(255,255,255,0.45)' }}>
               Projected winner
@@ -261,9 +261,9 @@ export function DerbyOddsScene({
         )}
         {projectedTotal && (
           <div style={{
-            marginTop: 4,
-            fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 700,
-            color: 'rgba(255,255,255,0.32)', letterSpacing: '0.08em',
+            marginTop: 3,
+            fontFamily: 'var(--font-score)', fontSize: 10, fontWeight: 700,
+            color: 'rgba(255,255,255,0.32)', letterSpacing: '0.07em',
             textTransform: 'uppercase', lineHeight: 1.3,
           }}>
             Winning total likely {projectedTotal.low}–{projectedTotal.high}
@@ -271,9 +271,9 @@ export function DerbyOddsScene({
         )}
         {charityProb > 0.005 && (
           <div style={{
-            marginTop: 6,
-            fontFamily: 'var(--font-score)', fontSize: 13, fontWeight: 800,
-            color: '#4ade80', letterSpacing: '0.06em',
+            marginTop: 5,
+            fontFamily: 'var(--font-score)', fontSize: 10.5, fontWeight: 800,
+            color: '#4ade80', letterSpacing: '0.05em',
             textTransform: 'uppercase', lineHeight: 1.3,
           }}>
             {pct(charityProb)} chance nobody called it — whole pot to {DERBY_CHARITY_NAME}

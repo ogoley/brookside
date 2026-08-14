@@ -55,12 +55,27 @@ function DerbyOverlayContent() {
       .filter(r => r.name !== '')
   }, [contestants, contestantById, teams, broadcast.scores, broadcast.leaderboardRound, broadcast.advancers])
 
+  // Who is actually in the round being hit. `battingOrder` is a producer-owned
+  // list that can lag a round change — the controller warns about it, but the
+  // overlay is what's on air, so it does not get to trust it.
+  const activeField = useMemo(
+    () => participantsForRound(
+      contestants.map(c => c.id), broadcast.scores, broadcast.activeRound, broadcast.advancers,
+    ),
+    [contestants, broadcast.scores, broadcast.activeRound, broadcast.advancers],
+  )
+
   const orderRows: DerbyOrderDisplayRow[] = useMemo(() => {
     const key = ROUND_KEY[broadcast.activeRound]
+    const inRound = new Set(activeField)
     return broadcast.battingOrder
       .map((id): DerbyOrderDisplayRow | null => {
         const c = contestantById.get(id)
         if (!c) return null
+        // A hitter eliminated in an earlier round must never appear in this
+        // one. Without this a stale order put round 1 names, scoreless and
+        // reading TBD, straight into the round 2 ticker and Up Next board.
+        if (!inRound.has(id)) return null
         return {
           playerId: id,
           name: c.name,
@@ -69,7 +84,7 @@ function DerbyOverlayContent() {
         }
       })
       .filter((r): r is DerbyOrderDisplayRow => r !== null)
-  }, [broadcast.battingOrder, broadcast.scores, broadcast.activeRound, contestantById, teams])
+  }, [broadcast.battingOrder, broadcast.scores, broadcast.activeRound, activeField, contestantById, teams])
 
   const currentIndex = Math.min(broadcast.currentBatterIndex, Math.max(0, orderRows.length - 1))
 

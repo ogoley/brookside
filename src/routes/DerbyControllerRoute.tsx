@@ -12,7 +12,7 @@ import {
   derbySeedValue, seedOrderForRound, leaderboardForRound, derbyBetWinners, derbyPayout,
   derbyTimerRemainingMs, formatDerbyClock, DERBY_MONEY_BALL_HR,
 } from '../derby/logic'
-import { derbyOddsWindow } from '../derby/odds'
+import { derbyOddsWindow, derbyOddsShowNowAt } from '../derby/odds'
 import { useDerbyOdds, turnFractionOf } from '../hooks/useDerbyOdds'
 import type {
   DerbyBroadcastView, DerbyRoundNum, DerbyAdvancerLocks, DerbyBroadcastState, DerbyOddsState,
@@ -1531,8 +1531,9 @@ function GateScreen({ onUnlock }: { onUnlock: () => void }) {
 
 // ── 50/50 odds board ─────────────────────────────────────────────────────────
 
-const INTERVAL_CHOICES = [90, 120, 150, 180, 300]
-const DURATION_CHOICES = [15, 20, 25, 30]
+// Cycle length, in seconds. The default is 60 — 45 away, 15 up.
+const INTERVAL_CHOICES = [45, 60, 90, 120, 180]
+const DURATION_CHOICES = [10, 15, 20, 30]
 
 function fmtSecs(ms: number): string {
   const t = Math.max(0, Math.ceil(ms / 1000))
@@ -1547,12 +1548,14 @@ function fmtPct(p: number): string {
 /**
  * Drives the odds board and shows the producer exactly what is going to air.
  *
- * The rotation isn't a visibility flag — the overlay can't be told anything, it
- * works the schedule out from `startedAt` (see `derbyOddsWindow`). So the
- * controls here are all schedule edits: "Show now" re-stamps the anchor, the
- * interval and duration reshape the cycle, and Pin overrides it entirely. The
- * countdown below them is derived the same way the overlay derives it, so what
- * this panel says is on screen genuinely is.
+ * "Keep it up" is the control that matters: on, and the board is parked on
+ * screen for the rest of the derby; off, and it drops into the 45-away /
+ * 15-up cycle rather than disappearing for good.
+ *
+ * None of these are visibility flags — the overlay can't be told anything, it
+ * works the schedule out from `startedAt` (see `derbyOddsWindow`). They are all
+ * schedule edits, and the countdown below them is derived exactly the way the
+ * overlay derives it, so what this panel says is on screen genuinely is.
  */
 function OddsSection({ broadcast, contestants }: {
   broadcast: DerbyBroadcastState
@@ -1579,10 +1582,13 @@ function OddsSection({ broadcast, contestants }: {
   const win = derbyOddsWindow(odds, now)
   const money = derbyPayout(Object.keys(entries).length, 1)
 
+  const awaySecs = Math.round((odds.intervalMs - odds.durationMs) / 1000)
+  const upSecs = Math.round(odds.durationMs / 1000)
+
   const status = !odds.enabled ? 'Off — never comes up'
-    : odds.mode === 'always' ? 'Live — up for the whole derby'
+    : odds.mode === 'always' ? 'Parked on screen'
     : win.visible ? `On screen — down in ${fmtSecs(win.msLeft)}`
-    : `Next up in ${fmtSecs(win.msUntilNext)}`
+    : `Back up in ${fmtSecs(win.msUntilNext)}`
 
   return (
     <Section title="50/50 odds board" accent="#34d399">
@@ -1598,17 +1604,30 @@ function OddsSection({ broadcast, contestants }: {
         >
           📈 Odds board: {odds.enabled ? 'ON' : 'OFF'}
         </button>
-        <Chip active={odds.mode === 'always'} onClick={() => patch({ mode: 'always', enabled: true })}>
-          Live — always up
-        </Chip>
-        {/* Switching to the timed cycle stamps a fresh anchor so the board
-            appears now, rather than partway through some stale cycle. */}
-        <Chip
-          active={odds.mode === 'timer'}
-          onClick={() => patch({ mode: 'timer', enabled: true, startedAt: Date.now() })}
+        {/* The main control. Taking it down doesn't banish the board — it drops
+            into the cycle, and stamps a fresh anchor so the away stretch starts
+            from the moment the producer pressed it rather than mid-cycle. */}
+        <button
+          onClick={() => patch(odds.mode === 'always'
+            ? { mode: 'timer', startedAt: Date.now(), enabled: true }
+            : { mode: 'always', enabled: true })}
+          style={{
+            ...smallBtn, fontWeight: 800,
+            background: odds.mode === 'always' ? '#fbbf24' : '#1e293b',
+            color: odds.mode === 'always' ? '#0f172a' : '#cbd5e1',
+            border: `2px solid ${odds.mode === 'always' ? '#fbbf24' : '#334155'}`,
+          }}
         >
-          In bursts
-        </Chip>
+          📌 Keep it up: {odds.mode === 'always' ? 'YES' : 'NO'}
+        </button>
+        {odds.mode === 'timer' && odds.enabled && (
+          <button
+            onClick={() => patch({ startedAt: derbyOddsShowNowAt(odds, Date.now()), enabled: true })}
+            style={{ ...smallBtn, background: '#1e293b', color: '#cbd5e1', border: '2px solid #334155' }}
+          >
+            ⏭ Show now
+          </button>
+        )}
         <span style={{
           marginLeft: 'auto', fontFamily: 'var(--font-score)', fontSize: 13, fontWeight: 800,
           color: win.visible && odds.enabled ? '#4ade80' : '#64748b',
@@ -1620,24 +1639,21 @@ function OddsSection({ broadcast, contestants }: {
 
       {odds.mode === 'timer' && (
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <button
-            onClick={() => patch({ startedAt: Date.now(), enabled: true })}
-            style={{ ...smallBtn, background: '#1e293b', color: '#cbd5e1', border: '2px solid #334155' }}
-          >
-            ⏭ Show now
-          </button>
-          <span style={smallLabel}>Every</span>
+          <span style={smallLabel}>Cycle</span>
           {INTERVAL_CHOICES.map(s => (
             <Chip key={s} active={odds.intervalMs === s * 1000} onClick={() => patch({ intervalMs: s * 1000 })}>
-              {s % 60 === 0 ? `${s / 60} min` : `${(s / 60).toFixed(1)} min`}
+              {s}s
             </Chip>
           ))}
-          <span style={{ ...smallLabel, marginLeft: 10 }}>For</span>
+          <span style={{ ...smallLabel, marginLeft: 10 }}>Up for</span>
           {DURATION_CHOICES.map(s => (
             <Chip key={s} active={odds.durationMs === s * 1000} onClick={() => patch({ durationMs: s * 1000 })}>
               {s}s
             </Chip>
           ))}
+          <span style={{ fontSize: 12, color: '#64748b', marginLeft: 4 }}>
+            = away {awaySecs}s, up {upSecs}s
+          </span>
         </div>
       )}
 

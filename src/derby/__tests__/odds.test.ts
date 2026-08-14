@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildDerbyOddsModel, runDerbyOdds, derbyOddsWindow, derbyOddsSignature,
+  buildDerbyOddsModel, runDerbyOdds, derbyOddsWindow, derbyOddsShowNowAt, derbyOddsSignature,
   PRIOR_ROUND_MEAN, DEFAULT_ODDS_TRIALS,
   type DerbyOddsInput,
 } from '../odds'
@@ -159,6 +159,100 @@ describe('champion probabilities', () => {
   })
 })
 
+// The simulation starts from `participantsForRound`, not from round 1, so
+// being cut is structural rather than something the sim has to keep rolling
+// its way out of. These pin that down — a knocked-out hitter reading 3% on a
+// broadcast graphic is the failure everyone would notice.
+describe('players who did not advance', () => {
+  const doneR1: DerbyScoresMap = {}
+  IDS.forEach((id, i) => { doneR1[id] = { r1: 20 - i } })   // p0 best … p11 worst
+
+  it('gives a cut hitter exactly zero, not merely a small number', () => {
+    const r = runDerbyOdds(input({ scores: doneR1, activeRound: 2 }))
+    const byId = new Map(r.champions.map(c => [c.playerId, c.winProb]))
+    // p8..p11 finished 9th–12th of 12 with 8 seats
+    for (const id of ['p8', 'p9', 'p10', 'p11']) {
+      expect(byId.get(id) ?? 0).toBe(0)
+    }
+    // ...and the eight who did advance still carry the whole probability
+    expect(r.champions.reduce((s, c) => s + c.winProb, 0)).toBeCloseTo(1, 2)
+  })
+
+  it('gives a bet on a cut hitter exactly zero', () => {
+    const r = runDerbyOdds(input({
+      scores: doneR1, activeRound: 2,
+      entries: [bet('out', 'p10', 30), bet('in', 'p1', 30)],
+    }))
+    const by = new Map(r.rows.map(x => [x.entryId, x]))
+    expect(by.get('out')!.winProb).toBe(0)
+    expect(by.get('out')!.playerWinProb).toBe(0)
+    expect(by.get('out')!.expectedShare).toBe(0)
+    expect(by.get('in')!.winProb).toBeGreaterThan(0)
+  })
+
+  it('honours a producer lock over the score cut, in both directions', () => {
+    // The producer confirms a field that drops the round's top scorer and
+    // keeps someone who finished below the line.
+    const locked = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p11']
+    const r = runDerbyOdds(input({ scores: doneR1, activeRound: 2, locks: { r1: locked } }))
+    const byId = new Map(r.champions.map(c => [c.playerId, c.winProb]))
+    expect(byId.get('p0') ?? 0).toBe(0)          // top of round 1, cut anyway
+    expect(byId.get('p11') ?? 0).toBeGreaterThan(0)  // bottom of round 1, kept
+  })
+
+  it('keeps everyone alive while a tie for the last seat is unsettled', () => {
+    // Seven clinched, three tied on the cut score for the 8th seat.
+    const tied: DerbyScoresMap = {}
+    IDS.forEach((id, i) => { tied[id] = { r1: i < 7 ? 20 - i : i < 10 ? 5 : 1 } })
+    const r = runDerbyOdds(input({ scores: tied, activeRound: 2 }))
+    const byId = new Map(r.champions.map(c => [c.playerId, c.winProb]))
+    // All three of the tied group can still win the swing-off
+    for (const id of ['p7', 'p8', 'p9']) expect(byId.get(id) ?? 0).toBeGreaterThan(0)
+    // The ones below the tie cannot
+    for (const id of ['p10', 'p11']) expect(byId.get(id) ?? 0).toBe(0)
+  })
+
+  it('ignores hitters the board never advanced when round 1 was left incomplete', () => {
+    // The regression this restructure was for. Only five of twelve ever got a
+    // round 1 score and the producer moved to round 2 anyway — which is the
+    // state that had round 1 names turning up on the round 2 boards.
+    //
+    // Replaying the bracket from round 1 treated the seven blanks as a 0, and
+    // with only five hitters above zero the cut had three seats left to fill:
+    // three players who never took a swing got dealt into round 2 and could
+    // win the whole thing. `participantsForRound` says the field is the five.
+    const partial: DerbyScoresMap = {}
+    for (let i = 0; i < 5; i++) partial[IDS[i]] = { r1: 12 - i }
+    const r = runDerbyOdds(input({ scores: partial, activeRound: 2 }))
+
+    const byId = new Map(r.champions.map(c => [c.playerId, c.winProb]))
+    for (const id of IDS.slice(5)) expect(byId.get(id) ?? 0).toBe(0)
+    expect(r.champions).toHaveLength(5)
+    expect(r.champions.reduce((s, c) => s + c.winProb, 0)).toBeCloseTo(1, 2)
+
+    // And no bet on one of them can pay
+    const withBets = runDerbyOdds(input({
+      scores: partial, activeRound: 2,
+      entries: [bet('ghost', 'p9', 28), bet('real', 'p0', 28)],
+    }))
+    expect(withBets.rows.find(x => x.entryId === 'ghost')!.winProb).toBe(0)
+    expect(withBets.rows.find(x => x.entryId === 'real')!.winProb).toBeGreaterThan(0)
+  })
+
+  it('counts banked earlier rounds in the winner\'s total', () => {
+    // Everyone in the final has 30 in the books before the last round starts.
+    const scores: DerbyScoresMap = {}
+    IDS.forEach((id, i) => { scores[id] = { r1: 20 - i } })
+    for (const id of IDS.slice(0, 8)) scores[id].r2 = 10 + (20 - IDS.indexOf(id)) - 10
+    const r = runDerbyOdds(input({ scores, activeRound: 3 }))
+    // The three finalists banked r1 + r2 of at least 30 between them, so no
+    // simulated winning total may come in under that.
+    const finalists = r.champions.map(c => c.playerId)
+    const minBanked = Math.min(...finalists.map(id => (scores[id].r1 ?? 0) + (scores[id].r2 ?? 0)))
+    expect(r.projectedWinningTotal.low).toBeGreaterThanOrEqual(minBanked)
+  })
+})
+
 describe('settling the 50/50', () => {
   it('sends the pot to charity when nobody backed anyone', () => {
     const r = runDerbyOdds(input({ entries: [] }))
@@ -292,47 +386,68 @@ describe('determinism', () => {
 })
 
 describe('rotation window', () => {
-  // 'timer' here so the cycle maths is what's under test; 'always' is the
-  // shipped default and is covered on its own below.
+  // The shipped cycle: 60s round, 15s of it on screen, so 45s away first.
+  const T0 = 1000
   const odds: DerbyOddsState = {
-    enabled: true, mode: 'timer', startedAt: 1000, intervalMs: 150_000, durationMs: 20_000,
+    enabled: true, mode: 'timer', startedAt: T0, intervalMs: 60_000, durationMs: 15_000,
   }
+  const at = (offset: number) => derbyOddsWindow(odds, T0 + offset)
 
-  it('is up for the first stretch of each cycle', () => {
-    expect(derbyOddsWindow(odds, 1000).visible).toBe(true)
-    expect(derbyOddsWindow(odds, 1000 + 19_999).visible).toBe(true)
-    expect(derbyOddsWindow(odds, 1000 + 20_001).visible).toBe(false)
-    expect(derbyOddsWindow(odds, 1000 + 150_000).visible).toBe(true)
-    expect(derbyOddsWindow(odds, 1000 + 300_500).visible).toBe(true)
+  it('stays away for 45 seconds, then shows for 15', () => {
+    expect(at(0).visible).toBe(false)
+    expect(at(44_999).visible).toBe(false)
+    expect(at(45_000).visible).toBe(true)
+    expect(at(59_999).visible).toBe(true)
+    // ...and round again
+    expect(at(60_000).visible).toBe(false)
+    expect(at(105_000).visible).toBe(true)
   })
 
-  it('reports the wait until the next showing', () => {
-    const w = derbyOddsWindow(odds, 1000 + 50_000)
+  it('is hidden first, so taking the board down does not bounce it back', () => {
+    // The producer presses "keep it up: NO" at T0; the controller stamps
+    // startedAt = now. The board must go away, not re-appear instantly.
+    expect(at(0).visible).toBe(false)
+    expect(at(1_000).visible).toBe(false)
+  })
+
+  it('counts down to the next showing and to the next hide', () => {
+    expect(at(30_000).msUntilNext).toBe(15_000)
+    expect(at(50_000).msLeft).toBe(10_000)
+  })
+
+  it('treats a cycle stamped in the future as not yet started', () => {
+    // Producer's clock ahead of the overlay's. The phase must not wrap round to
+    // somewhere arbitrary — it reads as the top of the away stretch.
+    const w = derbyOddsWindow({ ...odds, startedAt: T0 + 5_000 }, T0)
     expect(w.visible).toBe(false)
-    expect(w.msUntilNext).toBe(100_000)
+    expect(w.msUntilNext).toBe(45_000)
   })
 
-  it('shows immediately when the cycle is stamped in the future', () => {
-    // Clock skew between producer and overlay must not blank the board
-    expect(derbyOddsWindow({ ...odds, startedAt: 5000 }, 1000).visible).toBe(true)
+  it('puts the board up straight away from derbyOddsShowNowAt', () => {
+    const now = 500_000
+    const started = derbyOddsShowNowAt(odds, now)
+    const w = derbyOddsWindow({ ...odds, startedAt: started }, now)
+    expect(w.visible).toBe(true)
+    expect(w.msLeft).toBe(15_000)
   })
 
-  it('stays up at every point in the cycle in always mode', () => {
+  it('stays up at every point in the cycle when kept up', () => {
     const live: DerbyOddsState = { ...odds, mode: 'always' }
-    for (const t of [0, 1000, 1000 + 30_000, 1000 + 90_000, 1000 + 149_999, 1e12]) {
+    for (const t of [0, 1000, 30_000, 45_000, 59_999, 1e12]) {
       expect(derbyOddsWindow(live, t).visible).toBe(true)
     }
   })
 
   it('disappears when disabled, whatever the mode', () => {
-    expect(derbyOddsWindow({ ...odds, enabled: false, mode: 'always' }, 1000).visible).toBe(false)
-    expect(derbyOddsWindow({ ...odds, enabled: false, mode: 'timer' }, 1000).visible).toBe(false)
+    expect(derbyOddsWindow({ ...odds, enabled: false, mode: 'always' }, T0).visible).toBe(false)
+    expect(derbyOddsWindow({ ...odds, enabled: false, mode: 'timer' }, T0).visible).toBe(false)
   })
 
-  it('defaults to a board that is on and permanent', () => {
+  it('defaults to on, in bursts, 45 away and 15 up', () => {
     expect(DEFAULT_DERBY_ODDS.enabled).toBe(true)
-    expect(DEFAULT_DERBY_ODDS.mode).toBe('always')
-    expect(derbyOddsWindow(DEFAULT_DERBY_ODDS, Date.now()).visible).toBe(true)
+    expect(DEFAULT_DERBY_ODDS.mode).toBe('timer')
+    expect(DEFAULT_DERBY_ODDS.intervalMs - DEFAULT_DERBY_ODDS.durationMs).toBe(45_000)
+    expect(DEFAULT_DERBY_ODDS.durationMs).toBe(15_000)
   })
 })
 

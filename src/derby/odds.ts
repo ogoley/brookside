@@ -28,41 +28,56 @@
 // re-render doesn't make the percentages twitch on air.
 
 import {
-  ADVANCE_COUNT, ROUND_KEY, DERBY_MONEY_BALL_HR,
+  ADVANCE_COUNT, ROUND_KEY, DERBY_MONEY_BALL_HR, participantsForRound,
   type DerbyScoresMap, type DerbyBetEntry,
 } from './logic'
 import type { DerbyRoundNum, DerbyAdvancerLocks, DerbyOddsState } from '../types'
 
 // ── When the board is on screen ──────────────────────────────────────────────
 
-export const DERBY_ODDS_INTERVAL_MS = 150_000  // 2.5 minutes
-export const DERBY_ODDS_DURATION_MS = 22_000
+export const DERBY_ODDS_INTERVAL_MS = 60_000   // one cycle: 45s away, 15s up
+export const DERBY_ODDS_DURATION_MS = 15_000
 
 /**
  * Is the odds board up right now?
  *
- * In 'always' mode this is just `enabled` — the board lives on screen for the
- * whole derby and updates in place. In 'timer' mode the overlay is read-only,
- * so nothing writes "showing" / "hidden": the cycle is a pure function of the
- * clock against `startedAt`, exactly like the turn clock derives its remaining
- * time. Controller and overlay therefore agree without a round trip, and a
- * reloaded overlay drops straight back into phase.
+ * 'always' is just `enabled` — the board lives on screen and updates in place.
+ *
+ * 'timer' runs a cycle that is **hidden first**: away for `interval - duration`
+ * (45s by default), then up for `duration` (15s), repeating. Hidden-first is
+ * the whole point — the producer reaches for this by taking the board *down*,
+ * and a visible-first cycle would slam it back up the same instant they did.
+ *
+ * The overlay never writes, so nothing marks the board shown or hidden: the
+ * cycle is a pure function of the clock against `startedAt`, exactly like the
+ * turn clock derives its remaining time. Controller and overlay therefore agree
+ * without a round trip, and a reloaded overlay drops straight back into phase.
  */
 export function derbyOddsWindow(odds: DerbyOddsState, now: number) {
   const interval = Math.max(10_000, odds.intervalMs)
   const duration = Math.min(interval, Math.max(3_000, odds.durationMs))
   if (!odds.enabled) return { visible: false, msLeft: 0, msUntilNext: 0 }
   if (odds.mode !== 'timer') return { visible: true, msLeft: Infinity, msUntilNext: 0 }
-  // "Show now" stamps `startedAt` from the producer's clock. If the overlay
-  // machine's clock is a few seconds behind, that stamp is in the future, and
-  // wrapping the negative phase round would hide the board for a whole cycle
-  // instead of showing it. Treat anything not yet started as just-started.
-  const elapsed = now - odds.startedAt
-  if (elapsed < 0) return { visible: true, msLeft: duration, msUntilNext: 0 }
-  const phase = elapsed % interval
-  return phase < duration
-    ? { visible: true, msLeft: duration - phase, msUntilNext: 0 }
-    : { visible: false, msLeft: 0, msUntilNext: interval - phase }
+
+  const awayFor = interval - duration
+  // A stamp in the future means the producer's clock is ahead of this machine's
+  // — the cycle simply hasn't started, which reads as the top of the away
+  // stretch rather than as a negative phase wrapping round to somewhere random.
+  const phase = Math.max(0, now - odds.startedAt) % interval
+  return phase < awayFor
+    ? { visible: false, msLeft: 0, msUntilNext: awayFor - phase }
+    : { visible: true, msLeft: interval - phase, msUntilNext: 0 }
+}
+
+/**
+ * `startedAt` for a cycle that should put the board up immediately — i.e. wind
+ * it back past the away stretch so the phase lands at the start of the visible
+ * window. What "Show now" writes.
+ */
+export function derbyOddsShowNowAt(odds: DerbyOddsState, now: number): number {
+  const interval = Math.max(10_000, odds.intervalMs)
+  const duration = Math.min(interval, Math.max(3_000, odds.durationMs))
+  return now - (interval - duration)
 }
 
 // ── Model constants ──────────────────────────────────────────────────────────
@@ -234,7 +249,13 @@ export interface DerbyOddsModel {
   leagueRoundMean: number
   input: DerbyOddsInput
   /** Rounds 1..3 as fields of playerIds, with everything already settled fixed. */
-  round1Field: string[]
+  /**
+   * The hitters still alive going into `activeRound`, straight from
+   * `participantsForRound` — the same list the leaderboard and the left rail
+   * draw. The simulation starts here rather than replaying from round 1, so a
+   * player who has been cut cannot reappear and always reads 0%.
+   */
+  liveField: string[]
   trials: number
   seed: number
 }
@@ -375,7 +396,7 @@ export function buildDerbyOddsModel(input: DerbyOddsInput): DerbyOddsModel {
     rates,
     leagueRoundMean,
     input,
-    round1Field: eligibleIds,
+    liveField: participantsForRound(eligibleIds, scores, activeRound, input.locks),
     trials: input.trials ?? DEFAULT_ODDS_TRIALS,
     seed: input.seed ?? hashSeed(derbyOddsSignature(input)),
   }
@@ -461,7 +482,7 @@ function advancersInTrial(
 }
 
 export function runOddsChunk(model: DerbyOddsModel, acc: DerbyOddsAcc, trials: number): void {
-  const { input, rates, round1Field } = model
+  const { input, rates, liveField } = model
   const { activeRound, locks, entries, scores } = input
   const liveId = input.liveHitterId ?? null
   const turnFraction = Math.min(1, Math.max(0, input.turnFraction ?? 0))
@@ -476,6 +497,11 @@ export function runOddsChunk(model: DerbyOddsModel, acc: DerbyOddsAcc, trials: n
     else entriesByPlayer.set(e.playerId, [e])
   }
 
+  const prevRound = activeRound > 1 ? (activeRound - 1) as DerbyRoundNum : null
+  // A round already in the books. A missing score in a past round means the
+  // hitter was passed over, which is a 0 on the board too.
+  const banked = (id: string, round: DerbyRoundNum) => scores[id]?.[ROUND_KEY[round]] ?? 0
+
   const ability = new Map<string, number>()
   const simScores = new Map<string, number>()   // key `${id}|${round}`
 
@@ -484,38 +510,55 @@ export function runOddsChunk(model: DerbyOddsModel, acc: DerbyOddsAcc, trials: n
     ability.clear()
     simScores.clear()
 
-    // One ability draw per player per trial: uncertainty about how good someone
-    // is persists across their rounds, unlike the per-round hot/cold noise.
-    for (const [id, r] of rates) ability.set(id, gammaSample(rng, r.shape) / r.rate)
-
     const scoreOf = (id: string, round: DerbyRoundNum) => simScores.get(`${id}|${round}`) ?? 0
+    // Ability is drawn once per player per trial — uncertainty about how good
+    // someone is persists across their rounds, unlike per-round hot/cold noise.
+    // Lazily, because in the final only three hitters are left of a field of 20.
+    const abilityOf = (id: string, r: DerbyPlayerRate) => {
+      let a = ability.get(id)
+      if (a === undefined) {
+        a = gammaSample(rng, r.shape) / r.rate
+        ability.set(id, a)
+      }
+      return a
+    }
 
-    let field = round1Field
-    for (const round of [1, 2, 3] as DerbyRoundNum[]) {
+    // START FROM THE BOARD'S FIELD, not from round 1. Earlier rounds are
+    // history: re-deriving their cuts here would let someone the producer has
+    // already eliminated back into the simulation on a lucky roll. `liveField`
+    // is exactly `participantsForRound`, so anyone who did not advance is
+    // absent and scores 0% by construction rather than by chance.
+    let field = liveField
+    // One thing still IS uncertain about the last cut: an unsettled tie for the
+    // final seat leaves more hitters on the board than there are seats, because
+    // the swing-off hasn't happened. Trim to the seat count per trial, which
+    // flips that swing-off. A locked round short-circuits to the locked list.
+    if (prevRound) {
+      field = advancersInTrial(field, id => banked(id, prevRound), prevRound, locks, rng)
+    }
+
+    for (let r = activeRound; r <= 3; r++) {
+      const round = r as DerbyRoundNum
       for (const id of field) {
-        const r = rates.get(id)
+        const rate = rates.get(id)
         const recorded = scores[id]?.[ROUND_KEY[round]]
         let value: number
 
-        if (round < activeRound || (recorded !== undefined && id !== liveId)) {
-          // Already in the books — a past round with no score means the hitter
-          // was passed over, which the board treats as 0.
-          value = recorded ?? 0
-        } else if (!r) {
+        if (!rate || (recorded !== undefined && id !== liveId)) {
           value = recorded ?? 0
         } else {
           const streak = gammaSample(rng, ROUND_DISPERSION) / ROUND_DISPERSION
-          const lamRound = (ability.get(id) ?? r.meanPerRound) * streak
-          const lamSwing = Math.max(0, lamRound - DERBY_MONEY_BALL_HR * r.moneyBallP)
+          const lamRound = abilityOf(id, rate) * streak
+          const lamSwing = Math.max(0, lamRound - DERBY_MONEY_BALL_HR * rate.moneyBallP)
 
           if (id === liveId && round === activeRound) {
             // Mid-turn: only the unspent share of the clock is still to come,
             // plus the money ball if they haven't had it.
             const swings = poissonSample(rng, lamSwing * (1 - turnFraction))
-            const mb = input.moneyBallTaken ? 0 : rng() < r.moneyBallP ? DERBY_MONEY_BALL_HR : 0
+            const mb = input.moneyBallTaken ? 0 : rng() < rate.moneyBallP ? DERBY_MONEY_BALL_HR : 0
             value = (recorded ?? 0) + swings + mb
           } else {
-            const mb = rng() < r.moneyBallP ? DERBY_MONEY_BALL_HR : 0
+            const mb = rng() < rate.moneyBallP ? DERBY_MONEY_BALL_HR : 0
             value = poissonSample(rng, lamSwing) + mb
           }
         }
@@ -534,7 +577,12 @@ export function runOddsChunk(model: DerbyOddsModel, acc: DerbyOddsAcc, trials: n
 
     // Champion: best of the final, ties flipped.
     const champion = topN(field, id => scoreOf(id, 3), 1, rng)[0]
-    const total = scoreOf(champion, 1) + scoreOf(champion, 2) + scoreOf(champion, 3)
+    // The 50/50 number: HR across all three rounds. Rounds before the active
+    // one were never simulated, so they come off the board as recorded.
+    let total = 0
+    for (const r of [1, 2, 3] as DerbyRoundNum[]) {
+      total += r < activeRound ? banked(champion, r) : scoreOf(champion, r)
+    }
 
     bump(acc.championWins, champion)
     bump(acc.championTotal, champion, total)
