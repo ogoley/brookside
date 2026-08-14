@@ -14,8 +14,14 @@
 //     champion — the winner graphic; pair with bets=0|1|2|3 for no winner,
 //                one winner, a two-way split, or a three-way split
 //     money  — any value plays the money-ball graphic on a loop (clock reads 0:00)
+//     odds   — the 50/50 odds board. The percentages are real output from
+//              derby/odds.ts, so this is also how to sanity-check the model by
+//              hand. NOTE it runs on its own realistic mock board, not on the
+//              `n`/`scored`/`tie` scores the rail and leaderboard use — so the
+//              two deliberately disagree about who's leading. See the comment
+//              on ODDS_R1 below.
 //     fps    — live frame-rate readout, to judge animation cost on the real machine
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { DerbyLeaderboardScene, type DerbyLeaderboardDisplayRow } from '../scenes/derby/DerbyLeaderboardScene'
 import { DerbyMiniBoardScene, type DerbyMiniRow } from '../scenes/derby/DerbyMiniBoardScene'
 import { DerbyTickerScene, type DerbyTickerRow, type DerbyTickerSegment } from '../scenes/derby/DerbyTickerScene'
@@ -23,18 +29,29 @@ import { DerbyPlayerScene } from '../scenes/derby/DerbyPlayerScene'
 import { DerbyMoneyBall, MONEY_BALL_ANIM_MS } from '../scenes/derby/DerbyMoneyBallScene'
 import { DerbyTurnClock } from '../components/DerbyTurnClock'
 import AllStarWordmark from '../components/AllStarWordmark'
-import { DEFAULT_DERBY_TIMER } from '../hooks/useDerbyBroadcast'
+import { DEFAULT_DERBY_TIMER, DEFAULT_DERBY_BROADCAST } from '../hooks/useDerbyBroadcast'
 import {
   leaderboardForRound, cutInfo, participantsForRound, derbyBetWinners, derbyPayout,
-  ADVANCE_COUNT, ROUND_KEY, ROUND_LABEL, type DerbyScoresMap,
+  ADVANCE_COUNT, ROUND_KEY, ROUND_LABEL, DERBY_TURN_MS, type DerbyScoresMap,
 } from '../derby/logic'
 import { DerbyWinnerScene } from '../scenes/derby/DerbyWinnerScene'
-import type { Team, DerbyRoundNum, DerbyAdvancerLocks, DerbyTimerState } from '../types'
+import { DerbyOddsScene, type DerbyOddsDisplayRow } from '../scenes/derby/DerbyOddsScene'
+import { useDerbyOdds, turnFractionOf } from '../hooks/useDerbyOdds'
+import type {
+  Team, DerbyRoundNum, DerbyAdvancerLocks, DerbyTimerState, DerbyBroadcastState, DerbyEntry,
+} from '../types'
 
 const TEAMS: Team[] = [
   { name: 'Reds', shortName: 'RED', primaryColor: '#c0392b', secondaryColor: '#fff', logoUrl: '' },
   { name: 'Blues', shortName: 'BLU', primaryColor: '#2563eb', secondaryColor: '#fff', logoUrl: '' },
   { name: 'Greens', shortName: 'GRN', primaryColor: '#16a34a', secondaryColor: '#fff', logoUrl: '' },
+]
+
+// Bettors for the ?odds board — people, not hitters
+const ODDS_BETTORS = [
+  'Dragon Ogoley', 'Marty Vee', 'Sal Pastore', 'Denny Quinn', 'Ro Bianchi',
+  'Casey Doyle', 'Fran Whitaker', 'Gus Nowak', 'Lou Brennan', 'Nina Falco',
+  'Ozzie Grant', 'Peg Turner',
 ]
 
 const NAMES = [
@@ -56,6 +73,7 @@ export function DerbyPreviewRoute() {
   const clock = params.get('clock') !== '0'
   const money = params.get('money') !== null
   const fps = params.get('fps') !== null
+  const showOdds = params.get('odds') !== null
 
   // A flat green so the transparent overlay reads like an OBS composite
   useEffect(() => {
@@ -174,6 +192,73 @@ export function DerbyPreviewRoute() {
   const champOutcome = derbyBetWinners(allEntries, liveId, champTotal)
   const champMoney = derbyPayout(allEntries.length, champOutcome.winners.length)
 
+  // The odds board, driven through `useDerbyOdds` — the same hook the overlay
+  // uses, so this previews the real chunked-simulation path (and not just the
+  // pure model, which the unit tests already cover). The hook takes its state
+  // as arguments rather than reading Firebase, so mock objects are enough.
+  //
+  // It gets its OWN mock board rather than reusing `scores` above: those are
+  // spaced 40/38/36 to force distinct leaderboard ranks, and a field averaging
+  // 38 home runs a round makes the model (correctly) project a winning total
+  // near 100. Bracket permutations are the unit tests' job; what this preview
+  // is for is seeing the graphic with numbers that look like derby night.
+  const oddsMock = useMemo(() => {
+    const r1 = [11, 8, 13, 6, 9, 4, 10, 3, 7, 5]
+    const oddsScores: DerbyScoresMap = {}
+    r1.forEach((v, i) => { if (ids[i]) oddsScores[ids[i]] = { r1: v } })
+    // Whoever's up next is mid-turn on 6, so the live-hitter path is exercised
+    const liveIdx2 = Math.min(r1.length, ids.length - 1)
+    if (ids[liveIdx2]) oddsScores[ids[liveIdx2]] = { r1: 6 }
+
+    const guesses = [31, 26, 38, 24, 33, 29, 22, 35, 27, 30, 41, 25]
+    const entries: Record<string, DerbyEntry> = {}
+    guesses.forEach((g, i) => {
+      entries[`o${i}`] = {
+        name: ODDS_BETTORS[i % ODDS_BETTORS.length],
+        // Coprime stride so the bets land on nine different hitters — a mock
+        // where everyone backed the same three sends the charity odds to 65%
+        playerId: ids[(i * 5) % Math.min(ids.length, 9)],
+        totalHr: g,
+        paid: true,
+        createdAt: 0,
+      }
+    })
+
+    const broadcast: DerbyBroadcastState = {
+      ...DEFAULT_DERBY_BROADCAST,
+      activeRound: 1,
+      scores: oddsScores,
+      battingOrder: ids,
+      currentBatterIndex: liveIdx2,
+      // 45% through the turn, stopped so nothing here reads the wall clock
+      timer: { ...DEFAULT_DERBY_TIMER, running: false, remainingMs: DERBY_TURN_MS * 0.55 },
+    }
+    const contestants = ids.map((id, i) => ({
+      id, name: NAMES[i], teamId: String(i % TEAMS.length), seasonHr: Math.max(1, 18 - i),
+    }))
+    return { broadcast, contestants, entries }
+  }, [ids])
+
+  const { odds: oddsResult } = useDerbyOdds(
+    oddsMock.broadcast, oddsMock.contestants, oddsMock.entries,
+    { enabled: showOdds, turnFraction: turnFractionOf(oddsMock.broadcast.timer, 0) },
+  )
+
+  const oddsRows: DerbyOddsDisplayRow[] = (oddsResult?.rows ?? []).slice(0, 5).map(r => {
+    const idx = parseInt(r.playerId.slice(1), 10)
+    return {
+      entryId: r.entryId,
+      bettorName: r.bettorName,
+      playerName: NAMES[idx],
+      team: TEAMS[idx % TEAMS.length],
+      guess: r.guess,
+      winProb: r.winProb,
+      playerWinProb: r.playerWinProb,
+    }
+  })
+  const oddsFav = oddsResult?.champions[0]
+  const oddsMoney = derbyPayout(oddsResult?.rows.length ?? 0, 1)
+
   return (
     <div style={{ width: 1920, height: 1080, position: 'relative' }}>
       {params.get('champion') !== null ? (
@@ -221,6 +306,22 @@ export function DerbyPreviewRoute() {
             activeRound={round}
           />
         </>
+      )}
+      {oddsResult && (
+        <DerbyOddsScene
+          rows={oddsRows}
+          charityProb={oddsResult.charityProb}
+          favourite={oddsFav ? {
+            name: NAMES[parseInt(oddsFav.playerId.slice(1), 10)],
+            team: TEAMS[parseInt(oddsFav.playerId.slice(1), 10) % TEAMS.length],
+            winProb: oddsFav.winProb,
+            totalIfWins: oddsFav.totalIfWins,
+          } : undefined}
+          round={1}
+          pot={oddsMoney.pot}
+          toWinners={oddsMoney.toWinners}
+          projectedTotal={oddsResult.projectedWinningTotal}
+        />
       )}
       {money && <MoneyBallLoop playerName={NAMES[liveIdx]} />}
       {fps && <FpsMeter />}

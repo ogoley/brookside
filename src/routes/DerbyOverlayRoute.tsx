@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useDerbyBroadcast } from '../hooks/useDerbyBroadcast'
 import { useDerbyContestants } from '../hooks/useDerbyContestants'
@@ -8,7 +8,11 @@ import {
   derbyBetWinners, derbyPayout,
   ADVANCE_COUNT, ROUND_KEY, ROUND_LABEL,
 } from '../derby/logic'
-import type { DerbyRoundNum } from '../types'
+import { derbyOddsWindow } from '../derby/odds'
+import { useDerbyOdds, turnFractionOf } from '../hooks/useDerbyOdds'
+import { DerbyOddsScene, type DerbyOddsDisplayRow } from '../scenes/derby/DerbyOddsScene'
+import type { DerbyRoundNum, DerbyBroadcastState, DerbyEntry, Team } from '../types'
+import type { DerbyContestant } from '../hooks/useDerbyContestants'
 import { DerbyPlayerScene } from '../scenes/derby/DerbyPlayerScene'
 import { DerbyLeaderboardScene, type DerbyLeaderboardDisplayRow } from '../scenes/derby/DerbyLeaderboardScene'
 import { DerbyUpNextScene, type DerbyOrderDisplayRow } from '../scenes/derby/DerbyUpNextScene'
@@ -332,7 +336,8 @@ function DerbyOverlayContent() {
       )}
 
       {/* All-Star Weekend wordmark — top-right watermark, the mirror of the
-          league logo bug bottom-right. The left column is the busy side. */}
+          league logo bug bottom-right. The left column is the busy side.
+          The odds board below is positioned to clear it. */}
       {view !== 'hidden' && (
         <AllStarWordmark
           size={26}
@@ -343,6 +348,17 @@ function DerbyOverlayContent() {
           }}
         />
       )}
+
+      {/* 50/50 odds board — the only other thing on the right-hand side, so it
+          sits under the wordmark. Stands down under any takeover that owns
+          that side of the screen or the whole thing. */}
+      <DerbyOddsBoard
+        broadcast={broadcast}
+        contestants={contestants}
+        teams={teams}
+        entries={bets.entries}
+        suppressed={view === 'leaderboard' || view === 'upNext' || championUp}
+      />
 
       {/* Money ball — the biggest moment on the board, so it plays over
           everything and on any view. Keyed by the timestamp so each one fires
@@ -357,6 +373,105 @@ function DerbyOverlayContent() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The 50/50 odds board and its rotation.
+ *
+ * Split out as its own component for one reason: the show/hide cycle is derived
+ * from the wall clock (the overlay can't write, so nothing marks it visible)
+ * and therefore needs a tick. Ticking inside `DerbyOverlayContent` would
+ * re-render the ticker, the rail and the hitter card once a second for nothing.
+ *
+ * The simulation itself runs on every state change, not only while the board is
+ * up — otherwise the board would appear blank and fill in a moment later, on
+ * air. It is gated on `enabled` so an overlay with the feature off never pays
+ * for it.
+ */
+function DerbyOddsBoard({ broadcast, contestants, teams, entries, suppressed }: {
+  broadcast: DerbyBroadcastState
+  contestants: DerbyContestant[]
+  teams: Record<string, Team>
+  entries: Record<string, DerbyEntry>
+  suppressed: boolean
+}) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!broadcast.odds.enabled || broadcast.odds.pinned) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [broadcast.odds.enabled, broadcast.odds.pinned])
+
+  const turnFraction = turnFractionOf(broadcast.timer, now)
+  const { odds } = useDerbyOdds(broadcast, contestants, entries, {
+    enabled: broadcast.odds.enabled,
+    turnFraction,
+  })
+
+  const contestantById = useMemo(
+    () => new Map(contestants.map(c => [c.id, c])),
+    [contestants],
+  )
+
+  const rows: DerbyOddsDisplayRow[] = useMemo(() => {
+    if (!odds) return []
+    return odds.rows.slice(0, 5).map(r => {
+      const c = contestantById.get(r.playerId)
+      return {
+        entryId: r.entryId,
+        bettorName: r.bettorName,
+        // An entry can name a player since toggled OUT of the derby; they
+        // can't win, but the row still has to say who was picked.
+        playerName: c?.name ?? 'Withdrawn',
+        team: c ? teams[c.teamId] : undefined,
+        guess: r.guess,
+        winProb: r.winProb,
+        playerWinProb: r.playerWinProb,
+      }
+    })
+  }, [odds, contestantById, teams])
+
+  const favourite = useMemo(() => {
+    const top = odds?.champions[0]
+    if (!top) return undefined
+    const c = contestantById.get(top.playerId)
+    return {
+      name: c?.name ?? '',
+      team: c ? teams[c.teamId] : undefined,
+      winProb: top.winProb,
+      totalIfWins: top.totalIfWins,
+    }
+  }, [odds, contestantById, teams])
+
+  const win = derbyOddsWindow(broadcast.odds, now)
+  const money = derbyPayout(Object.keys(entries).length, 1)
+
+  return (
+    <AnimatePresence>
+      {win.visible && !suppressed && odds && (
+        <motion.div
+          key="oddsBoard"
+          className="absolute inset-0"
+          initial={{ x: 640, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: 640, opacity: 0 }}
+          transition={{ type: 'spring', damping: 28, stiffness: 230 }}
+          style={{ pointerEvents: 'none' }}
+        >
+          <DerbyOddsScene
+            rows={rows}
+            charityProb={odds.charityProb}
+            favourite={favourite?.name ? favourite : undefined}
+            round={broadcast.activeRound}
+            pot={money.pot}
+            toWinners={money.toWinners}
+            projectedTotal={odds.projectedWinningTotal}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 

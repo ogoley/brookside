@@ -369,6 +369,19 @@ export interface DerbyTimerState {
   moneyBallAt: number | null
 }
 
+// The 50/50 odds board: a live "who's winning the pot" graphic that comes up on
+// a timer rather than on a producer's cue. The overlay can't write, so the
+// rotation is DERIVED from the clock — `startedAt` anchors a cycle and every
+// device works out for itself whether the board is currently in its window.
+// See `derbyOddsWindow` in derby/odds.ts.
+export interface DerbyOddsState {
+  enabled: boolean      // is the rotation running at all
+  pinned: boolean       // hold it up regardless of the schedule
+  startedAt: number     // epoch ms the cycle is anchored to; "Show now" re-stamps it
+  intervalMs: number    // how often it comes up
+  durationMs: number    // how long it stays each time
+}
+
 // /derby/broadcast — written by /derby-controller, read by /derby-overlay.
 // Lives under /derby so it shares that path's open write rule (front-end
 // password gate only, same accepted risk as the 50/50 page).
@@ -384,4 +397,5 @@ export interface DerbyBroadcastState {
   miniBoard: boolean                // always-on left rail of who's advancing
   timer: DerbyTimerState            // turn clock — independent of `view`
   advancers: DerbyAdvancerLocks     // producer-confirmed cuts; overrides the live score cut
+  odds: DerbyOddsState              // 50/50 odds board — on a timer, independent of `view`
 }

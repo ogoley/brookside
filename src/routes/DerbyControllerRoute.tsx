@@ -12,7 +12,11 @@ import {
   derbySeedValue, seedOrderForRound, leaderboardForRound, derbyBetWinners, derbyPayout,
   derbyTimerRemainingMs, formatDerbyClock, DERBY_MONEY_BALL_HR,
 } from '../derby/logic'
-import type { DerbyBroadcastView, DerbyRoundNum, DerbyAdvancerLocks } from '../types'
+import { derbyOddsWindow } from '../derby/odds'
+import { useDerbyOdds, turnFractionOf } from '../hooks/useDerbyOdds'
+import type {
+  DerbyBroadcastView, DerbyRoundNum, DerbyAdvancerLocks, DerbyBroadcastState, DerbyOddsState,
+} from '../types'
 import type { DerbyScoresMap } from '../derby/logic'
 
 // Same front-end gate as the /derby admin footer — the /derby path is
@@ -471,6 +475,9 @@ function ControlPanel() {
             </span>
           </div>
         </Section>
+
+        {/* ── 50/50 odds board ── */}
+        <OddsSection broadcast={broadcast} contestants={contestants} />
 
         {/* ── Round ── */}
         <Section title="Derby round" accent="#60a5fa">
@@ -1521,6 +1528,196 @@ function GateScreen({ onUnlock }: { onUnlock: () => void }) {
 }
 
 // ── Layout pieces ────────────────────────────────────────────────────────────
+
+// ── 50/50 odds board ─────────────────────────────────────────────────────────
+
+const INTERVAL_CHOICES = [90, 120, 150, 180, 300]
+const DURATION_CHOICES = [15, 20, 25, 30]
+
+function fmtSecs(ms: number): string {
+  const t = Math.max(0, Math.ceil(ms / 1000))
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`
+}
+
+function fmtPct(p: number): string {
+  if (p <= 0) return '0%'
+  return p < 0.005 ? '<1%' : `${Math.round(p * 100)}%`
+}
+
+/**
+ * Drives the odds board and shows the producer exactly what is going to air.
+ *
+ * The rotation isn't a visibility flag — the overlay can't be told anything, it
+ * works the schedule out from `startedAt` (see `derbyOddsWindow`). So the
+ * controls here are all schedule edits: "Show now" re-stamps the anchor, the
+ * interval and duration reshape the cycle, and Pin overrides it entirely. The
+ * countdown below them is derived the same way the overlay derives it, so what
+ * this panel says is on screen genuinely is.
+ */
+function OddsSection({ broadcast, contestants }: {
+  broadcast: DerbyBroadcastState
+  contestants: DerbyContestant[]
+}) {
+  const { entries } = useDerbyBets()
+  const [now, setNow] = useState(() => Date.now())
+  const odds = broadcast.odds
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(id)
+  }, [])
+
+  const turnFraction = turnFractionOf(broadcast.timer, now)
+  // Always computed, even with the board off, so the producer can see where the
+  // pot stands before deciding to put it up.
+  const { odds: result, computing } = useDerbyOdds(broadcast, contestants, entries, { turnFraction })
+
+  const contestantById = useMemo(() => new Map(contestants.map(c => [c.id, c])), [contestants])
+  const nameOf = (id: string) => contestantById.get(id)?.name ?? 'Withdrawn'
+
+  const patch = (p: Partial<DerbyOddsState>) => update(bcastRef('odds'), p)
+  const win = derbyOddsWindow(odds, now)
+  const money = derbyPayout(Object.keys(entries).length, 1)
+
+  const status = !odds.enabled ? 'Off — never comes up'
+    : odds.pinned ? 'Pinned — staying up until you unpin'
+    : win.visible ? `On screen — down in ${fmtSecs(win.msLeft)}`
+    : `Next up in ${fmtSecs(win.msUntilNext)}`
+
+  return (
+    <Section title="50/50 odds board" accent="#34d399">
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+        <button
+          // Turning it on stamps a fresh cycle so it appears straight away
+          // rather than at some arbitrary point in an old one.
+          onClick={() => patch(odds.enabled ? { enabled: false } : { enabled: true, startedAt: Date.now() })}
+          style={{
+            ...smallBtn, fontWeight: 800,
+            background: odds.enabled ? '#16a34a' : '#1e293b',
+            color: odds.enabled ? '#ffffff' : '#cbd5e1',
+            border: `2px solid ${odds.enabled ? '#16a34a' : '#334155'}`,
+          }}
+        >
+          📈 Odds board: {odds.enabled ? 'ON' : 'OFF'}
+        </button>
+        <button
+          onClick={() => patch({ startedAt: Date.now(), pinned: false, enabled: true })}
+          style={{ ...smallBtn, background: '#1e293b', color: '#cbd5e1', border: '2px solid #334155' }}
+        >
+          ⏭ Show now
+        </button>
+        <button
+          onClick={() => patch({ pinned: !odds.pinned, enabled: true })}
+          style={{
+            ...smallBtn,
+            background: odds.pinned ? '#fbbf24' : '#1e293b',
+            color: odds.pinned ? '#0f172a' : '#cbd5e1',
+            border: `2px solid ${odds.pinned ? '#fbbf24' : '#334155'}`,
+          }}
+        >
+          📌 {odds.pinned ? 'Pinned' : 'Pin up'}
+        </button>
+        <span style={{
+          marginLeft: 'auto', fontFamily: 'var(--font-score)', fontSize: 13, fontWeight: 800,
+          color: win.visible && odds.enabled ? '#4ade80' : '#64748b',
+          textTransform: 'uppercase', letterSpacing: '0.06em',
+        }}>
+          {status}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 10 }}>
+        <span style={smallLabel}>Every</span>
+        {INTERVAL_CHOICES.map(s => (
+          <Chip key={s} active={odds.intervalMs === s * 1000} onClick={() => patch({ intervalMs: s * 1000 })}>
+            {s % 60 === 0 ? `${s / 60} min` : `${(s / 60).toFixed(1)} min`}
+          </Chip>
+        ))}
+        <span style={{ ...smallLabel, marginLeft: 10 }}>For</span>
+        {DURATION_CHOICES.map(s => (
+          <Chip key={s} active={odds.durationMs === s * 1000} onClick={() => patch({ durationMs: s * 1000 })}>
+            {s}s
+          </Chip>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4, marginTop: 8 }}>
+        Right-hand panel — the five entries most likely to take the pot, from a live simulation of
+        the rest of the derby. Runs on its own timer under any view; steps aside for the leaderboard,
+        Up Next, and the champion graphic.
+      </div>
+
+      {/* ── What's going out ── */}
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+          <span style={smallLabel}>On air right now</span>
+          {computing && <span style={{ fontSize: 11, color: '#475569' }}>recalculating…</span>}
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#64748b' }}>
+            ${money.pot} pot · ${money.toWinners} to the winner
+          </span>
+        </div>
+
+        {!result ? (
+          <div style={{ fontSize: 13, color: '#475569' }}>Working out the odds…</div>
+        ) : result.rows.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#475569' }}>No 50/50 entries yet.</div>
+        ) : (
+          <>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...thStyle, textAlign: 'left' }}>Bettor</th>
+                  <th style={{ ...thStyle, textAlign: 'left' }}>Picked</th>
+                  <th style={thStyle}>Called</th>
+                  <th style={thStyle}>Win</th>
+                  <th style={thStyle}>Hitter</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.slice(0, 5).map((r, i) => (
+                  <tr key={r.entryId} style={{ borderTop: '1px solid #1e293b' }}>
+                    <td style={{ padding: '6px 6px', fontSize: 13, fontWeight: 700, color: i === 0 ? '#fbbf24' : '#e2e8f0' }}>
+                      {i + 1}. {r.bettorName}
+                    </td>
+                    <td style={{ padding: '6px 6px', fontSize: 13, color: '#94a3b8' }}>{nameOf(r.playerId)}</td>
+                    <td style={{ padding: '6px 6px', fontSize: 13, textAlign: 'center', color: '#94a3b8' }}>{r.guess}</td>
+                    <td style={{
+                      padding: '6px 6px', textAlign: 'center', fontFamily: 'var(--font-score)',
+                      fontSize: 15, fontWeight: 900, color: i === 0 ? '#fbbf24' : '#e2e8f0',
+                    }}>
+                      {fmtPct(r.winProb)}
+                    </td>
+                    <td style={{ padding: '6px 6px', textAlign: 'center', fontSize: 12, color: '#64748b' }}>
+                      {fmtPct(r.playerWinProb)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
+              {result.champions[0] && (
+                <div>
+                  Favourite: <strong style={{ color: '#fbbf24' }}>{nameOf(result.champions[0].playerId)}</strong>
+                  {' '}{fmtPct(result.champions[0].winProb)} — projected to win on{' '}
+                  <strong style={{ color: '#e2e8f0' }}>{Math.round(result.champions[0].totalIfWins)} HR</strong>
+                </div>
+              )}
+              <div>
+                Winning total likely {result.projectedWinningTotal.low}–{result.projectedWinningTotal.high}
+                {' '}(median {result.projectedWinningTotal.median}) · league pace{' '}
+                {result.leagueRoundMean.toFixed(1)} HR per turn
+              </div>
+              <div style={{ color: result.charityProb > 0.3 ? '#4ade80' : '#64748b' }}>
+                {fmtPct(result.charityProb)} chance nobody called it and the whole pot goes to charity
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </Section>
+  )
+}
 
 function Section({ title, accent, children, collapsible, open, onToggle }: {
   title: string

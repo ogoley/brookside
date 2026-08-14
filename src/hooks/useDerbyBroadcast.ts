@@ -2,7 +2,16 @@ import { useState, useEffect } from 'react'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
 import { DERBY_TURN_MS, DERBY_TIMEOUT_MS } from '../derby/logic'
-import type { DerbyBroadcastState, DerbyTimerState } from '../types'
+import { DERBY_ODDS_INTERVAL_MS, DERBY_ODDS_DURATION_MS } from '../derby/odds'
+import type { DerbyBroadcastState, DerbyTimerState, DerbyOddsState } from '../types'
+
+export const DEFAULT_DERBY_ODDS: DerbyOddsState = {
+  enabled: false,
+  pinned: false,
+  startedAt: 0,
+  intervalMs: DERBY_ODDS_INTERVAL_MS,
+  durationMs: DERBY_ODDS_DURATION_MS,
+}
 
 export const DEFAULT_DERBY_TIMER: DerbyTimerState = {
   phase: 'main',
@@ -30,6 +39,7 @@ export const DEFAULT_DERBY_BROADCAST: DerbyBroadcastState = {
   miniBoard: true,
   timer: DEFAULT_DERBY_TIMER,
   advancers: {},
+  odds: DEFAULT_DERBY_ODDS,
 }
 
 export function useDerbyBroadcast() {
@@ -45,6 +55,7 @@ export function useDerbyBroadcast() {
         ...DEFAULT_DERBY_BROADCAST,
         ...data,
         timer: { ...DEFAULT_DERBY_TIMER, ...(data.timer ?? {}) },
+        odds: { ...DEFAULT_DERBY_ODDS, ...(data.odds ?? {}) },
       })
       setLoading(false)
     })
