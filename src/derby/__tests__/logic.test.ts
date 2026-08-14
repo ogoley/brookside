@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   cutInfo, advancersFromRound, effectiveAdvancers, participantsForRound,
-  leaderboardForRound, isRoundLocked, seedOrderForRound, type DerbyScoresMap,
+  leaderboardForRound, isRoundLocked, seedOrderForRound,
+  derbyBetWinners, derbyPayout, type DerbyScoresMap,
 } from '../logic'
 import type { DerbyAdvancerLocks } from '../../types'
 
@@ -163,6 +164,88 @@ describe('participantsForRound', () => {
       r2: ['a', 'b', 'd'], // c lost the four-way swing-off at 5
     }
     expect(participantsForRound(TEN, scores, 3, locks)).toEqual(['a', 'b', 'd'])
+  })
+})
+
+describe('derbyBetWinners', () => {
+  // Dragon Ogoley wins the derby with 29 across all three rounds.
+  const bet = (id: string, name: string, playerId: string, totalHr: number) => ({ id, name, playerId, totalHr })
+  const DRAGON = 'dragon'
+  const OTHER = 'someone_else'
+
+  it('gives it to the single closest bet on the winner', () => {
+    const out = derbyBetWinners([
+      bet('1', 'Alice', DRAGON, 30),
+      bet('2', 'Bob', DRAGON, 24),
+    ], DRAGON, 29)
+    expect(out.winners.map(w => w.name)).toEqual(['Alice'])
+    expect(out.delta).toBe(1)
+    expect(out.exact).toBe(false)
+  })
+
+  it('splits when two bets are equally close from opposite sides', () => {
+    // 28 and 30 are both 1 away from 29 — direction does not matter
+    const out = derbyBetWinners([
+      bet('1', 'Alice', DRAGON, 30),
+      bet('2', 'Bob', DRAGON, 28),
+      bet('3', 'Cara', DRAGON, 25),
+    ], DRAGON, 29)
+    expect(out.winners.map(w => w.name)).toEqual(['Alice', 'Bob'])
+    expect(out.delta).toBe(1)
+  })
+
+  it('splits between any number of tied bets, same number or not', () => {
+    const out = derbyBetWinners([
+      bet('1', 'Alice', DRAGON, 30),
+      bet('2', 'Bob', DRAGON, 28),
+      bet('3', 'Cara', DRAGON, 30),
+      bet('4', 'Dan', DRAGON, 40),
+    ], DRAGON, 29)
+    expect(out.winners.map(w => w.name)).toEqual(['Alice', 'Bob', 'Cara'])
+    expect(out.winners).toHaveLength(3)
+  })
+
+  it('ignores a closer number bet on the wrong player', () => {
+    const out = derbyBetWinners([
+      bet('1', 'Alice', OTHER, 29),   // nailed the number, wrong winner
+      bet('2', 'Bob', DRAGON, 34),
+    ], DRAGON, 29)
+    expect(out.winners.map(w => w.name)).toEqual(['Bob'])
+    expect(out.contenders).toBe(1)
+  })
+
+  it('flags an exact call', () => {
+    const out = derbyBetWinners([
+      bet('1', 'Alice', DRAGON, 29),
+      bet('2', 'Bob', DRAGON, 28),
+    ], DRAGON, 29)
+    expect(out.winners.map(w => w.name)).toEqual(['Alice'])
+    expect(out.exact).toBe(true)
+    expect(out.delta).toBe(0)
+  })
+
+  it('has no winner when nobody backed the actual winner', () => {
+    const out = derbyBetWinners([bet('1', 'Alice', OTHER, 29)], DRAGON, 29)
+    expect(out.winners).toEqual([])
+    expect(out.delta).toBeNull()
+    expect(out.contenders).toBe(0)
+  })
+})
+
+describe('derbyPayout', () => {
+  it('halves the pot and splits the winners’ half evenly', () => {
+    expect(derbyPayout(12, 2)).toEqual({ pot: 120, toCharity: 60, toWinners: 60, each: 30 })
+  })
+
+  it('gives charity the odd dollar on an odd pot', () => {
+    const p = derbyPayout(13, 1)
+    expect(p.pot).toBe(130)
+    expect(p.toWinners + p.toCharity).toBe(130)
+    expect(p.toCharity).toBeGreaterThanOrEqual(p.toWinners)
+  })
+
+  it('pays nobody when there are no winning entries', () => {
+    expect(derbyPayout(10, 0).each).toBe(0)
   })
 })
 

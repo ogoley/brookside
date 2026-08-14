@@ -5,10 +5,11 @@ import { db } from '../firebase'
 import { useDerbyBroadcast } from '../hooks/useDerbyBroadcast'
 import { useDerbyContestants, type DerbyContestant } from '../hooks/useDerbyContestants'
 import { useDerbyClock } from '../hooks/useDerbyTimer'
+import { useDerbyBets } from '../hooks/useDerbyBets'
 import {
   ROUND_KEY, ROUND_LABEL, ADVANCE_COUNT,
   roundScore, derbyTotal, participantsForRound, effectiveAdvancers, cutInfo, isRoundLocked,
-  derbySeedValue, seedOrderForRound,
+  derbySeedValue, seedOrderForRound, leaderboardForRound, derbyBetWinners, derbyPayout,
   derbyTimerRemainingMs, formatDerbyClock, DERBY_MONEY_BALL_HR,
 } from '../derby/logic'
 import type { DerbyBroadcastView, DerbyRoundNum, DerbyAdvancerLocks } from '../types'
@@ -25,6 +26,7 @@ const VIEWS: { key: DerbyBroadcastView; label: string; icon: string }[] = [
   { key: 'player', label: 'Player Card', icon: '👤' },
   { key: 'leaderboard', label: 'Leaderboard', icon: '🏆' },
   { key: 'upNext', label: 'Up Next', icon: '📋' },
+  { key: 'winner', label: 'Champion', icon: '👑' },
 ]
 
 const bcastRef = (path?: string) => ref(db, path ? `derby/broadcast/${path}` : 'derby/broadcast')
@@ -148,6 +150,51 @@ function ControlPanel() {
     update(bcastRef(), updates)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, order.length, participants.length])
+
+  // ── Wipe a practice run ───────────────────────────────────────────────
+  // Everything the derby competition produced goes; the 50/50 entries stay.
+  // Those are real money already sent over Venmo — see ResetSection.
+  const recordedScoreCount = useMemo(
+    () => Object.values(scores).reduce(
+      (n, s) => n + (s.r1 !== undefined ? 1 : 0) + (s.r2 !== undefined ? 1 : 0) + (s.r3 !== undefined ? 1 : 0),
+      0,
+    ),
+    [scores],
+  )
+
+  const resetDerbyScores = () => {
+    if (!window.confirm(
+      `Reset the derby for a fresh run?\n\n`
+      + `DELETES  ${recordedScoreCount} recorded home run score(s), the confirmed advancers, `
+      + `the batting order and the declared champion.\n`
+      + `KEEPS    every 50/50 bet — real money, untouched.\n\n`
+      + `Nothing is archived. For the end of a real season use “Archive this derby & reset” on /derby.`
+    )) return
+
+    // Round 1 seeds off season HR, so this is unaffected by the scores we're
+    // about to drop — the order comes back ready for another run
+    const seeded = buildSeededOrder(1)
+    return update(ref(db), {
+      'derby/broadcast/scores': null,
+      'derby/broadcast/advancers': null,
+      'derby/broadcast/activeRound': 1,
+      'derby/broadcast/leaderboardRound': 1,
+      'derby/broadcast/view': 'hidden',
+      'derby/broadcast/battingOrder': seeded,
+      'derby/broadcast/currentBatterIndex': 0,
+      'derby/broadcast/featuredPlayerId': seeded[0] ?? null,
+      'derby/broadcast/timer/phase': 'main',
+      'derby/broadcast/timer/running': false,
+      'derby/broadcast/timer/startedAt': null,
+      'derby/broadcast/timer/remainingMs': timer.durationMs,
+      'derby/broadcast/timer/timeoutRemainingMs': timer.timeoutDurationMs,
+      'derby/broadcast/timer/timeoutUsed': false,
+      'derby/broadcast/timer/moneyBallAt': null,
+      'derby/broadcast/timer/playerId': seeded[0] ?? null,
+      'derby/result': null,
+      // derby/entries and derby/disabledPlayers are deliberately absent
+    })
+  }
 
   const goToBatter = (i: number) => {
     const clamped = Math.max(0, Math.min(i, order.length - 1))
@@ -291,7 +338,15 @@ function ControlPanel() {
   localOrderRef.current = localOrder
   const draggingRef = useRef(false)
   useEffect(() => {
-    if (!draggingRef.current) setLocalOrder(order)
+    if (draggingRef.current) return
+    // Compare by value. `order` is derived from upstream snapshot state, and if
+    // anything up that chain ever hands back a fresh object per render, setting
+    // state on identity alone re-invalidates this effect forever (that is
+    // exactly the "Maximum update depth exceeded" this page hit). Content-equal
+    // means nothing to sync, so don't touch state.
+    setLocalOrder(prev =>
+      prev.length === order.length && prev.every((id, i) => id === order[i]) ? prev : order,
+    )
   }, [order])
 
   const commitOrder = (next: string[]) => {
@@ -344,7 +399,7 @@ function ControlPanel() {
 
         {/* ── Broadcast view ── */}
         <Section title="Broadcast view" accent="#fbbf24">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))', gap: 8 }}>
             {VIEWS.map(v => (
               <button
                 key={v.key}
@@ -447,6 +502,19 @@ function ControlPanel() {
             </div>
           )}
         </Section>
+
+        {/* ── Champion ── always mounted: a posted result has to stay
+            clearable no matter which round the producer is looking at */}
+        <ChampionSection
+          eligibleIds={eligibleIds}
+          scores={scores}
+          locks={locks}
+          activeRound={activeRound}
+          contestantById={contestantById}
+          teams={teams}
+          onShow={() => setView('winner')}
+          onCleared={() => { if (broadcast.view === 'winner') setView('hidden') }}
+        />
 
         {/* ── Advancement ── */}
         <AdvancementSection
@@ -832,8 +900,273 @@ function ControlPanel() {
             Blank = hasn't hit that round. The winner's Total is the number the 50/50 pays out on.
           </div>
         </Section>
+
+        {/* ── Reset ── */}
+        <ResetSection onReset={resetDerbyScores} scoreCount={recordedScoreCount} />
       </div>
     </div>
+  )
+}
+
+// ── Wipe a test run ──────────────────────────────────────────────────────────
+// Deliberately NOT the same thing as /derby's "Archive & reset":
+//   here   — throw away practice home runs, keep the real money. No archive.
+//   /derby — end of season: the bets and scores were real, so they get frozen
+//            into derby/archive/{year} before anything is cleared.
+// The 50/50 entries are real money people have already sent over Venmo. Nothing
+// in this file may ever delete them.
+
+function ResetSection({ onReset, scoreCount }: { onReset: () => void; scoreCount: number }) {
+  const { entries } = useDerbyBets()
+  const [open, setOpen] = useState(false)
+  const entryCount = Object.keys(entries).length
+
+  return (
+    <Section title="Reset" accent="#f87171" collapsible open={open} onToggle={() => setOpen(o => !o)}>
+      <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.7, marginBottom: 12 }}>
+        <div style={{ color: '#f87171', fontWeight: 700 }}>
+          Deletes: all {scoreCount} recorded home run{scoreCount === 1 ? '' : 's'}, the confirmed
+          advancers, the batting order and the declared champion.
+        </div>
+        <div style={{ color: '#4ade80', fontWeight: 700 }}>
+          Keeps: all {entryCount} 50/50 {entryCount === 1 ? 'bet' : 'bets'} — real money, never touched here.
+        </div>
+        <div style={{ color: '#64748b' }}>
+          For a practice run. Nothing is archived — at the end of a real season use
+          “Archive this derby &amp; reset” on <code style={{ color: '#94a3b8' }}>/derby</code>, which
+          freezes the bets and scores together first.
+        </div>
+      </div>
+      <button
+        onClick={onReset}
+        style={{
+          ...smallBtn, width: '100%', padding: '12px 0', fontSize: 14, fontWeight: 800,
+          background: '#b91c1c', color: '#ffffff', border: 'none',
+        }}
+      >
+        ↺ Reset derby scores &amp; champion
+      </button>
+    </Section>
+  )
+}
+
+// ── Champion: settle the derby and the 50/50 in one action ───────────────────
+// Writing `derby/result` is what the public /derby page reads, so declaring
+// here posts the result there too — one entry point, no chance of the broadcast
+// and the website naming different winners.
+
+function ChampionSection({ eligibleIds, scores, locks, activeRound, contestantById, teams, onShow, onCleared }: {
+  eligibleIds: string[]
+  scores: DerbyScoresMap
+  locks: DerbyAdvancerLocks
+  activeRound: DerbyRoundNum
+  contestantById: Map<string, DerbyContestant>
+  teams: Record<string, { shortName?: string }>
+  onShow: () => void
+  onCleared: () => void
+}) {
+  const { entries, result } = useDerbyBets()
+  const [open, setOpen] = useState(activeRound === 3)
+
+  const finalists = useMemo(
+    () => participantsForRound(eligibleIds, scores, 3, locks),
+    [eligibleIds, scores, locks],
+  )
+  // Champion = the final round's leader; ties are the producer's call
+  const ranked = useMemo(
+    () => leaderboardForRound(eligibleIds, scores, 3, locks),
+    [eligibleIds, scores, locks],
+  )
+  const leader = ranked.find(r => r.score !== undefined)
+  const yetToHit = finalists.filter(id => roundScore(scores, id, 3) === undefined)
+
+  // Draft = whatever is posted, else the live leader
+  const [pick, setPick] = useState<string | null>(null)
+  const [totalDraft, setTotalDraft] = useState<string | null>(null)
+  const winnerId = pick ?? result?.winnerPlayerId ?? leader?.playerId ?? ''
+  const suggestedTotal = winnerId ? derbyTotal(scores, winnerId) : 0
+  const totalHr = totalDraft !== null
+    ? parseInt(totalDraft, 10)
+    : result?.winnerPlayerId === winnerId && result ? result.totalHr : suggestedTotal
+  const validTotal = !isNaN(totalHr) && totalHr >= 0
+
+  // Every entry counts on air: the entry IS the Venmo payment, so there is
+  // nothing unpaid to filter. The /derby page still gates on the `paid` flag,
+  // so an entry left unticked there is the one way the two can disagree —
+  // hence the warning below rather than a silent divergence.
+  const entryList = useMemo(
+    () => Object.entries(entries).map(([id, e]) => ({ id, name: e.name, playerId: e.playerId, totalHr: e.totalHr })),
+    [entries],
+  )
+  const unpaid = useMemo(() => Object.values(entries).filter(e => !e.paid), [entries])
+  const outcome = useMemo(
+    () => (winnerId && validTotal ? derbyBetWinners(entryList, winnerId, totalHr) : null),
+    [entryList, winnerId, totalHr, validTotal],
+  )
+  const money = derbyPayout(entryList.length, outcome?.winners.length ?? 0)
+
+  const posted = result?.finalized && result.winnerPlayerId === winnerId && result.totalHr === totalHr
+
+  const declare = () => {
+    if (!winnerId || !validTotal) return
+    const name = contestantById.get(winnerId)?.name ?? winnerId
+    if (!window.confirm(`Declare ${name} the derby champion with ${totalHr} home runs?\n\nThis posts the result to the public /derby page as well.`)) return
+    set(ref(db, 'derby/result'), { winnerPlayerId: winnerId, totalHr, finalized: true })
+      .then(() => { setPick(null); setTotalDraft(null); onShow() })
+  }
+
+  // Also drops the overlay off the champion graphic — otherwise it would sit
+  // on a winner that no longer exists
+  const clearResult = () => {
+    if (!window.confirm('Reset the champion?\n\nThis clears the posted result here, on the overlay, and on the public /derby page. Derby scores are left alone.')) return
+    remove(ref(db, 'derby/result')).then(() => { setPick(null); setTotalDraft(null); onCleared() })
+  }
+
+  const postedName = result?.winnerPlayerId
+    ? contestantById.get(result.winnerPlayerId)?.name ?? result.winnerPlayerId
+    : null
+
+  return (
+    <Section
+      title={result?.finalized ? 'Champion — result posted' : 'Champion'}
+      accent="#fbbf24"
+      collapsible
+      open={open}
+      onToggle={() => setOpen(o => !o)}
+    >
+      {/* Always reachable, whatever round is selected — this is the reset */}
+      {result?.finalized && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          background: 'rgba(251,191,36,0.10)', border: '1px solid #fbbf24',
+          borderRadius: 10, padding: '10px 12px', marginBottom: 12,
+        }}>
+          <span style={{ flex: '1 1 200px', fontSize: 13, color: '#e2e8f0', lineHeight: 1.5 }}>
+            👑 <strong style={{ color: '#fbbf24' }}>{postedName}</strong> is posted as champion
+            with <strong style={{ color: '#fbbf24' }}>{result.totalHr}</strong> HR — live on the overlay and on /derby.
+          </span>
+          <button onClick={onShow} style={{ ...smallBtn, background: '#1e293b', color: '#cbd5e1', border: '1px solid #334155' }}>
+            Show
+          </button>
+          <button onClick={clearResult} style={{ ...smallBtn, background: '#b91c1c', color: '#ffffff', border: 'none', fontWeight: 800 }}>
+            ↺ Reset champion
+          </button>
+        </div>
+      )}
+
+      {finalists.length === 0 ? (
+        <div style={{ fontSize: 13, color: '#64748b' }}>
+          Nobody has reached the final round yet.
+        </div>
+      ) : (
+        <>
+          {yetToHit.length > 0 && (
+            <div style={{ fontSize: 13, color: '#fbbf24', marginBottom: 10, lineHeight: 1.6 }}>
+              ⚠ {yetToHit.length} finalist{yetToHit.length === 1 ? '' : 's'} still to hit —{' '}
+              {yetToHit.map(id => contestantById.get(id)?.name ?? '?').join(', ')}
+            </div>
+          )}
+
+          {/* Who won */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+            <select
+              value={winnerId}
+              onChange={e => { setPick(e.target.value); setTotalDraft(null) }}
+              style={{ flex: '2 1 220px', padding: '8px 10px', borderRadius: 8, background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', fontSize: 13, fontFamily: 'var(--font-ui)' }}
+            >
+              <option value="">Pick the champion…</option>
+              {finalists.map(id => (
+                <option key={id} value={id}>
+                  {contestantById.get(id)?.name ?? id}
+                  {' — '}{roundScore(scores, id, 3) ?? '–'} final, {derbyTotal(scores, id)} total
+                  {teams[contestantById.get(id)?.teamId ?? '']?.shortName ? ` (${teams[contestantById.get(id)!.teamId].shortName})` : ''}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 150px' }}>
+              <span style={smallLabel}>Total HR</span>
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={totalDraft ?? String(isNaN(totalHr) ? '' : totalHr)}
+                onChange={e => setTotalDraft(e.target.value)}
+                style={{ width: 74, padding: '7px 8px', textAlign: 'center', borderRadius: 8, background: '#0f172a', color: '#fbbf24', border: '1px solid #334155', fontFamily: 'var(--font-score)', fontSize: 18, fontWeight: 800 }}
+              />
+              {totalDraft !== null && totalHr !== suggestedTotal && (
+                <button
+                  onClick={() => setTotalDraft(null)}
+                  title={`Back to the scored total (${suggestedTotal})`}
+                  style={{ ...iconBtn, color: '#94a3b8', fontSize: 12 }}
+                >
+                  ↺ {suggestedTotal}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* What the 50/50 pays — shown BEFORE it goes on air */}
+          <div style={{
+            background: '#0f172a', border: '1px solid #334155', borderRadius: 10,
+            padding: '10px 12px', marginBottom: 10, fontSize: 13, lineHeight: 1.7, color: '#94a3b8',
+          }}>
+            <div style={{ ...smallLabel, marginBottom: 4 }}>50/50 · {entryList.length} entries · ${money.pot} pot</div>
+            {!outcome ? (
+              <span>Pick a champion to settle the bet.</span>
+            ) : outcome.winners.length === 0 ? (
+              <span style={{ color: '#4ade80' }}>
+                Nobody backed {contestantById.get(winnerId)?.name ?? 'them'} — the full ${money.pot} goes to charity.
+              </span>
+            ) : (
+              <>
+                <span style={{ color: '#fbbf24', fontWeight: 700 }}>
+                  {outcome.winners.map(w => `${w.name} (${w.totalHr})`).join(' · ')}
+                </span>
+                <span>
+                  {' — '}{outcome.winners.length > 1
+                    ? `${outcome.winners.length}-way tie at ${outcome.delta} off, $${money.each} each`
+                    : outcome.exact ? `exact call, $${money.each}` : `${outcome.delta} off, $${money.each}`}
+                  {' · '}${money.toCharity} to charity
+                </span>
+                <div style={{ fontSize: 11, color: '#64748b' }}>
+                  {outcome.contenders} of {entryList.length} entries backed the champion
+                </div>
+                {unpaid.length > 0 && (
+                  <div style={{ fontSize: 11, color: '#fbbf24' }}>
+                    ⚠ {unpaid.length} entr{unpaid.length === 1 ? 'y is' : 'ies are'} not ticked paid
+                    ({unpaid.map(e => e.name).join(', ')}) — counted here, but /derby will exclude
+                    {unpaid.length === 1 ? ' it' : ' them'}. Tick them on /derby to keep the two in step.
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={declare}
+              disabled={!winnerId || !validTotal}
+              style={{
+                ...smallBtn, flex: '2 1 200px', fontWeight: 800, fontSize: 14,
+                background: !winnerId || !validTotal ? '#334155' : '#fbbf24',
+                color: !winnerId || !validTotal ? '#64748b' : '#0f172a', border: 'none',
+                cursor: !winnerId || !validTotal ? 'not-allowed' : 'pointer',
+              }}
+            >
+              👑 {posted ? 'Show champion graphic' : 'Declare champion & show'}
+            </button>
+            {/* Reset lives in the banner above, so it stays reachable even
+                when this half of the section is irrelevant */}
+          </div>
+
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.6 }}>
+            {posted
+              ? '✓ Posted — the public /derby page is showing this result.'
+              : 'Declaring posts the result to the public /derby page as well, then cuts the overlay to the champion graphic.'}
+          </div>
+        </>
+      )}
+    </Section>
   )
 }
 

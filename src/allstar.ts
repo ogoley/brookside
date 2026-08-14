@@ -60,9 +60,9 @@ export const ALLSTAR_SEED_ROSTERS: Record<AllstarTeamId, string[]> = {
   ],
 }
 
-// Year-independent filename — the generator rewrites this file each year, so
-// no code change is needed when the lockup's year text changes.
-export const ALLSTAR_LOGO_URL = '/logos/allstar-weekend.svg'
+// The All-Star Weekend lockup is no longer an image — it is rendered as text by
+// `components/AllStarWordmark.tsx`, which carries no year and so needs nothing
+// done to it at rollover.
 
 // The 2026 teams predate the isExhibition flag and may be deleted after the
 // event — historical game records referencing these ids must stay exhibition

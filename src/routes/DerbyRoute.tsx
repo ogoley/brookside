@@ -8,13 +8,14 @@ import { useGames } from '../hooks/useGames'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { useDerby } from '../hooks/useDerby'
 import { isExhibitionGame } from '../allstar'
+import { derbyBetWinners, DERBY_ENTRY_FEE, DERBY_CHARITY_NAME } from '../derby/logic'
 import type { AtBatRecord, DerbyEntry } from '../types'
 
 // Front-end gate only — the /derby path is intentionally open at the rules
 // layer. Worst case someone edits derby entries; nothing else is writable.
 const ADMIN_PASSWORD = 'dingers'
-const ENTRY_FEE = 10
-const CHARITY_NAME = 'Valley Impact Project'
+const ENTRY_FEE = DERBY_ENTRY_FEE
+const CHARITY_NAME = DERBY_CHARITY_NAME
 const VENMO_HANDLE = 'emvee311'
 const VENMO_URL = `https://venmo.com/u/${VENMO_HANDLE}`
 
@@ -143,13 +144,15 @@ export function DerbyRoute() {
   const pot = paidCount * ENTRY_FEE
   const result = derby.result
 
-  // Winning entries: paid, picked the right player, closest on total HR
+  // Winning entries — the rule itself lives in derby/logic.ts so this page and
+  // the broadcast champion graphic can never settle the bet differently.
   const winningIds = useMemo(() => {
     if (!result?.finalized) return new Set<string>()
-    const eligible = entryList.filter(([, e]) => e.paid && e.playerId === result.winnerPlayerId)
-    if (eligible.length === 0) return new Set<string>()
-    const best = Math.min(...eligible.map(([, e]) => Math.abs(e.totalHr - result.totalHr)))
-    return new Set(eligible.filter(([, e]) => Math.abs(e.totalHr - result.totalHr) === best).map(([id]) => id))
+    const paidEntries = entryList
+      .filter(([, e]) => e.paid)
+      .map(([id, e]) => ({ id, name: e.name, playerId: e.playerId, totalHr: e.totalHr }))
+    const { winners } = derbyBetWinners(paidEntries, result.winnerPlayerId, result.totalHr)
+    return new Set(winners.map(w => w.id))
   }, [entryList, result])
 
   // ── Firebase writes (admin) ───────────────────────────────────────────
@@ -457,8 +460,12 @@ export function DerbyRoute() {
                   Archive this derby &amp; reset for next season
                 </button>
                 <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                  Moves everything to a frozen archive — do this once the payout is settled.
+                  End of a <strong>real</strong> season: freezes the bets <em>and</em> the derby scores
+                  into an archive, then clears the slate. Do this once the payout is settled.
                   {derby.archive && ` Archived seasons: ${Object.keys(derby.archive).sort().join(', ')}.`}
+                  <br />
+                  Wiping a <strong>practice</strong> run is a different job — use “Reset derby scores
+                  &amp; champion” on the derby controller, which never touches the bets.
                 </span>
               </div>
             </div>

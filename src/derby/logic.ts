@@ -151,6 +151,70 @@ export function participantsForRound(
   return effectiveAdvancers(participantsForRound(eligibleIds, scores, prevRound, locks), scores, prevRound, locks)
 }
 
+// ── The 50/50 bet ────────────────────────────────────────────────────────────
+
+export const DERBY_ENTRY_FEE = 10
+export const DERBY_CHARITY_NAME = 'Valley Impact Project'
+
+/** Just enough of a `DerbyEntry` to settle the bet. */
+export interface DerbyBetEntry {
+  id: string
+  name: string
+  playerId: string   // who they bet would win the derby
+  totalHr: number    // and what that winner's 3-round total would be
+}
+
+export interface DerbyBetWinner extends DerbyBetEntry {
+  delta: number      // |their guess − the real total|
+}
+
+export interface DerbyBetOutcome {
+  winners: DerbyBetWinner[]  // empty = nobody bet on the actual winner
+  delta: number | null       // the winning distance; null when there are no winners
+  contenders: number         // entries that picked the right player at all
+  exact: boolean             // somebody called it on the nose
+}
+
+/**
+ * Settle the 50/50.
+ *
+ * An entry is in the running only if it picked the player who actually won the
+ * derby — a closer *number* on the wrong player counts for nothing. Among those,
+ * the smallest distance to the winner's 3-round total takes it, and **direction
+ * is irrelevant**: if the winner finishes on 29, a bet of 30 and a bet of 28 are
+ * equally close and both win. Any number of entries can tie, whether that's two
+ * people either side of the total or five people on the same number, and they
+ * all split the pot evenly.
+ *
+ * Nobody eligible → no winners, and the whole pot goes to charity.
+ */
+export function derbyBetWinners(
+  entries: DerbyBetEntry[], winnerPlayerId: string, winnerTotalHr: number,
+): DerbyBetOutcome {
+  const eligible = entries.filter(e => e.playerId === winnerPlayerId)
+  if (eligible.length === 0) return { winners: [], delta: null, contenders: 0, exact: false }
+
+  const withDelta = eligible.map(e => ({ ...e, delta: Math.abs(e.totalHr - winnerTotalHr) }))
+  const best = Math.min(...withDelta.map(e => e.delta))
+  const winners = withDelta
+    .filter(e => e.delta === best)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return { winners, delta: best, contenders: eligible.length, exact: best === 0 }
+}
+
+/** Pot split: half to charity, half shared evenly by the winning entries. */
+export function derbyPayout(entryCount: number, winnerCount: number) {
+  const pot = entryCount * DERBY_ENTRY_FEE
+  const toWinners = Math.floor(pot / 2)
+  return {
+    pot,
+    toCharity: pot - toWinners,
+    toWinners,
+    each: winnerCount > 0 ? Math.floor(toWinners / winnerCount) : 0,
+  }
+}
+
 // ── Batting order seeding ────────────────────────────────────────────────────
 
 /** The number a round's batting order is seeded on: last round's HR, or season HR in round 1. */

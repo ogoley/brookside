@@ -10,17 +10,25 @@
 //              (2 → 9 rows, 5 → 12, 13 → 20 and past the band). `scored`
 //              stretches automatically to make the tie possible.
 //     locked — any value confirms the field
-//     big    — show the full-screen takeover instead of the left rail
+//     big      — show the full-screen takeover instead of the left rail
+//     champion — the winner graphic; pair with bets=0|1|2|3 for no winner,
+//                one winner, a two-way split, or a three-way split
 //     money  — any value plays the money-ball graphic on a loop (clock reads 0:00)
 //     fps    — live frame-rate readout, to judge animation cost on the real machine
 import { useEffect, useState } from 'react'
 import { DerbyLeaderboardScene, type DerbyLeaderboardDisplayRow } from '../scenes/derby/DerbyLeaderboardScene'
 import { DerbyMiniBoardScene, type DerbyMiniRow } from '../scenes/derby/DerbyMiniBoardScene'
+import { DerbyTickerScene, type DerbyTickerRow, type DerbyTickerSegment } from '../scenes/derby/DerbyTickerScene'
 import { DerbyPlayerScene } from '../scenes/derby/DerbyPlayerScene'
 import { DerbyMoneyBall, MONEY_BALL_ANIM_MS } from '../scenes/derby/DerbyMoneyBallScene'
 import { DerbyTurnClock } from '../components/DerbyTurnClock'
+import AllStarWordmark from '../components/AllStarWordmark'
 import { DEFAULT_DERBY_TIMER } from '../hooks/useDerbyBroadcast'
-import { leaderboardForRound, cutInfo, participantsForRound, ADVANCE_COUNT, ROUND_KEY, type DerbyScoresMap } from '../derby/logic'
+import {
+  leaderboardForRound, cutInfo, participantsForRound, derbyBetWinners, derbyPayout,
+  ADVANCE_COUNT, ROUND_KEY, ROUND_LABEL, type DerbyScoresMap,
+} from '../derby/logic'
+import { DerbyWinnerScene } from '../scenes/derby/DerbyWinnerScene'
 import type { Team, DerbyRoundNum, DerbyAdvancerLocks, DerbyTimerState } from '../types'
 
 const TEAMS: Team[] = [
@@ -112,6 +120,29 @@ export function DerbyPreviewRoute() {
 
   const info = cutInfo(participantsForRound(ids, scores, round, locks), scores, round)
 
+  // Ticker segments: this round plus every round already hit. Earlier rounds get
+  // a synthetic full set of scores so the label hand-off has something to crawl.
+  const tickerSegments: DerbyTickerSegment[] = []
+  for (let r = round; r >= 1; r--) {
+    const rk = ROUND_KEY[r as DerbyRoundNum]
+    const segIds = r === round
+      ? ids
+      : ids.slice(0, Math.max(3, slots + 1))
+    const segRows: DerbyTickerRow[] = segIds.map((id, idx) => ({
+      playerId: id,
+      name: NAMES[parseInt(id.slice(1), 10)],
+      team: TEAMS[parseInt(id.slice(1), 10) % TEAMS.length],
+      score: r === round ? scores[id]?.[rk] : Math.max(0, 14 - idx),
+      isCurrent: r === round && id === liveId,
+    }))
+    tickerSegments.push({
+      key: rk,
+      label: ROUND_LABEL[r as DerbyRoundNum],
+      isCurrent: r === round,
+      rows: segRows,
+    })
+  }
+
   const liveIdx = parseInt(liveId.slice(1), 10)
   // Stopped rather than running: a live `startedAt` would be an impure read
   // during render, and a frozen clock previews the layout just as well
@@ -122,13 +153,55 @@ export function DerbyPreviewRoute() {
     playerId: liveId,
   }
 
+  // Champion graphic against a mock 50/50 field. `bets` picks the shape:
+  //   1 = one clear winner · 2 = two tied either side · 3 = three-way tie
+  //   0 = nobody backed the champion (whole pot to charity)
+  const betShape = parseInt(params.get('bets') ?? '2', 10)
+  const champTotal = 29
+  const GUESSES: Record<number, number[]> = {
+    0: [], 1: [30, 24, 35], 2: [30, 28, 24], 3: [30, 28, 30, 22],
+  }
+  const BETTORS = ['Dragon Ogoley', 'Marty Vee', 'Sal Pastore', 'Denny Quinn', 'Ro Bianchi']
+  const mockEntries = (GUESSES[betShape] ?? GUESSES[2]).map((g, i) => ({
+    id: `e${i}`, name: BETTORS[i % BETTORS.length], playerId: liveId, totalHr: g,
+  }))
+  // A few entries on other hitters, so the pot is realistic and the
+  // wrong-player exclusion is exercised
+  const decoys = [4, 5, 6, 7, 8].map((k, i) => ({
+    id: `d${i}`, name: `Bettor ${i + 1}`, playerId: ids[k] ?? ids[0], totalHr: 26 + i,
+  }))
+  const allEntries = [...mockEntries, ...decoys]
+  const champOutcome = derbyBetWinners(allEntries, liveId, champTotal)
+  const champMoney = derbyPayout(allEntries.length, champOutcome.winners.length)
+
   return (
     <div style={{ width: 1920, height: 1080, position: 'relative' }}>
-      {big ? (
+      {params.get('champion') !== null ? (
+        <DerbyWinnerScene
+          name={NAMES[parseInt(liveId.slice(1), 10)]}
+          team={TEAMS[parseInt(liveId.slice(1), 10) % TEAMS.length]}
+          totalHr={champTotal}
+          scores={{ r1: 11, r2: 9, r3: 9 }}
+          seasonHr={14}
+          betWinners={champOutcome.winners}
+          pot={champMoney.pot}
+          toWinners={champMoney.toWinners}
+          toCharity={champMoney.toCharity}
+          eachTakes={champMoney.each}
+        />
+      ) : big ? (
         <DerbyLeaderboardScene rows={display} round={round} livePlayerId={liveId} locked={!!locks} />
       ) : (
         <>
           {/* The whole left column, so the dashboard can be read as one stack */}
+          <AllStarWordmark
+          size={26}
+          star
+          style={{
+            position: 'absolute', top: 24, right: 32,
+            opacity: 0.7, pointerEvents: 'none',
+          }}
+        />
           {clock && <DerbyTurnClock timer={mockTimer} playerName={NAMES[liveIdx]} />}
           <DerbyMiniBoardScene
             rows={mini}
@@ -139,6 +212,7 @@ export function DerbyPreviewRoute() {
             spotsLeft={info.spotsLeft}
             clockVisible={clock}
           />
+          <DerbyTickerScene segments={tickerSegments} />
           <DerbyPlayerScene
             name={NAMES[liveIdx]}
             seasonHr={12}

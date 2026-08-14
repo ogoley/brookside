@@ -135,10 +135,12 @@ buttons and one small config edit:
    (year, team ids, banner names, colors) and the matching
    `ALLSTAR_SEED_TEAMS` / `ALLSTAR_SEED_ROSTERS` in `src/allstar.ts`
    (include `isExhibition: true` on each team). These are the ONLY two files
-   that change year to year.
-2. `node scripts/genAllstarLogos.mjs` → regenerates the badges and
-   `allstar-weekend.svg` (year-independent filename — nothing else references
-   the year).
+   that change year to year. **If you change a team COLOUR, also update the
+   tints in `src/components/AllStarWordmark.tsx`** — the wordmark uses on-dark
+   versions of them that are not derived from the seed constants.
+2. `node scripts/genAllstarLogos.mjs` → regenerates the two team badges. The
+   weekend lockup is live text (`AllStarWordmark.tsx`) and carries no year, so
+   nothing there changes.
 3. `npm run deploy`, then `/config` → All-Star Game → *Create / Re-seed*.
 4. After the event: `/config` → All-Star Game → *Remove* (optional). History
    is safe either way — game records carry `isExhibition: true`.
@@ -159,8 +161,9 @@ buttons and one small config edit:
 ## Logos
 
 Static, self-contained SVGs in `public/logos/` (no Firebase Storage): the badge pair
-`team-rist.svg` / `team-hiller.svg` and the wide `allstar-2026.svg` lockup
-(`ALLSTAR_LOGO_URL`). Barlow Condensed 700 is base64-embedded in the SVG files
+`team-rist.svg` / `team-hiller.svg`. The ALL-STAR WEEKEND lockup used to live here
+too as a wide SVG; it is now rendered as text by `src/components/AllStarWordmark.tsx`.
+Barlow Condensed 700 is base64-embedded in the SVG files
 themselves so text renders correctly inside `<img>` tags and OBS browser sources,
 which never apply the page's external fonts to SVG images. The wiffle ball on the
 badges was traced from a user-supplied Noun Project reference (Melissa Schmitt):

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
 import type { PlayersMap } from '../types'
@@ -45,7 +45,14 @@ export function usePlayers() {
 
   // Subs spread last — if an ID collision ever occurs, sub identity wins
   // (sub-IDs are timestamped; collision should be impossible in practice).
-  const players: PlayersMap = { ...regulars, ...subs }
+  //
+  // MUST be memoised. Returning a fresh object every render makes `players` an
+  // unstable dependency, and callers chain off it: useDerbyContestants memoises
+  // `contestants` on [players], the derby controller memoises `order` on the
+  // resulting map, and syncs local drag state from `order` in an effect. With a
+  // new object each render that chain never settles — every render invalidates
+  // the next one and React aborts with "Maximum update depth exceeded".
+  const players: PlayersMap = useMemo(() => ({ ...regulars, ...subs }), [regulars, subs])
   const loading = !regularsLoaded || !subsLoaded
   return { players, loading }
 }

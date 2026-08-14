@@ -2,7 +2,8 @@
 //
 // The column stacks, top to bottom, on the 1920×1080 canvas:
 //
-//   y=24    All-Star Weekend lockup (watermark)
+//   (the All-Star wordmark is NOT in this column — it watermarks the top
+//    right, opposite the league logo bug; the column starts at the clock)
 //   y=140   DerbyTurnClock          — fixed height, the hitter's turn clock
 //   y=346   DerbyMiniBoardScene     — the rail; fills whatever is left
 //   y=866   DerbyPlayerScene        — hitter card, anchored to bottom: 84
@@ -15,6 +16,7 @@
 
 export const DERBY_COL_X = 32
 export const DERBY_COL_W = 300
+
 
 /** Turn clock: top edge and the height it occupies at its tallest (with a hitter name). */
 export const DERBY_CLOCK_TOP = 140

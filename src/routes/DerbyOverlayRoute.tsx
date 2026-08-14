@@ -4,22 +4,28 @@ import { useDerbyBroadcast } from '../hooks/useDerbyBroadcast'
 import { useDerbyContestants } from '../hooks/useDerbyContestants'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import {
-  leaderboardForRound, participantsForRound, cutInfo, isRoundLocked, ADVANCE_COUNT, ROUND_KEY,
+  leaderboardForRound, participantsForRound, cutInfo, isRoundLocked,
+  derbyBetWinners, derbyPayout,
+  ADVANCE_COUNT, ROUND_KEY, ROUND_LABEL,
 } from '../derby/logic'
+import type { DerbyRoundNum } from '../types'
 import { DerbyPlayerScene } from '../scenes/derby/DerbyPlayerScene'
 import { DerbyLeaderboardScene, type DerbyLeaderboardDisplayRow } from '../scenes/derby/DerbyLeaderboardScene'
 import { DerbyUpNextScene, type DerbyOrderDisplayRow } from '../scenes/derby/DerbyUpNextScene'
-import { DerbyTickerScene, type DerbyTickerRow } from '../scenes/derby/DerbyTickerScene'
+import { DerbyTickerScene, type DerbyTickerRow, type DerbyTickerSegment } from '../scenes/derby/DerbyTickerScene'
 import { DerbyMiniBoardScene, type DerbyMiniRow } from '../scenes/derby/DerbyMiniBoardScene'
+import { DerbyWinnerScene } from '../scenes/derby/DerbyWinnerScene'
+import { useDerbyBets } from '../hooks/useDerbyBets'
 import { DerbyMoneyBall } from '../scenes/derby/DerbyMoneyBallScene'
 import { DerbyTurnClock } from '../components/DerbyTurnClock'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
-import { ALLSTAR_LOGO_URL } from '../allstar'
+import AllStarWordmark from '../components/AllStarWordmark'
 
 function DerbyOverlayContent() {
   const { broadcast } = useDerbyBroadcast()
   const { contestants, contestantById, teams } = useDerbyContestants()
   const { config } = useLeagueConfig()
+  const bets = useDerbyBets()
 
   // Transparent body for OBS, same as the game overlay
   useEffect(() => {
@@ -63,21 +69,41 @@ function DerbyOverlayContent() {
 
   const currentIndex = Math.min(broadcast.currentBatterIndex, Math.max(0, orderRows.length - 1))
 
-  // Ticker = everyone hitting this round: the batting order first (producer's
-  // intent), then any round participant who never made it into the order.
-  const tickerRows: DerbyTickerRow[] = useMemo(() => {
-    const key = ROUND_KEY[broadcast.activeRound]
-    const inOrder = orderRows.map(r => r.playerId)
-    const extras = participantsForRound(contestants.map(c => c.id), broadcast.scores, broadcast.activeRound, broadcast.advancers)
-      .filter(id => !inOrder.includes(id))
+  // Ticker = one segment per round, current round first then every round
+  // already hit. The live round runs in batting order (so it reads as a running
+  // order, with the hitter at the plate flagged); finished rounds run ranked,
+  // because by then they're results.
+  const tickerSegments: DerbyTickerSegment[] = useMemo(() => {
+    const eligibleIds = contestants.map(c => c.id)
     const currentId = orderRows[currentIndex]?.playerId
-    return [
-      ...orderRows.map(r => ({ ...r, isCurrent: r.playerId === currentId })),
-      ...extras.flatMap((id): DerbyTickerRow[] => {
+    const segments: DerbyTickerSegment[] = []
+
+    for (let r = broadcast.activeRound; r >= 1; r--) {
+      const round = r as DerbyRoundNum
+      const key = ROUND_KEY[round]
+      const isCurrent = round === broadcast.activeRound
+      const field = participantsForRound(eligibleIds, broadcast.scores, round, broadcast.advancers)
+
+      const ids = isCurrent
+        // Producer's order first, then anyone in the round who never made it in
+        ? [...orderRows.map(o => o.playerId), ...field.filter(id => !orderRows.some(o => o.playerId === id))]
+        : leaderboardForRound(eligibleIds, broadcast.scores, round, broadcast.advancers).map(row => row.playerId)
+
+      const rows = ids.flatMap((id): DerbyTickerRow[] => {
         const c = contestantById.get(id)
-        return c ? [{ playerId: id, name: c.name, team: teams[c.teamId], score: broadcast.scores[id]?.[key] }] : []
-      }),
-    ]
+        if (!c) return []
+        return [{
+          playerId: id,
+          name: c.name,
+          team: teams[c.teamId],
+          score: broadcast.scores[id]?.[key],
+          isCurrent: isCurrent && id === currentId,
+        }]
+      })
+
+      if (rows.length > 0) segments.push({ key, label: ROUND_LABEL[round], isCurrent, rows })
+    }
+    return segments
   }, [orderRows, currentIndex, contestants, contestantById, teams, broadcast.scores, broadcast.activeRound, broadcast.advancers])
 
   // Whoever is at the plate right now
@@ -118,7 +144,38 @@ function DerbyOverlayContent() {
     return cutInfo(participants, broadcast.scores, broadcast.activeRound)
   }, [contestants, broadcast.scores, broadcast.activeRound, broadcast.advancers])
 
+  // ── Champion graphic ──
+  // Driven by `derby/result`, the same record the public 50/50 page reads, so
+  // the two can never name different winners. Every entry counts: the entry
+  // IS the Venmo payment, so there is nothing unpaid to filter out.
+  const winner = useMemo(() => {
+    if (!bets.result?.winnerPlayerId) return null
+    const { winnerPlayerId, totalHr } = bets.result
+    const c = contestantById.get(winnerPlayerId)
+    const entryList = Object.entries(bets.entries).map(([id, e]) => ({
+      id, name: e.name, playerId: e.playerId, totalHr: e.totalHr,
+    }))
+    const outcome = derbyBetWinners(entryList, winnerPlayerId, totalHr)
+    const money = derbyPayout(entryList.length, outcome.winners.length)
+    return {
+      name: c?.name ?? 'Champion',
+      team: c ? teams[c.teamId] : undefined,
+      seasonHr: c?.seasonHr,
+      totalHr,
+      scores: broadcast.scores[winnerPlayerId] ?? {},
+      betWinners: outcome.winners,
+      pot: money.pot,
+      toWinners: money.toWinners,
+      toCharity: money.toCharity,
+      eachTakes: money.each,
+    }
+  }, [bets.result, bets.entries, contestantById, teams, broadcast.scores])
+
   const view = broadcast.view
+  // Gate the takeover on the graphic ACTUALLY rendering, not just on the view.
+  // Clearing a posted result while the champion is up would otherwise leave a
+  // blank screen: no winner to draw, and the rail/ticker/clock all stood down.
+  const championUp = view === 'winner' && winner !== null
 
   // The clock is stamped with the hitter it was reset for; fall back to whoever
   // is featured so a hand-started clock still names someone
@@ -185,12 +242,27 @@ function DerbyOverlayContent() {
             />
           </motion.div>
         )}
+
+        {view === 'winner' && winner && (
+          <motion.div
+            key="winner"
+            className="absolute inset-0"
+            // No scale/blur on the way in — the champion card is full of large
+            // stroked type, and scaling it re-rasterises every glyph
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+          >
+            <DerbyWinnerScene {...winner} />
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Left rail — always on, independent of `view`. Suppressed only under
           the full leaderboard takeover, which says the same thing bigger. */}
       <AnimatePresence>
-        {broadcast.miniBoard && view !== 'leaderboard' && miniRows.length > 0 && (
+        {broadcast.miniBoard && view !== 'leaderboard' && !championUp && miniRows.length > 0 && (
           <motion.div
             key="miniBoard"
             className="absolute inset-0"
@@ -216,7 +288,9 @@ function DerbyOverlayContent() {
       {/* Ticker — runs independently of `view`, so it can crawl over a clean
           camera shot with every other graphic hidden */}
       <AnimatePresence>
-        {broadcast.ticker && (
+        {/* The champion takeover owns the screen — the crawl and the clock
+            step aside for it without the producer having to toggle them */}
+        {broadcast.ticker && !championUp && (
           <motion.div
             key="ticker"
             className="absolute inset-0"
@@ -225,7 +299,7 @@ function DerbyOverlayContent() {
             exit={{ y: 80 }}
             transition={{ type: 'spring', damping: 28, stiffness: 240 }}
           >
-            <DerbyTickerScene rows={tickerRows} round={broadcast.activeRound} />
+            <DerbyTickerScene segments={tickerSegments} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -234,7 +308,7 @@ function DerbyOverlayContent() {
           over a clean camera shot. Sits under the All-Star lockup: the
           leaderboard is centred and Up Next hugs the right rail */}
       <AnimatePresence>
-        {broadcast.timer.visible && (
+        {broadcast.timer.visible && !championUp && (
           <DerbyTurnClock
             key="turnClock"
             timer={broadcast.timer}
@@ -257,15 +331,14 @@ function DerbyOverlayContent() {
         />
       )}
 
-      {/* All-Star Weekend watermark — top-left: derby scenes never render
-          stats there (bottom-left collides with the leaderboard) */}
+      {/* All-Star Weekend wordmark — top-right watermark, the mirror of the
+          league logo bug bottom-right. The left column is the busy side. */}
       {view !== 'hidden' && (
-        <img
-          src={ALLSTAR_LOGO_URL}
-          alt=""
+        <AllStarWordmark
+          size={26}
+          star
           style={{
-            position: 'absolute', top: 24, left: 32,
-            height: 92, objectFit: 'contain',
+            position: 'absolute', top: 24, right: 32,
             opacity: 0.7, pointerEvents: 'none',
           }}
         />

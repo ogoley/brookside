@@ -12,7 +12,8 @@ import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { useGames } from '../hooks/useGames'
 import { useAllstarRosters } from '../hooks/useAllstarRosters'
-import { playerOnTeam, isExhibitionGame, isExhibitionTeam, ALLSTAR_LOGO_URL } from '../allstar'
+import { playerOnTeam, isExhibitionGame, isExhibitionTeam } from '../allstar'
+import AllStarWordmark from '../components/AllStarWordmark'
 import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
 import type { SceneName, TimerState, AtBatRecord } from '../types'
 import { computeFinalization } from '../scoring/finalization'
@@ -470,7 +471,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
         <div className="flex items-center gap-2 min-w-0">
           <HomeButton />
           {allstar && (
-            <img src={ALLSTAR_LOGO_URL} alt="" style={{ height: 44, flexShrink: 0 }} />
+            <AllStarWordmark size={18} style={{ flexShrink: 0 }} />
           )}
           <h1
             className="text-white text-2xl font-black uppercase tracking-widest truncate"

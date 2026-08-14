@@ -333,7 +333,7 @@ export interface DerbyRoundScores {
   r3?: number
 }
 
-export type DerbyBroadcastView = 'hidden' | 'player' | 'leaderboard' | 'upNext'
+export type DerbyBroadcastView = 'hidden' | 'player' | 'leaderboard' | 'upNext' | 'winner'
 
 // Producer-confirmed advancers out of a round, keyed by the round they came
 // OUT of (r1 = who moved into round 2, r2 = who moved into the final). A

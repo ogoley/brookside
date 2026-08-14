@@ -9,7 +9,8 @@ import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { useStandings } from '../hooks/useStandings'
 import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene } from '../scenes'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
-import { isExhibitionGame, ALLSTAR_LOGO_URL } from '../allstar'
+import { isExhibitionGame } from '../allstar'
+import AllStarWordmark from '../components/AllStarWordmark'
 
 function OverlayContent() {
   const { game } = useGameData()
@@ -149,15 +150,13 @@ function OverlayContent() {
           exhibition matchup is on the scorebug, on any overlay route.
           Top-left: bottom-left would collide with the batter stat strip. */}
       {isExhibitionGame(game, teams) && (
-        <img
-          src={ALLSTAR_LOGO_URL}
-          alt=""
+        <AllStarWordmark
+          size={28}
+          star
           style={{
             position: 'absolute',
             top: 24,
             left: 32,
-            height: 92,
-            objectFit: 'contain',
             opacity: 0.7,
             pointerEvents: 'none',
           }}

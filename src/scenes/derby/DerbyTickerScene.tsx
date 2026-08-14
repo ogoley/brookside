@@ -1,6 +1,5 @@
-import { useLayoutEffect, useRef, useState } from 'react'
-import type { Team, DerbyRoundNum } from '../../types'
-import { ROUND_LABEL } from '../../derby/logic'
+import { useLayoutEffect, useMemo, useRef, useState, Fragment } from 'react'
+import type { Team } from '../../types'
 
 export interface DerbyTickerRow {
   playerId: string
@@ -10,108 +9,228 @@ export interface DerbyTickerRow {
   isCurrent?: boolean // the hitter currently at the plate
 }
 
-interface Props {
+/** One topic on the crawl: a round, its label, and its hitters. */
+export interface DerbyTickerSegment {
+  key: string          // 'r1' | 'r2' | 'r3'
+  label: string        // 'Round 1'
+  isCurrent: boolean   // the round being hit right now
   rows: DerbyTickerRow[]
-  round: DerbyRoundNum
+}
+
+interface Props {
+  segments: DerbyTickerSegment[]
 }
 
 // Crawl pace in pixels per second — ESPN-ish: readable, never rushed
 const SPEED = 95
 const CANVAS_W = 1920
+const BAR_H = 64
+// Slack added to the loop so one label element per segment is always enough:
+// with the track longer than the bar, a docked label can never also be needed
+// somewhere on screen at the same time.
+const TRACK_SLACK = 400
+
+const mod = (n: number, m: number) => ((n % m) + m) % m
 
 /**
- * Bottom-of-screen ticker that crawls right → left forever.
+ * Bottom-of-screen crawl, ESPN topic-block style.
  *
- * The track renders the row list `reps` times back-to-back and slides left by
- * exactly one copy's width, so the loop is seamless with no snap. `reps` is
- * derived from the measured width of one copy: always enough copies to cover
- * the 1920px canvas plus one spare, so a short list still fills the bar.
+ * The bar is a chain of segments — one per round, current round first, then
+ * every round already hit. Each segment is `[label][its hitters]`. A segment's
+ * label **docks** at the left edge while that segment's scores run past it, so
+ * the viewer always knows which round they're reading. When the next segment
+ * arrives its label travels in from the right and slides *over* the docked one,
+ * taking the dock for itself. Scores are clipped at the label's right edge, so
+ * they disappear behind it rather than sliding past it.
+ *
+ * ## Why this one is driven by rAF and not CSS
+ *
+ * Everything else in the derby overlay animates through CSS keyframes on the
+ * compositor (see the frame-rate rule in CLAUDE.md), and the plain crawl this
+ * replaced did too. Docking can't be expressed that way: a label holds still
+ * while the track keeps moving, then resumes — a clamp against the track's
+ * position, not a fixed curve. Splitting it into per-label CSS animations would
+ * mean several independently-started animations whose phases drift apart, and
+ * a drifting hand-off is a visible glitch every cycle.
+ *
+ * So one rAF loop computes every position from a single elapsed-time origin.
+ * The cost is deliberately kept to what the compositor wants: it writes ONE
+ * `transform` per label plus one for the track, and touches `zIndex` /
+ * `visibility` only on the frames they actually change. No layout-triggering
+ * property is written per frame — do not add one.
  */
-export function DerbyTickerScene({ rows, round }: Props) {
-  const copyRef = useRef<HTMLDivElement>(null)
-  const [copyW, setCopyW] = useState(0)
+export function DerbyTickerScene({ segments }: Props) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const labelRefs = useRef<(HTMLDivElement | null)[]>([])
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const [metrics, setMetrics] = useState<{ labelW: number; itemsW: number[] } | null>(null)
 
-  // Measure one copy. Re-measure on row changes and once webfonts land — a
-  // Barlow-vs-fallback swap changes the width enough to desync the loop.
+  // Measure the label block and each segment's row strip. Re-measured when the
+  // segments change and once webfonts land — a Barlow-vs-fallback swap moves
+  // every width enough to throw the docking hand-off off by tens of pixels.
   useLayoutEffect(() => {
     const measure = () => {
-      if (copyRef.current) setCopyW(copyRef.current.scrollWidth)
+      const widths = labelRefs.current.map(el => el?.offsetWidth ?? 0)
+      const labelW = widths.length ? Math.max(...widths) : 0
+      const itemsW = itemRefs.current.map(el => el?.scrollWidth ?? 0)
+      if (labelW > 0) setMetrics({ labelW, itemsW })
     }
     measure()
     let cancelled = false
     document.fonts?.ready.then(() => { if (!cancelled) measure() })
     return () => { cancelled = true }
-  }, [rows])
+  }, [segments])
 
-  if (rows.length === 0) return null
+  const geom = useMemo(() => {
+    if (!metrics || segments.length === 0) return null
+    const { labelW, itemsW } = metrics
+    // A segment owns its label's slot plus its rows
+    const widths = segments.map((_, i) => labelW + (itemsW[i] ?? 0))
+    const natural = widths.reduce((a, b) => a + b, 0)
+    const pad = Math.max(0, CANVAS_W + TRACK_SLACK - natural)
+    const total = natural + pad
 
-  const reps = copyW > 0 ? Math.max(2, Math.ceil(CANVAS_W / copyW) + 1) : 2
-  const duration = copyW > 0 ? copyW / SPEED : 0
+    const starts: number[] = []
+    let acc = 0
+    for (const w of widths) { starts.push(acc); acc += w }
+    // The trailing pad belongs to the last segment, so its label stays docked
+    // through the gap instead of handing over early
+    const spans = widths.map((w, i) => (i === widths.length - 1 ? w + pad : w))
 
-  const copy = (key: number) => (
-    <div
-      key={key}
-      ref={key === 0 ? copyRef : undefined}
-      aria-hidden={key !== 0}
-      style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
-    >
-      {rows.map(row => <TickerItem key={`${key}-${row.playerId}`} row={row} />)}
-    </div>
-  )
+    return { labelW, total, starts, spans, pad }
+  }, [metrics, segments])
+
+  // ── The crawl ──
+  const originRef = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    if (!geom) return
+    const { labelW, total, starts, spans } = geom
+    const itemsViewW = CANVAS_W - labelW
+    // Only written when they change — per-frame writes are transform-only
+    const wasDocked: (boolean | null)[] = segments.map(() => null)
+    const wasVisible: (boolean | null)[] = segments.map(() => null)
+
+    let raf = 0
+    const frame = (now: number) => {
+      if (originRef.current == null) originRef.current = now
+      const scroll = mod(((now - originRef.current) / 1000) * SPEED, total)
+
+      if (trackRef.current) {
+        trackRef.current.style.transform = `translate3d(${-(scroll + labelW)}px,0,0)`
+      }
+
+      labelRefs.current.forEach((el, i) => {
+        if (!el) return
+        // How far the crawl has run since THIS label reached the dock. The
+        // window is half-open — [0, span) — so the spans partition the loop and
+        // exactly one label is docked on every frame, including the hand-off
+        // frame itself. (`u > total - span` leaves the dock empty for one frame.)
+        const since = mod(scroll - starts[i], total)
+        const docked = since < spans[i]
+        // Travelling position: counts down from `total` to 0 at the dock
+        const u = total - since
+        const visible = docked || u <= itemsViewW + labelW
+        el.style.transform = `translate3d(${docked ? 0 : u}px,0,0)`
+        if (wasDocked[i] !== docked) {
+          // An arriving label always covers the one it is replacing
+          el.style.zIndex = docked ? '2' : '3'
+          wasDocked[i] = docked
+        }
+        if (wasVisible[i] !== visible) {
+          el.style.visibility = visible ? 'visible' : 'hidden'
+          wasVisible[i] = visible
+        }
+      })
+      raf = requestAnimationFrame(frame)
+    }
+    raf = requestAnimationFrame(frame)
+    return () => cancelAnimationFrame(raf)
+  }, [geom, segments])
+
+  if (segments.length === 0) return null
+
+  const labelW = geom?.labelW
+  const pad = geom?.pad ?? 0
 
   return (
     <div style={{
       position: 'absolute', left: 0, right: 0, bottom: 0,
-      height: 64, display: 'flex', alignItems: 'stretch',
+      height: BAR_H, overflow: 'hidden',
       background: 'rgba(8,13,24,0.95)',
       borderTop: '3px solid #fbbf24',
       boxShadow: '0 -8px 30px rgba(0,0,0,0.45)',
       pointerEvents: 'none',
     }}>
-      {/* ── Fixed brand block ── */}
+      {/* ── Rows ── clipped to start at the docked label's right edge, so a
+          segment's scores vanish behind the label instead of running past it */}
       <div style={{
-        flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        background: '#fbbf24', padding: '0 22px', zIndex: 2,
+        position: 'absolute', top: 0, bottom: 0, right: 0,
+        left: labelW ?? 0, overflow: 'hidden',
       }}>
-        <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 900,
-          color: 'rgba(8,13,24,0.65)', letterSpacing: '0.22em',
-          textTransform: 'uppercase', lineHeight: 1,
-        }}>
-          Home Run Derby
-        </span>
-        <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 24, fontWeight: 900,
-          color: '#080d18', letterSpacing: '0.06em',
-          textTransform: 'uppercase', lineHeight: 1.15,
-        }}>
-          {ROUND_LABEL[round]}
-        </span>
-      </div>
-
-      {/* ── Crawling track ── */}
-      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
         <div
+          ref={trackRef}
           style={{
             display: 'flex', alignItems: 'center', height: '100%',
-            width: 'max-content',
-            willChange: 'transform',
-            ['--derby-ticker-shift' as string]: `${100 / reps}%`,
-            // One animation cycle = one copy's width of travel
-            animation: duration > 0
-              ? `derby-ticker-crawl ${duration}s linear infinite`
-              : undefined,
+            width: 'max-content', willChange: 'transform',
           }}
         >
-          {Array.from({ length: reps }, (_, i) => copy(i))}
+          {/* Two copies is provably enough: the track is longer than the bar */}
+          {[0, 1].map(rep => (
+            <Fragment key={rep}>
+              {segments.map((seg, i) => (
+                <Fragment key={`${rep}-${seg.key}`}>
+                  {/* Holds the label's slot open in the flow */}
+                  <div style={{ width: labelW ?? 0, flexShrink: 0 }} />
+                  <div
+                    ref={rep === 0 ? (el => { itemRefs.current[i] = el }) : undefined}
+                    style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                  >
+                    {seg.rows.map(row => (
+                      <TickerItem key={`${seg.key}-${row.playerId}`} row={row} />
+                    ))}
+                  </div>
+                </Fragment>
+              ))}
+              <div style={{ width: pad, flexShrink: 0 }} />
+            </Fragment>
+          ))}
         </div>
-
-        {/* Soft edge fade so items don't hard-cut at the right edge */}
-        <div style={{
-          position: 'absolute', top: 0, right: 0, bottom: 0, width: 40,
-          background: 'linear-gradient(270deg, rgba(8,13,24,0.95), rgba(8,13,24,0))',
-        }} />
       </div>
+
+      {/* ── Labels ── one per segment, travelling then docking */}
+      {segments.map((seg, i) => (
+        <div
+          key={seg.key}
+          ref={el => { labelRefs.current[i] = el }}
+          style={{
+            position: 'absolute', top: 0, bottom: 0, left: 0,
+            width: labelW || 'max-content',
+            zIndex: 3,
+            visibility: geom ? 'hidden' : 'visible',
+            willChange: 'transform',
+            display: 'flex', flexDirection: 'column', justifyContent: 'center',
+            background: '#fbbf24', padding: '0 22px',
+            // Reads as a card sliding over the one beneath it, and gives the
+            // scores a soft edge to disappear under
+            boxShadow: '8px 0 22px rgba(0,0,0,0.55)',
+          }}
+        >
+          <span style={{
+            fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 900,
+            color: 'rgba(8,13,24,0.65)', letterSpacing: '0.22em',
+            textTransform: 'uppercase', lineHeight: 1, whiteSpace: 'nowrap',
+          }}>
+            {seg.isCurrent ? 'Home Run Derby' : 'Results'}
+          </span>
+          <span style={{
+            fontFamily: 'var(--font-score)', fontSize: 24, fontWeight: 900,
+            color: '#080d18', letterSpacing: '0.06em',
+            textTransform: 'uppercase', lineHeight: 1.15, whiteSpace: 'nowrap',
+          }}>
+            {seg.label}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -159,25 +278,28 @@ function TickerItem({ row }: { row: DerbyTickerRow }) {
           </span>
         )}
 
-        {/* Score, or TBD until they've hit */}
-        {pending ? (
-          <span style={{
-            fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 800,
-            color: 'rgba(255,255,255,0.32)', letterSpacing: '0.1em', lineHeight: 1,
-          }}>
-            TBD
-          </span>
-        ) : (
-          <span style={{
-            fontFamily: 'var(--font-score)', fontSize: 30, fontWeight: 900,
-            color: '#fbbf24', lineHeight: 1, whiteSpace: 'nowrap',
-          }}>
-            {row.score}
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)', marginLeft: 4 }}>
-              HR
+        {/* Score, or TBD until they've hit. Fixed width so a score landing
+            mid-crawl doesn't reflow the track under the docking maths. */}
+        <div style={{ minWidth: 74, flexShrink: 0 }}>
+          {pending ? (
+            <span style={{
+              fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 800,
+              color: 'rgba(255,255,255,0.32)', letterSpacing: '0.1em', lineHeight: 1,
+            }}>
+              TBD
             </span>
-          </span>
-        )}
+          ) : (
+            <span style={{
+              fontFamily: 'var(--font-score)', fontSize: 30, fontWeight: 900,
+              color: '#fbbf24', lineHeight: 1, whiteSpace: 'nowrap',
+            }}>
+              {row.score}
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.45)', marginLeft: 4 }}>
+                HR
+              </span>
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

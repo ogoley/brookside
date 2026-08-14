@@ -64,13 +64,9 @@ body.overlay-mode {
 .derby-live-sweep { animation: derby-live-sweep 2.2s ease-in-out infinite; }
 .derby-live-dot { animation: derby-live-dot 1s ease-in-out infinite; }
 
-/* Derby ticker — right-to-left crawl. The track holds N identical copies of the
-   row list; shifting it by exactly one copy's width (100/N %) loops seamlessly.
-   --derby-ticker-shift is set inline by DerbyTickerScene from the measured copy count. */
-@keyframes derby-ticker-crawl {
-  from { transform: translate3d(0, 0, 0); }
-  to   { transform: translate3d(calc(-1 * var(--derby-ticker-shift, 50%)), 0, 0); }
-}
+/* NOTE: the ticker crawl used to live here as a keyframe. It moved into
+   DerbyTickerScene's rAF loop when the labels gained docking behaviour, which a
+   fixed keyframe curve can't express — see the comment on that component. */
 
 /* ── Money ball ─────────────────────────────────────────────────────────────
    The full-screen takeover, in CSS rather than JS. Every piece animates
@@ -183,3 +179,68 @@ body.overlay-mode {
 }
 
 .derby-clock-pulse { animation: derby-clock-pulse 1.1s ease-in-out infinite; }
+
+/* ── Champion graphic ───────────────────────────────────────────────────────
+   The one graphic that STAYS on screen — the producer holds it while the
+   winner is interviewed — so unlike the money ball it plays an entrance and
+   then settles, rather than clearing itself. Two phases:
+     · entrance: one-shot, `both` fill so each piece holds its final pose
+     · ambient:  slow infinite loops on a couple of pieces only, so a graphic
+                 sitting on air for two minutes isn't animating twenty layers
+   Same hard rules as the money ball: transform/opacity only, no scale on type
+   or vector art (re-rasterises glyphs), no wrapper-level opacity fade, no
+   `will-change`. Per-element direction/stagger arrive as --win-* properties. */
+.derby-win-anim {
+  animation-fill-mode: both;
+  backface-visibility: hidden;
+}
+
+@keyframes derby-win-wash {
+  0%   { opacity: 0; }
+  30%  { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+/* Solid-colour ring: scale is cheap here, and only here. */
+@keyframes derby-win-ring {
+  from { transform: scale(0.25); opacity: 0.85; }
+  to   { transform: scale(var(--win-ring-to, 3.4)); opacity: 0; }
+}
+
+@keyframes derby-win-crown {
+  0%   { transform: translate3d(0, -120px, 0) rotate(-8deg); opacity: 0; }
+  55%  { transform: translate3d(0, 10px, 0) rotate(2deg); opacity: 1; }
+  75%  { transform: translate3d(0, -4px, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
+}
+
+/* Translate only — the name is 120px+ stroked type. */
+@keyframes derby-win-name {
+  0%   { transform: translate3d(0, 54px, 0); opacity: 0; }
+  60%  { transform: translate3d(0, -8px, 0); opacity: 1; }
+  100% { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+@keyframes derby-win-rise {
+  0%   { transform: translate3d(0, 30px, 0); opacity: 0; }
+  100% { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+@keyframes derby-win-sweep {
+  0%   { transform: translate3d(-40%, 0, 0) skewX(-16deg); opacity: 0; }
+  40%  { opacity: 0.55; }
+  100% { transform: translate3d(320%, 0, 0) skewX(-16deg); opacity: 0; }
+}
+
+/* Ambient: a slow drift on the laurels once everything has landed. */
+@keyframes derby-win-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.9; }
+}
+
+@keyframes derby-win-confetti {
+  0%   { transform: translate3d(var(--win-x), -140px, 0) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translate3d(calc(var(--win-x) + var(--win-drift)), 1180px, 0) rotate(var(--win-spin)); opacity: 0; }
+}

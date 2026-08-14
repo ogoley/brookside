@@ -1,12 +1,15 @@
-// Generates the all-star SVG logos (team badges + ALL★STAR WEEKEND lockup)
+// Generates the all-star team badge SVGs (Team Rist / Team Hiller)
 // with Barlow Condensed 700 embedded as a base64 data URI so the text renders
 // in <img>/OBS contexts.
+//
+// The ALL-STAR WEEKEND lockup used to be generated here too. It is now plain
+// text — see src/components/AllStarWordmark.tsx — so this script only emits the
+// two team badges.
 //
 // ANNUAL RUNBOOK (see ALLSTAR.md): edit ONLY the YEARLY CONFIG block below,
 // run `node scripts/genAllstarLogos.mjs`, and deploy. Keep team `id`s in sync
 // with ALLSTAR_SEED_TEAMS / ALLSTAR_SEED_ROSTERS in src/allstar.ts (each id's
-// logoUrl is /logos/<id with _ -> ->.svg). The lockup always writes to
-// allstar-weekend.svg — a year-independent filename — so no code changes.
+// logoUrl is /logos/<id with _ -> ->.svg).
 import { readFileSync, writeFileSync } from 'fs'
 
 // ── YEARLY CONFIG ────────────────────────────────────────────────────────────
@@ -110,74 +113,3 @@ for (const team of TEAMS) {
   writeFileSync(`${OUT}/${file}`, teamBadge(team))
   console.log(`wrote ${file}`)
 }
-
-// ── ALL ★ STAR lockup geometry ───────────────────────────────────────────────
-// Everything is derived from one axis (AXIS) and real Barlow Condensed metrics,
-// so nothing is eyeballed. The old hand-placed version anchored the star on the
-// canvas centre and hung the words off it; because "STAR" is ~85px wider than
-// "ALL" that pushed the whole wordmark ~42px right of centre.
-//
-// "ALL" and "STAR" cannot BOTH sit centred with the star on the axis unless the
-// two words are the same width, so the wordmark wins: it is the thing the eye
-// reads and measures against the frame. The star keeps equal gaps to each word
-// and therefore lands slightly left of the axis — invisible, because it sits
-// inside the wordmark with no rule to measure it against. The banner split, the
-// two text lines and the wiffle balls all stay locked to the axis.
-//
-// Metrics measured from the embedded font at 185px via canvas TextMetrics.
-// If the wordmark ever changes, re-measure: ctx.font = '700 185px "Barlow
-// Condensed"'; ctx.measureText('ALL') -> width / actualBoundingBoxLeft/Right.
-const AXIS = 540
-const WORD_SIZE = 185
-const WORD_LS = 2
-const WORD_BASELINE = 266
-const CAP_ASCENT = 129.50                      // flat-cap height at 185px
-const STAR_R = 80
-const WORD_GAP = 12                            // star tip -> letter ink, both sides
-const GLYPHS = {                               // @185px, letter-spacing 0
-  ALL:  { inkL: 2.04, inkR: 244.20 },
-  STAR: { inkL: 5.00, inkR: 330.04 },
-}
-// Ink width once letter-spacing is applied between (not after) the glyphs.
-const inkW = (w) => GLYPHS[w].inkR + (w.length - 1) * WORD_LS - GLYPHS[w].inkL
-
-const starHalfW = STAR_R * Math.sin(72 * Math.PI / 180)
-const starCy = WORD_BASELINE - CAP_ASCENT / 2  // vertically centred on the caps
-const markW = inkW('ALL') + WORD_GAP + 2 * starHalfW + WORD_GAP + inkW('STAR')
-const markL = AXIS - markW / 2
-const allPenX = markL - GLYPHS.ALL.inkL
-const starCx = markL + inkW('ALL') + WORD_GAP + starHalfW
-const starPenX = starCx + starHalfW + WORD_GAP - GLYPHS.STAR.inkL
-
-const [a, b] = TEAMS
-const lockup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 420">
-  ${fontStyle}
-  <defs>
-    <linearGradient id="goldStar" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fde047"/>
-      <stop offset="1" stop-color="#f59e0b"/>
-    </linearGradient>
-    <clipPath id="bannerClip">
-      <rect x="290" y="302" width="500" height="76" rx="12"/>
-    </clipPath>
-  </defs>
-
-  <text x="${midX(AXIS, 12)}" y="88" text-anchor="middle" ${FONT} font-size="38" letter-spacing="12" fill="#ffffff" opacity="0.88">BROOKSIDE WIFFLE BALL</text>
-
-  <text x="${allPenX.toFixed(2)}" y="${WORD_BASELINE}" text-anchor="start" ${FONT} font-size="${WORD_SIZE}" letter-spacing="${WORD_LS}" fill="${a.color}" stroke="#ffffff" stroke-width="3" paint-order="stroke">ALL</text>
-  <polygon points="${starPoints(starCx, starCy, STAR_R, STAR_R * 0.3851)}" fill="url(#goldStar)" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
-  <text x="${starPenX.toFixed(2)}" y="${WORD_BASELINE}" text-anchor="start" ${FONT} font-size="${WORD_SIZE}" letter-spacing="${WORD_LS}" fill="${b.color}" stroke="#ffffff" stroke-width="3" paint-order="stroke">STAR</text>
-
-  <g clip-path="url(#bannerClip)">
-    <rect x="290" y="302" width="250" height="76" fill="${a.color}"/>
-    <rect x="${AXIS}" y="302" width="250" height="76" fill="${b.color}"/>
-  </g>
-  <rect x="290" y="302" width="500" height="76" rx="12" fill="none" stroke="#ffffff" stroke-width="4"/>
-  <text x="${midX(AXIS, 10)}" y="360" text-anchor="middle" ${FONT} font-size="52" letter-spacing="10" fill="#ffffff">WEEKEND ${YEAR}</text>
-
-${ball(190, 340, 42, '#1a1a2e')}
-${ball(890, 340, 42, '#1a1a2e', true)}
-</svg>
-`
-writeFileSync(`${OUT}/allstar-weekend.svg`, lockup)
-console.log('wrote allstar-weekend.svg')

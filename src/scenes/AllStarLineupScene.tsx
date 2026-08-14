@@ -3,7 +3,8 @@ import type { GameMeta, TeamsMap, PlayersMap, Team, LineupEntry } from '../types
 import { TeamColorInjector } from '../components/TeamColorInjector'
 import { useAllstarRosters } from '../hooks/useAllstarRosters'
 import { useGameLineup } from '../hooks/useGameLineup'
-import { playerOnTeam, ALLSTAR_LOGO_URL } from '../allstar'
+import { playerOnTeam } from '../allstar'
+import AllStarWordmark from '../components/AllStarWordmark'
 
 interface Props {
   game: GameMeta
@@ -81,7 +82,7 @@ export function AllStarLineupScene({ game, teams, players }: Props) {
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', damping: 16, stiffness: 200 }}
       >
-        <img src={ALLSTAR_LOGO_URL} alt="2026 Brookside All-Star Weekend" style={{ height: 190 }} />
+        <AllStarWordmark size={80} />
       </motion.div>
 
       {/* Columns */}

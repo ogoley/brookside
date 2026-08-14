@@ -34,7 +34,13 @@ export function useDerbyContestants() {
   const [liveHr, setLiveHr] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    if (liveGameIds.length === 0) { setLiveHr({}); return }
+    // Bail on identity, not just value: a fresh `{}` here would invalidate the
+    // `contestants` memo below on every run, which is the top of the render
+    // chain the derby controller drags its batting order off
+    if (liveGameIds.length === 0) {
+      setLiveHr(prev => (Object.keys(prev).length === 0 ? prev : {}))
+      return
+    }
     const perGame: Record<string, Record<string, number>> = {}
     const unsubs = liveGameIds.map(gameId =>
       onValue(ref(db, `gameStats/${gameId}`), snap => {
