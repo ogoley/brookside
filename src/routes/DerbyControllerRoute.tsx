@@ -52,7 +52,7 @@ function ControlPanel() {
   const { result: postedResult, loading: betsLoading } = useDerbyBets()
 
   const eligibleIds = useMemo(() => contestants.map(c => c.id), [contestants])
-  const { view, activeRound, leaderboardRound, scores, battingOrder, featuredPlayerId, ticker, miniBoard, advancers: locks } = broadcast
+  const { view, activeRound, leaderboardRound, scores, battingOrder, featuredPlayerId, ticker, miniBoard, advancers: locks, pitchers } = broadcast
   const roundKey = ROUND_KEY[activeRound]
 
   // The champion graphic draws `derby/result`, not the derby scores, so picking
@@ -114,6 +114,14 @@ function ControlPanel() {
       patch['featuredPlayerId'] = order[0] ?? null
     }
     return update(bcastRef(), patch)
+  }
+
+  // Blank clears the key rather than storing "", so `pitchers` only ever holds
+  // hitters who actually have one and the overlay's check stays a truthy test.
+  const setPitcher = (batterId: string, name: string) => {
+    const pitcherRef = ref(db, `derby/broadcast/pitchers/${batterId}`)
+    const trimmed = name.trim()
+    return trimmed === '' ? remove(pitcherRef) : set(pitcherRef, trimmed)
   }
 
   const setScore = (playerId: string, round: DerbyRoundNum, n: number | null) => {
@@ -183,7 +191,7 @@ function ControlPanel() {
     if (!window.confirm(
       `Reset the derby for a fresh run?\n\n`
       + `DELETES  ${recordedScoreCount} recorded home run score(s), the confirmed advancers, `
-      + `the batting order and the declared champion.\n`
+      + `the batting order, every hitter's pitcher and the declared champion.\n`
       + `KEEPS    every 50/50 bet — real money, untouched.\n\n`
       + `Nothing is archived. For the end of a real season use “Archive this derby & reset” on /derby.`
     )) return
@@ -194,6 +202,7 @@ function ControlPanel() {
     return update(ref(db), {
       'derby/broadcast/scores': null,
       'derby/broadcast/advancers': null,
+      'derby/broadcast/pitchers': null,
       'derby/broadcast/activeRound': 1,
       'derby/broadcast/leaderboardRound': 1,
       'derby/broadcast/view': 'hidden',
@@ -585,6 +594,19 @@ function ControlPanel() {
                     {teams[currentBatter.teamId]?.shortName ?? ''} · {currentBatter.seasonHr} season HR
                     · batter {currentIndex + 1} of {order.length}
                   </div>
+                  {/* Who's throwing to them. Here as well as in the order list
+                      because this is the panel the producer lives in during a
+                      round — set it as the hitter steps up. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                    <span style={smallLabel}>Pitcher</span>
+                    <PitcherInput
+                      key={`now:${currentBatterId}:${pitchers[currentBatterId] ?? ''}`}
+                      value={pitchers[currentBatterId]}
+                      onCommit={name => setPitcher(currentBatterId, name)}
+                      width={170}
+                      placeholder="Who's throwing?"
+                    />
+                  </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
@@ -859,6 +881,11 @@ function ControlPanel() {
                         <span style={{ color: '#64748b', fontWeight: 400, fontSize: 12 }}> · {teams[c.teamId]?.shortName ?? ''}</span>
                         {isCurrent && <span style={{ color: '#fbbf24', fontSize: 11, fontWeight: 700, marginLeft: 6 }}>● NOW</span>}
                       </span>
+                      <PitcherInput
+                        key={`row:${id}:${pitchers[id] ?? ''}`}
+                        value={pitchers[id]}
+                        onCommit={name => setPitcher(id, name)}
+                      />
                       <ScoreInput value={s} onCommit={n => setScore(id, activeRound, n)} />
                       <button
                         onClick={() => selectBatter(id)}
@@ -1453,6 +1480,48 @@ function ScoreRow({ contestant, scores, total, onCommit }: {
         {total}
       </td>
     </tr>
+  )
+}
+
+// ── Blur-commit pitcher name ─────────────────────────────────────────────────
+// A plain name, not a player pick: whoever is grooving them is frequently not
+// in the derby field and often not on a roster at all.
+//
+// The draft state is re-seeded by REMOUNTING from the caller's `key` when the
+// stored value changes, rather than by syncing in an effect — an effect there
+// would stomp on what the producer is halfway through typing if another device
+// wrote, and it's the pattern that leaves `ScoreInput` above with a lint error.
+
+function PitcherInput({ value, onCommit, width = 118, placeholder = 'Pitcher' }: {
+  value: string | undefined
+  onCommit: (name: string) => void
+  width?: number | string
+  placeholder?: string
+}) {
+  const [draft, setDraft] = useState(value ?? '')
+
+  const commit = () => {
+    if (draft.trim() !== (value ?? '').trim()) onCommit(draft)
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      placeholder={placeholder}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      // Reorder.Item owns the row's drag gesture; without this the pointer-down
+      // that focuses the field starts a drag instead.
+      onPointerDown={e => e.stopPropagation()}
+      style={{
+        width, padding: '5px 8px', borderRadius: 6,
+        background: '#0f172a', color: value ? '#7dd3fc' : '#64748b',
+        border: '1px solid #334155', fontFamily: 'var(--font-ui)', fontSize: 12,
+        minWidth: 0, flexShrink: 0,
+      }}
+    />
   )
 }
 

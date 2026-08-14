@@ -128,6 +128,32 @@ export function DerbyOddsScene({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {/* Column headers. Most of the pool is IN the derby, so without a
+              label the big name reads as a hitter and the board looks like it
+              is calling the wrong person to win. Say which is which. */}
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            paddingRight: 11, marginBottom: 1,
+          }}>
+            <span style={{ width: 30, flexShrink: 0 }} />
+            <span style={{
+              flex: 1, minWidth: 0,
+              fontFamily: 'var(--font-score)', fontSize: 9, fontWeight: 900,
+              color: 'rgba(255,255,255,0.38)', letterSpacing: '0.16em',
+              textTransform: 'uppercase', lineHeight: 1,
+            }}>
+              Bettor <span style={{ color: 'rgba(255,255,255,0.22)' }}>/ their pick</span>
+            </span>
+            <span style={{
+              width: 66, flexShrink: 0, textAlign: 'right',
+              fontFamily: 'var(--font-score)', fontSize: 9, fontWeight: 900,
+              color: 'rgba(255,255,255,0.38)', letterSpacing: '0.16em',
+              textTransform: 'uppercase', lineHeight: 1,
+            }}>
+              Win
+            </span>
+          </div>
+
           {/* The board sits on screen for the whole derby, so the interesting
               moment is a bettor CHANGING places, not the panel arriving.
               `layout` glides a row to its new slot instead of the list
@@ -203,6 +229,9 @@ export function DerbyOddsScene({
                     textTransform: 'uppercase', lineHeight: 1,
                     whiteSpace: 'nowrap', overflow: 'hidden',
                   }}>
+                    {/* "BET ON" carries the same job as the column header —
+                        it has to be unmistakable which name is the hitter */}
+                    <span style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>Bet on</span>
                     {row.team?.logoUrl && (
                       <img src={row.team.logoUrl} alt="" style={{ width: 13, height: 13, objectFit: 'contain', flexShrink: 0 }} />
                     )}

@@ -44,6 +44,7 @@ export const DEFAULT_DERBY_BROADCAST: DerbyBroadcastState = {
   timer: DEFAULT_DERBY_TIMER,
   advancers: {},
   odds: DEFAULT_DERBY_ODDS,
+  pitchers: {},
 }
 
 export function useDerbyBroadcast() {

@@ -404,4 +404,13 @@ export interface DerbyBroadcastState {
   timer: DerbyTimerState            // turn clock — independent of `view`
   advancers: DerbyAdvancerLocks     // producer-confirmed cuts; overrides the live score cut
   odds: DerbyOddsState              // 50/50 odds board — on a timer, independent of `view`
+  /**
+   * Who is throwing to each hitter, keyed by the BATTER's playerId.
+   *
+   * Per hitter, not per hitter-per-round: a derby hitter brings their own
+   * pitcher and keeps them for the night. Stored as a plain name rather than a
+   * playerId because the pitcher is usually not in the derby field and often
+   * isn't a rostered player at all — a dad, a coach, whoever can groove it.
+   */
+  pitchers: Record<string, string>
 }

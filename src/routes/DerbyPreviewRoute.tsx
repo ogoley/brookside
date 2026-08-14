@@ -20,6 +20,8 @@
 //              `n`/`scored`/`tie` scores the rail and leaderboard use — so the
 //              two deliberately disagree about who's leading. See the comment
 //              on ODDS_R1 below.
+//     pitcher — name on the hitter card's "PITCHING" line (defaults to one;
+//               pass an empty value to check the card without it)
 //     fps    — live frame-rate readout, to judge animation cost on the real machine
 import { useEffect, useMemo, useState } from 'react'
 import { DerbyLeaderboardScene, type DerbyLeaderboardDisplayRow } from '../scenes/derby/DerbyLeaderboardScene'
@@ -305,6 +307,7 @@ export function DerbyPreviewRoute() {
             team={TEAMS[liveIdx % TEAMS.length]}
             scores={scores[liveId] ?? {}}
             activeRound={round}
+            pitcher={params.get('pitcher') ?? 'Rick Vaughn'}
           />
         </>
       )}

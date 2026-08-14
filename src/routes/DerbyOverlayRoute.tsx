@@ -222,6 +222,7 @@ function DerbyOverlayContent() {
               scores={broadcast.scores[featured.id] ?? {}}
               activeRound={broadcast.activeRound}
               moneyBallAt={broadcast.timer.moneyBallAt}
+              pitcher={broadcast.pitchers[featured.id]}
             />
           </motion.div>
         )}

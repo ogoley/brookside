@@ -13,6 +13,8 @@ interface Props {
   /** Timestamp of the hitter's money ball, if they took it — the +3 it scores
    *  belongs to the full-screen money-ball graphic, not the usual burst */
   moneyBallAt?: number | null
+  /** Whoever is throwing to them. Omitted when the producer hasn't set one. */
+  pitcher?: string
 }
 
 const ROUND_NUMS: DerbyRoundNum[] = [1, 2, 3]
@@ -163,7 +165,7 @@ function RoundBox({ label, score, live, delay }: {
   )
 }
 
-export function DerbyPlayerScene({ name, seasonHr, team, scores, activeRound, moneyBallAt }: Props) {
+export function DerbyPlayerScene({ name, seasonHr, team, scores, activeRound, moneyBallAt, pitcher }: Props) {
   const primaryColor = team?.primaryColor ?? '#fbbf24'
   const total = (scores.r1 ?? 0) + (scores.r2 ?? 0) + (scores.r3 ?? 0)
   const hasAnyScore = ROUND_NUMS.some(r => scores[ROUND_KEY[r]] !== undefined)
@@ -235,7 +237,9 @@ export function DerbyPlayerScene({ name, seasonHr, team, scores, activeRound, mo
           }}>
             {name}
           </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginTop: 4 }}>
+          {/* Wraps: the pitcher's name is arbitrary length and this row is
+              already carrying two items on a fixed-width column */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginTop: 4, flexWrap: 'wrap' }}>
             <span style={{
               fontFamily: 'var(--font-score)', fontSize: 16, fontWeight: 700,
               color: primaryColor, textTransform: 'uppercase', letterSpacing: '0.12em',
@@ -248,6 +252,16 @@ export function DerbyPlayerScene({ name, seasonHr, team, scores, activeRound, mo
             }}>
               {seasonHr} HR this season
             </span>
+            {pitcher && (
+              <span style={{
+                fontFamily: 'var(--font-score)', fontSize: 16, fontWeight: 700,
+                color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em',
+                whiteSpace: 'nowrap',
+              }}>
+                <span style={{ color: 'rgba(255,255,255,0.32)' }}>Pitching </span>
+                <span style={{ color: '#7dd3fc' }}>{pitcher}</span>
+              </span>
+            )}
           </div>
         </div>
       </div>
