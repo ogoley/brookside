@@ -253,6 +253,57 @@ describe('players who did not advance', () => {
   })
 })
 
+// The bet is on the player who WINS THE FINAL ROUND, and then on that player's
+// total across all three. It is not on whoever hit the most home runs overall —
+// a hitter can take the title on a big final having been quiet earlier, and it
+// is *their* modest total the payout is measured against, not the bigger total
+// of somebody they beat.
+describe('the champion is the final round\'s winner, not the leading total', () => {
+  // Three finalists, everything recorded, so there is nothing left to simulate
+  // and the outcome is forced. A wins the final on 16 but totals only 26;
+  // B totals 33 and loses the final.
+  const FINAL: DerbyScoresMap = {
+    p0: { r1: 5, r2: 5, r3: 16 },    // A — champion, 26 total
+    p1: { r1: 15, r2: 15, r3: 3 },   // B — 33 total, beaten in the final
+    p2: { r1: 12, r2: 12, r3: 9 },   // C — 33 total, also beaten
+  }
+  const locks = { r1: ['p0', 'p1', 'p2'], r2: ['p0', 'p1', 'p2'] }
+  const final = (entries: DerbyBetEntry[] = []) =>
+    runDerbyOdds(input({ scores: FINAL, activeRound: 3, locks, entries }))
+
+  it('crowns the hitter who won the final, not the one with the most home runs', () => {
+    const r = final()
+    expect(r.champions[0].playerId).toBe('p0')
+    expect(r.champions[0].winProb).toBe(1)
+    // The two bigger totals get nothing — they lost the round that decides it
+    expect(r.champions.find(c => c.playerId === 'p1')).toBeUndefined()
+    expect(r.champions.find(c => c.playerId === 'p2')).toBeUndefined()
+  })
+
+  it('pays on the champion\'s own total, not the biggest total in the derby', () => {
+    const r = final([
+      bet('calledA', 'p0', 26),   // exactly A's total — wins
+      bet('calledB', 'p0', 33),   // right player, but chased the big number
+      bet('onB', 'p1', 33),       // nailed B's total; B didn't win, so nothing
+    ])
+    const by = new Map(r.rows.map(x => [x.entryId, x]))
+    expect(by.get('calledA')!.winProb).toBe(1)
+    expect(by.get('calledB')!.winProb).toBe(0)
+    expect(by.get('onB')!.winProb).toBe(0)
+    expect(r.projectedWinningTotal.median).toBe(26)
+  })
+
+  it('measures distance from the champion\'s total in both directions', () => {
+    // 24 and 28 are both 2 away from 26 and split; 30 is 4 away and loses.
+    const r = final([bet('under', 'p0', 24), bet('over', 'p0', 28), bet('far', 'p0', 30)])
+    const by = new Map(r.rows.map(x => [x.entryId, x]))
+    expect(by.get('under')!.winProb).toBe(1)
+    expect(by.get('over')!.winProb).toBe(1)
+    expect(by.get('under')!.expectedShare).toBeCloseTo(0.5, 5)
+    expect(by.get('far')!.winProb).toBe(0)
+  })
+})
+
 describe('settling the 50/50', () => {
   it('sends the pot to charity when nobody backed anyone', () => {
     const r = runDerbyOdds(input({ entries: [] }))

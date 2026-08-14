@@ -49,10 +49,23 @@ export function DerbyControllerRoute() {
 function ControlPanel() {
   const { broadcast, loading } = useDerbyBroadcast()
   const { contestants, contestantById, teams } = useDerbyContestants()
+  const { result: postedResult, loading: betsLoading } = useDerbyBets()
 
   const eligibleIds = useMemo(() => contestants.map(c => c.id), [contestants])
   const { view, activeRound, leaderboardRound, scores, battingOrder, featuredPlayerId, ticker, miniBoard, advancers: locks } = broadcast
   const roundKey = ROUND_KEY[activeRound]
+
+  // The champion graphic draws `derby/result`, not the derby scores, so picking
+  // the Champion view before anyone has been declared puts nothing on air and
+  // — before this — said nothing about why. Surface it, and open the section
+  // that fixes it. Derived rather than an effect so there's no cascading
+  // render; the override is the producer's own collapse/expand.
+  // Gated on the load: `result` is null until the first snapshot lands, so
+  // without this the warning flashes up on every refresh of a derby that DOES
+  // have a champion posted.
+  const championMissing = !betsLoading && view === 'winner' && !postedResult?.winnerPlayerId
+  const [championOpenOverride, setChampionOpenOverride] = useState<boolean | null>(null)
+  const championOpen = championOpenOverride ?? (activeRound === 3 || championMissing)
 
   // Order may reference players who've since been toggled OUT — keep the raw
   // array for writes, but only work with resolvable entries in the UI
@@ -435,6 +448,28 @@ function ControlPanel() {
               Showing: <strong style={{ color: '#fbbf24' }}>{featured?.name ?? 'nobody — pick a player below'}</strong>
             </div>
           )}
+          {/* The champion graphic reads the posted result, not the derby
+              scores. Selecting the view with nothing declared used to put
+              nothing on air and say nothing about why. */}
+          {championMissing && (
+            <div style={{
+              marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: 'rgba(245,158,11,0.12)', border: '1px solid #f59e0b',
+              borderRadius: 10, padding: '10px 12px',
+            }}>
+              <span style={{ flex: '1 1 240px', fontSize: 13, color: '#fcd34d', lineHeight: 1.5 }}>
+                ⚠ <strong>Nothing on screen.</strong> The champion graphic needs a declared winner —
+                the derby scores alone don't set one. Declare it in <strong>Champion</strong> below
+                (it also posts to the public /derby page).
+              </span>
+              <button
+                onClick={() => setChampionOpenOverride(true)}
+                style={{ ...smallBtn, background: '#f59e0b', color: '#0f172a', border: 'none', fontWeight: 800 }}
+              >
+                👑 Declare a winner
+              </button>
+            </div>
+          )}
 
           {/* Ticker is independent of the view — it can crawl under any scene,
               or over a clean camera shot with everything else hidden */}
@@ -516,9 +551,10 @@ function ControlPanel() {
           eligibleIds={eligibleIds}
           scores={scores}
           locks={locks}
-          activeRound={activeRound}
           contestantById={contestantById}
           teams={teams}
+          open={championOpen}
+          onToggle={() => setChampionOpenOverride(!championOpen)}
           onShow={() => setView('winner')}
           onCleared={() => { if (broadcast.view === 'winner') setView('hidden') }}
         />
@@ -962,18 +998,20 @@ function ResetSection({ onReset, scoreCount }: { onReset: () => void; scoreCount
 // here posts the result there too — one entry point, no chance of the broadcast
 // and the website naming different winners.
 
-function ChampionSection({ eligibleIds, scores, locks, activeRound, contestantById, teams, onShow, onCleared }: {
+function ChampionSection({ eligibleIds, scores, locks, contestantById, teams, open, onToggle, onShow, onCleared }: {
   eligibleIds: string[]
   scores: DerbyScoresMap
   locks: DerbyAdvancerLocks
-  activeRound: DerbyRoundNum
   contestantById: Map<string, DerbyContestant>
   teams: Record<string, { shortName?: string }>
+  // Owned by the panel: picking the Champion view with nothing posted opens
+  // this section, so the producer lands on the control that fixes it.
+  open: boolean
+  onToggle: () => void
   onShow: () => void
   onCleared: () => void
 }) {
   const { entries, result } = useDerbyBets()
-  const [open, setOpen] = useState(activeRound === 3)
 
   const finalists = useMemo(
     () => participantsForRound(eligibleIds, scores, 3, locks),
@@ -1039,7 +1077,7 @@ function ChampionSection({ eligibleIds, scores, locks, activeRound, contestantBy
       accent="#fbbf24"
       collapsible
       open={open}
-      onToggle={() => setOpen(o => !o)}
+      onToggle={onToggle}
     >
       {/* Always reachable, whatever round is selected — this is the reset */}
       {result?.finalized && (
@@ -1062,8 +1100,12 @@ function ChampionSection({ eligibleIds, scores, locks, activeRound, contestantBy
       )}
 
       {finalists.length === 0 ? (
-        <div style={{ fontSize: 13, color: '#64748b' }}>
-          Nobody has reached the final round yet.
+        // The warning in Broadcast view sends producers straight here, so this
+        // has to say what's missing rather than just that something is.
+        <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6 }}>
+          <strong style={{ color: '#cbd5e1' }}>Nobody has reached the final round yet</strong>, so there's
+          no champion to declare. The final's field comes out of round 2 — record the round 2 scores
+          and confirm who moved on in <strong>Advancement</strong>, and the three finalists appear here.
         </div>
       ) : (
         <>

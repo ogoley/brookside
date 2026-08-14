@@ -16,12 +16,24 @@ export function useDerbyBets() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Both paths, not just the first to report. Callers use `loading` to tell
+    // "no champion posted" apart from "haven't heard yet" — the controller
+    // warns the producer about the former — and clearing on `entries` alone
+    // made a posted result look absent for as long as it took the second
+    // snapshot to land.
+    let gotEntries = false
+    let gotResult = false
+    const settle = () => { if (gotEntries && gotResult) setLoading(false) }
+
     const unsubEntries = onValue(ref(db, 'derby/entries'), snap => {
       setEntries((snap.val() as Record<string, DerbyEntry>) ?? {})
-      setLoading(false)
+      gotEntries = true
+      settle()
     })
     const unsubResult = onValue(ref(db, 'derby/result'), snap => {
       setResult((snap.val() as DerbyResult) ?? null)
+      gotResult = true
+      settle()
     })
     return () => { unsubEntries(); unsubResult() }
   }, [])
