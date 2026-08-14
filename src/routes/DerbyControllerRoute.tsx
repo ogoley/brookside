@@ -35,6 +35,9 @@ const VIEWS: { key: DerbyBroadcastView; label: string; icon: string }[] = [
 
 const bcastRef = (path?: string) => ref(db, path ? `derby/broadcast/${path}` : 'derby/broadcast')
 
+/** One `<datalist>` shared by every pitcher field on the panel. */
+const PITCHER_LIST_ID = 'derby-pitchers'
+
 export function DerbyControllerRoute() {
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('derbyAdmin') === '1')
 
@@ -115,6 +118,13 @@ function ControlPanel() {
     }
     return update(bcastRef(), patch)
   }
+
+  // Every pitcher already named tonight, for the inputs' suggestion list.
+  const pitcherSuggestions = useMemo(
+    () => [...new Set(Object.values(pitchers).map(p => p.trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b)),
+    [pitchers],
+  )
 
   // Blank clears the key rather than storing "", so `pitchers` only ever holds
   // hitters who actually have one and the overlay's check stays a truthy test.
@@ -413,6 +423,13 @@ function ControlPanel() {
     <div style={{ minHeight: '100vh', background: '#0f172a', fontFamily: 'var(--font-ui)', color: '#e2e8f0' }}>
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '16px 12px 48px' }}>
 
+        {/* One shared suggestion list for every pitcher field on the page —
+            the same few people throw to the whole field, so after a couple of
+            entries this is the only list anyone needs. */}
+        <datalist id={PITCHER_LIST_ID}>
+          {pitcherSuggestions.map(n => <option key={n} value={n} />)}
+        </datalist>
+
         {/* ── Header ── */}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 14 }}>
           <h1 style={{ fontFamily: 'var(--font-score)', fontSize: 24, fontWeight: 900, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
@@ -605,6 +622,7 @@ function ControlPanel() {
                       onCommit={name => setPitcher(currentBatterId, name)}
                       width={170}
                       placeholder="Who's throwing?"
+                      listId={PITCHER_LIST_ID}
                     />
                   </div>
                 </div>
@@ -885,6 +903,7 @@ function ControlPanel() {
                         key={`row:${id}:${pitchers[id] ?? ''}`}
                         value={pitchers[id]}
                         onCommit={name => setPitcher(id, name)}
+                        listId={PITCHER_LIST_ID}
                       />
                       <ScoreInput value={s} onCommit={n => setScore(id, activeRound, n)} />
                       <button
@@ -1492,11 +1511,13 @@ function ScoreRow({ contestant, scores, total, onCommit }: {
 // would stomp on what the producer is halfway through typing if another device
 // wrote, and it's the pattern that leaves `ScoreInput` above with a lint error.
 
-function PitcherInput({ value, onCommit, width = 118, placeholder = 'Pitcher' }: {
+function PitcherInput({ value, onCommit, width = 118, placeholder = 'Pitcher', listId }: {
   value: string | undefined
   onCommit: (name: string) => void
   width?: number | string
   placeholder?: string
+  /** Shared `<datalist>` of pitchers already entered tonight. */
+  listId?: string
 }) {
   const [draft, setDraft] = useState(value ?? '')
 
@@ -1509,6 +1530,12 @@ function PitcherInput({ value, onCommit, width = 118, placeholder = 'Pitcher' }:
       type="text"
       value={draft}
       placeholder={placeholder}
+      list={listId}
+      // The same three or four people pitch to the whole field, so after the
+      // first couple of entries the suggestions are exactly the right names.
+      // Still commit-on-blur, not per keystroke: picking a suggestion only
+      // fills the box, and writing every character would be a Firebase write
+      // per letter.
       onChange={e => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}

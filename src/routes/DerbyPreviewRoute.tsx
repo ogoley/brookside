@@ -43,10 +43,13 @@ import type {
   Team, DerbyRoundNum, DerbyAdvancerLocks, DerbyTimerState, DerbyBroadcastState, DerbyEntry,
 } from '../types'
 
+// Real logo files as stand-ins — the mock teams aren't these teams, but a
+// preview with no `logoUrl` silently skips every logo branch, and rows that fit
+// without a badge can overflow with one.
 const TEAMS: Team[] = [
-  { name: 'Reds', shortName: 'RED', primaryColor: '#c0392b', secondaryColor: '#fff', logoUrl: '' },
-  { name: 'Blues', shortName: 'BLU', primaryColor: '#2563eb', secondaryColor: '#fff', logoUrl: '' },
-  { name: 'Greens', shortName: 'GRN', primaryColor: '#16a34a', secondaryColor: '#fff', logoUrl: '' },
+  { name: 'Reds', shortName: 'RED', primaryColor: '#c0392b', secondaryColor: '#fff', logoUrl: '/logos/team-rist.svg' },
+  { name: 'Blues', shortName: 'BLU', primaryColor: '#2563eb', secondaryColor: '#fff', logoUrl: '/logos/team-hiller.svg' },
+  { name: 'Greens', shortName: 'GRN', primaryColor: '#16a34a', secondaryColor: '#fff', logoUrl: '/logos/team-rist.svg' },
 ]
 
 // Bettors for the ?odds board — people, not hitters

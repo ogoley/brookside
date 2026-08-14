@@ -102,17 +102,17 @@ export function DerbyOddsScene({
         marginTop: 5, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
       }}>
         <span style={{
-          fontFamily: 'var(--font-score)', fontSize: 10, fontWeight: 900,
-          color: '#080d18', background: GOLD, borderRadius: 3, padding: '2px 6px',
+          fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 900,
+          color: '#080d18', background: GOLD, borderRadius: 3, padding: '3px 7px',
           letterSpacing: '0.1em', textTransform: 'uppercase', lineHeight: 1,
         }}>
           ${toWinners} to the winner
         </span>
         <span style={{
-          fontFamily: 'var(--font-ui)', fontSize: 11, fontWeight: 600,
+          fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 600,
           color: 'rgba(255,255,255,0.5)', lineHeight: 1,
         }}>
-          ${pot} pot · chance of holding the ticket
+          ${pot} pot · who's holding the winning ticket
         </span>
       </div>
 
@@ -135,19 +135,19 @@ export function DerbyOddsScene({
             display: 'flex', alignItems: 'center',
             paddingRight: 11, marginBottom: 1,
           }}>
-            <span style={{ width: 30, flexShrink: 0 }} />
+            <span style={{ width: 26, flexShrink: 0 }} />
             <span style={{
               flex: 1, minWidth: 0,
-              fontFamily: 'var(--font-score)', fontSize: 9, fontWeight: 900,
-              color: 'rgba(255,255,255,0.38)', letterSpacing: '0.16em',
+              fontFamily: 'var(--font-score)', fontSize: 11, fontWeight: 900,
+              color: 'rgba(255,255,255,0.45)', letterSpacing: '0.14em',
               textTransform: 'uppercase', lineHeight: 1,
             }}>
-              Bettor <span style={{ color: 'rgba(255,255,255,0.22)' }}>/ their pick</span>
+              Bettor <span style={{ color: 'rgba(255,255,255,0.25)' }}>· backing · call</span>
             </span>
             <span style={{
-              width: 66, flexShrink: 0, textAlign: 'right',
-              fontFamily: 'var(--font-score)', fontSize: 9, fontWeight: 900,
-              color: 'rgba(255,255,255,0.38)', letterSpacing: '0.16em',
+              width: 62, flexShrink: 0, textAlign: 'right',
+              fontFamily: 'var(--font-score)', fontSize: 11, fontWeight: 900,
+              color: 'rgba(255,255,255,0.45)', letterSpacing: '0.14em',
               textTransform: 'uppercase', lineHeight: 1,
             }}>
               Win
@@ -178,7 +178,7 @@ export function DerbyOddsScene({
                 }}
                 style={{
                   position: 'relative', overflow: 'hidden',
-                  borderRadius: 8, height: 50,
+                  borderRadius: 8, height: 42,
                   background: leader ? 'rgba(251,191,36,0.14)' : 'rgba(255,255,255,0.05)',
                   borderLeft: `3px solid ${leader ? GOLD : accent}`,
                   display: 'flex', alignItems: 'center', paddingRight: 11,
@@ -203,7 +203,7 @@ export function DerbyOddsScene({
                 />
 
                 {/* Rank */}
-                <div style={{ width: 30, flexShrink: 0, textAlign: 'center', position: 'relative' }}>
+                <div style={{ width: 26, flexShrink: 0, textAlign: 'center', position: 'relative' }}>
                   <span style={{
                     fontFamily: 'var(--font-score)', fontSize: 19, fontWeight: 900,
                     color: leader ? GOLD : 'rgba(255,255,255,0.42)', lineHeight: 1,
@@ -212,51 +212,61 @@ export function DerbyOddsScene({
                   </span>
                 </div>
 
-                {/* Bettor over the pick */}
-                <div style={{ flex: 1, minWidth: 0, position: 'relative', paddingRight: 8 }}>
-                  <div style={{
-                    fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 800,
+                {/* One line: BETTOR · bet on · HITTER · their call.
+                    Both names are the same size — this is read off a stream,
+                    and the old sub-line was too small to catch. The bettor is
+                    the one that ellipsises: the hitter is a last name and
+                    almost never needs to. */}
+                <div style={{
+                  flex: 1, minWidth: 0, position: 'relative', paddingRight: 8,
+                  display: 'flex', alignItems: 'baseline', gap: 6,
+                }}>
+                  <span style={{
+                    fontFamily: 'var(--font-score)', fontSize: 21, fontWeight: 800,
                     color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.02em',
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    lineHeight: 1.05,
+                    lineHeight: 1.05, flexShrink: 1, minWidth: 0,
                   }}>
                     {row.bettorName}
-                  </div>
-                  <div style={{
-                    marginTop: 2, display: 'flex', alignItems: 'center', gap: 5,
-                    fontFamily: 'var(--font-score)', fontSize: 11.5, fontWeight: 700,
-                    color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em',
-                    textTransform: 'uppercase', lineHeight: 1,
-                    whiteSpace: 'nowrap', overflow: 'hidden',
+                  </span>
+                  <span style={{
+                    fontFamily: 'var(--font-score)', fontSize: 11, fontWeight: 800,
+                    color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em',
+                    textTransform: 'uppercase', lineHeight: 1, flexShrink: 0,
                   }}>
-                    {/* "BET ON" carries the same job as the column header —
-                        it has to be unmistakable which name is the hitter */}
-                    <span style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>Bet on</span>
-                    {row.team?.logoUrl && (
-                      <img src={row.team.logoUrl} alt="" style={{ width: 13, height: 13, objectFit: 'contain', flexShrink: 0 }} />
-                    )}
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {lastName(row.playerName)}
-                    </span>
-                    <span style={{ color: 'rgba(255,255,255,0.28)' }}>·</span>
-                    <span style={{ color: GOLD, flexShrink: 0 }}>called {row.guess}</span>
-                  </div>
+                    on
+                  </span>
+                  {/* Team mark reinforces which of the two names is the hitter */}
+                  {row.team?.logoUrl && (
+                    <img
+                      src={row.team.logoUrl}
+                      alt=""
+                      style={{ width: 15, height: 15, objectFit: 'contain', flexShrink: 0, alignSelf: 'center' }}
+                    />
+                  )}
+                  <span style={{
+                    fontFamily: 'var(--font-score)', fontSize: 21, fontWeight: 800,
+                    color: 'rgba(255,255,255,0.72)', textTransform: 'uppercase', letterSpacing: '0.02em',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    lineHeight: 1.05, flexShrink: 0, minWidth: 0,
+                  }}>
+                    {lastName(row.playerName)}
+                  </span>
+                  <span style={{
+                    fontFamily: 'var(--font-score)', fontSize: 21, fontWeight: 900,
+                    color: GOLD, lineHeight: 1.05, flexShrink: 0,
+                  }}>
+                    {row.guess}
+                  </span>
                 </div>
 
                 {/* Chance */}
-                <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0, width: 66 }}>
+                <div style={{ position: 'relative', textAlign: 'right', flexShrink: 0, width: 62 }}>
                   <div style={{
-                    fontFamily: 'var(--font-score)', fontSize: 24, fontWeight: 900,
+                    fontFamily: 'var(--font-score)', fontSize: 26, fontWeight: 900,
                     color: leader ? GOLD : '#ffffff', lineHeight: 1,
                   }}>
                     {pct(row.winProb)}
-                  </div>
-                  <div style={{
-                    fontFamily: 'var(--font-score)', fontSize: 9, fontWeight: 800,
-                    color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em',
-                    textTransform: 'uppercase', lineHeight: 1, marginTop: 2,
-                  }}>
-                    Hitter {pct(row.playerWinProb)}
                   </div>
                 </div>
               </motion.div>
@@ -271,7 +281,7 @@ export function DerbyOddsScene({
         {favourite && (
           <div style={{
             display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8,
-            fontFamily: 'var(--font-score)', fontSize: 11.5, fontWeight: 800,
+            fontFamily: 'var(--font-score)', fontSize: 13, fontWeight: 800,
             letterSpacing: '0.05em', textTransform: 'uppercase', lineHeight: 1.3,
           }}>
             <span style={{ color: 'rgba(255,255,255,0.45)' }}>
@@ -291,8 +301,8 @@ export function DerbyOddsScene({
         {projectedTotal && (
           <div style={{
             marginTop: 3,
-            fontFamily: 'var(--font-score)', fontSize: 10, fontWeight: 700,
-            color: 'rgba(255,255,255,0.32)', letterSpacing: '0.07em',
+            fontFamily: 'var(--font-score)', fontSize: 11.5, fontWeight: 700,
+            color: 'rgba(255,255,255,0.35)', letterSpacing: '0.07em',
             textTransform: 'uppercase', lineHeight: 1.3,
           }}>
             Winning total likely {projectedTotal.low}–{projectedTotal.high}
@@ -301,7 +311,7 @@ export function DerbyOddsScene({
         {charityProb > 0.005 && (
           <div style={{
             marginTop: 5,
-            fontFamily: 'var(--font-score)', fontSize: 10.5, fontWeight: 800,
+            fontFamily: 'var(--font-score)', fontSize: 12, fontWeight: 800,
             color: '#4ade80', letterSpacing: '0.05em',
             textTransform: 'uppercase', lineHeight: 1.3,
           }}>
