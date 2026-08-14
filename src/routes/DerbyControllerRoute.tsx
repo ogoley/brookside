@@ -1580,7 +1580,7 @@ function OddsSection({ broadcast, contestants }: {
   const money = derbyPayout(Object.keys(entries).length, 1)
 
   const status = !odds.enabled ? 'Off — never comes up'
-    : odds.pinned ? 'Pinned — staying up until you unpin'
+    : odds.mode === 'always' ? 'Live — up for the whole derby'
     : win.visible ? `On screen — down in ${fmtSecs(win.msLeft)}`
     : `Next up in ${fmtSecs(win.msUntilNext)}`
 
@@ -1588,9 +1588,7 @@ function OddsSection({ broadcast, contestants }: {
     <Section title="50/50 odds board" accent="#34d399">
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
         <button
-          // Turning it on stamps a fresh cycle so it appears straight away
-          // rather than at some arbitrary point in an old one.
-          onClick={() => patch(odds.enabled ? { enabled: false } : { enabled: true, startedAt: Date.now() })}
+          onClick={() => patch({ enabled: !odds.enabled })}
           style={{
             ...smallBtn, fontWeight: 800,
             background: odds.enabled ? '#16a34a' : '#1e293b',
@@ -1600,23 +1598,17 @@ function OddsSection({ broadcast, contestants }: {
         >
           📈 Odds board: {odds.enabled ? 'ON' : 'OFF'}
         </button>
-        <button
-          onClick={() => patch({ startedAt: Date.now(), pinned: false, enabled: true })}
-          style={{ ...smallBtn, background: '#1e293b', color: '#cbd5e1', border: '2px solid #334155' }}
+        <Chip active={odds.mode === 'always'} onClick={() => patch({ mode: 'always', enabled: true })}>
+          Live — always up
+        </Chip>
+        {/* Switching to the timed cycle stamps a fresh anchor so the board
+            appears now, rather than partway through some stale cycle. */}
+        <Chip
+          active={odds.mode === 'timer'}
+          onClick={() => patch({ mode: 'timer', enabled: true, startedAt: Date.now() })}
         >
-          ⏭ Show now
-        </button>
-        <button
-          onClick={() => patch({ pinned: !odds.pinned, enabled: true })}
-          style={{
-            ...smallBtn,
-            background: odds.pinned ? '#fbbf24' : '#1e293b',
-            color: odds.pinned ? '#0f172a' : '#cbd5e1',
-            border: `2px solid ${odds.pinned ? '#fbbf24' : '#334155'}`,
-          }}
-        >
-          📌 {odds.pinned ? 'Pinned' : 'Pin up'}
-        </button>
+          In bursts
+        </Chip>
         <span style={{
           marginLeft: 'auto', fontFamily: 'var(--font-score)', fontSize: 13, fontWeight: 800,
           color: win.visible && odds.enabled ? '#4ade80' : '#64748b',
@@ -1626,25 +1618,34 @@ function OddsSection({ broadcast, contestants }: {
         </span>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 10 }}>
-        <span style={smallLabel}>Every</span>
-        {INTERVAL_CHOICES.map(s => (
-          <Chip key={s} active={odds.intervalMs === s * 1000} onClick={() => patch({ intervalMs: s * 1000 })}>
-            {s % 60 === 0 ? `${s / 60} min` : `${(s / 60).toFixed(1)} min`}
-          </Chip>
-        ))}
-        <span style={{ ...smallLabel, marginLeft: 10 }}>For</span>
-        {DURATION_CHOICES.map(s => (
-          <Chip key={s} active={odds.durationMs === s * 1000} onClick={() => patch({ durationMs: s * 1000 })}>
-            {s}s
-          </Chip>
-        ))}
-      </div>
+      {odds.mode === 'timer' && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 10 }}>
+          <button
+            onClick={() => patch({ startedAt: Date.now(), enabled: true })}
+            style={{ ...smallBtn, background: '#1e293b', color: '#cbd5e1', border: '2px solid #334155' }}
+          >
+            ⏭ Show now
+          </button>
+          <span style={smallLabel}>Every</span>
+          {INTERVAL_CHOICES.map(s => (
+            <Chip key={s} active={odds.intervalMs === s * 1000} onClick={() => patch({ intervalMs: s * 1000 })}>
+              {s % 60 === 0 ? `${s / 60} min` : `${(s / 60).toFixed(1)} min`}
+            </Chip>
+          ))}
+          <span style={{ ...smallLabel, marginLeft: 10 }}>For</span>
+          {DURATION_CHOICES.map(s => (
+            <Chip key={s} active={odds.durationMs === s * 1000} onClick={() => patch({ durationMs: s * 1000 })}>
+              {s}s
+            </Chip>
+          ))}
+        </div>
+      )}
 
       <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4, marginTop: 8 }}>
         Right-hand panel — the five entries most likely to take the pot, from a live simulation of
-        the rest of the derby. Runs on its own timer under any view; steps aside for the leaderboard,
-        Up Next, and the champion graphic.
+        the rest of the derby, re-run every time a home run lands. Independent of the view; steps
+        aside for the leaderboard, Up Next, and the champion graphic, and hides itself until there
+        are entries to rank.
       </div>
 
       {/* ── What's going out ── */}

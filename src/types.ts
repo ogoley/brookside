@@ -369,17 +369,23 @@ export interface DerbyTimerState {
   moneyBallAt: number | null
 }
 
-// The 50/50 odds board: a live "who's winning the pot" graphic that comes up on
-// a timer rather than on a producer's cue. The overlay can't write, so the
-// rotation is DERIVED from the clock — `startedAt` anchors a cycle and every
+// How the 50/50 odds board gets on screen. 'always' leaves it up for the whole
+// derby, updating in place as scores land — the default, because the numbers
+// only mean anything while people are still hitting. 'timer' brings it up in
+// bursts instead, for when the right-hand side is needed for something else.
+export type DerbyOddsMode = 'always' | 'timer'
+
+// The 50/50 odds board: a live "who's winning the pot" graphic. In 'timer' mode
+// the overlay can't be told when to show it — the overlay never writes — so the
+// rotation is DERIVED from the clock: `startedAt` anchors a cycle and every
 // device works out for itself whether the board is currently in its window.
 // See `derbyOddsWindow` in derby/odds.ts.
 export interface DerbyOddsState {
-  enabled: boolean      // is the rotation running at all
-  pinned: boolean       // hold it up regardless of the schedule
-  startedAt: number     // epoch ms the cycle is anchored to; "Show now" re-stamps it
-  intervalMs: number    // how often it comes up
-  durationMs: number    // how long it stays each time
+  enabled: boolean      // is the board in play at all
+  mode: DerbyOddsMode
+  startedAt: number     // 'timer' only: epoch ms the cycle is anchored to; "Show now" re-stamps it
+  intervalMs: number    // 'timer' only: how often it comes up
+  durationMs: number    // 'timer' only: how long it stays each time
 }
 
 // /derby/broadcast — written by /derby-controller, read by /derby-overlay.

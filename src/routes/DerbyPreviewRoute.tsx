@@ -278,15 +278,16 @@ export function DerbyPreviewRoute() {
         <DerbyLeaderboardScene rows={display} round={round} livePlayerId={liveId} locked={!!locks} />
       ) : (
         <>
-          {/* The whole left column, so the dashboard can be read as one stack */}
+          {/* The whole left column, so the dashboard can be read as one stack,
+              plus the top-right wordmark the odds board has to clear */}
           <AllStarWordmark
-          size={26}
-          star
-          style={{
-            position: 'absolute', top: 24, right: 32,
-            opacity: 0.7, pointerEvents: 'none',
-          }}
-        />
+            size={26}
+            star
+            style={{
+              position: 'absolute', top: 24, right: 32,
+              opacity: 0.7, pointerEvents: 'none',
+            }}
+          />
           {clock && <DerbyTurnClock timer={mockTimer} playerName={NAMES[liveIdx]} />}
           <DerbyMiniBoardScene
             rows={mini}

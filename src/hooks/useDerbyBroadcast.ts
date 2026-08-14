@@ -6,8 +6,12 @@ import { DERBY_ODDS_INTERVAL_MS, DERBY_ODDS_DURATION_MS } from '../derby/odds'
 import type { DerbyBroadcastState, DerbyTimerState, DerbyOddsState } from '../types'
 
 export const DEFAULT_DERBY_ODDS: DerbyOddsState = {
-  enabled: false,
-  pinned: false,
+  // On and permanent by default: a win probability that only surfaces for
+  // twenty seconds every few minutes isn't much use to someone watching a
+  // hitter climb. The overlay hides the board anyway while there are no
+  // entries, so an "on" default can't put an empty panel on air.
+  enabled: true,
+  mode: 'always',
   startedAt: 0,
   intervalMs: DERBY_ODDS_INTERVAL_MS,
   durationMs: DERBY_ODDS_DURATION_MS,

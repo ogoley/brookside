@@ -398,11 +398,15 @@ function DerbyOddsBoard({ broadcast, contestants, teams, entries, suppressed }: 
 }) {
   const [now, setNow] = useState(() => Date.now())
 
+  // Ticks whenever the board is in play, in BOTH modes. 'timer' mode needs it
+  // to work out where in the cycle it is; 'always' mode needs it because the
+  // model pro-rates the hitter's part-finished turn by the clock, and a board
+  // that sits on screen all derby has to keep up with them as they climb.
   useEffect(() => {
-    if (!broadcast.odds.enabled || broadcast.odds.pinned) return
+    if (!broadcast.odds.enabled) return
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [broadcast.odds.enabled, broadcast.odds.pinned])
+  }, [broadcast.odds.enabled])
 
   const turnFraction = turnFractionOf(broadcast.timer, now)
   const { odds } = useDerbyOdds(broadcast, contestants, entries, {
@@ -446,11 +450,17 @@ function DerbyOddsBoard({ broadcast, contestants, teams, entries, suppressed }: 
   }, [odds, contestantById, teams])
 
   const win = derbyOddsWindow(broadcast.odds, now)
-  const money = derbyPayout(Object.keys(entries).length, 1)
+  const entryCount = Object.keys(entries).length
+  const money = derbyPayout(entryCount, 1)
+
+  // No bets, nothing to say — and since the board defaults to on, this is what
+  // stops a permanently-mounted "no entries yet" panel going to air before
+  // anyone has Venmo'd in.
+  const hasSomethingToShow = entryCount > 0 && rows.length > 0
 
   return (
     <AnimatePresence>
-      {win.visible && !suppressed && odds && (
+      {win.visible && !suppressed && odds && hasSomethingToShow && (
         <motion.div
           key="oddsBoard"
           className="absolute inset-0"

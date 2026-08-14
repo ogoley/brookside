@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import type { Team, DerbyRoundNum } from '../../types'
 import { ROUND_LABEL, DERBY_CHARITY_NAME } from '../../derby/logic'
 
@@ -70,7 +70,9 @@ export function DerbyOddsScene({
 
   return (
     <div style={{
-      position: 'absolute', top: 96, right: 40, width: PANEL_W,
+      // Clears the All-Star wordmark watermark, which sits at top: 24 and runs
+      // about 60px tall — the two share this corner now.
+      position: 'absolute', top: 108, right: 40, width: PANEL_W,
       background: 'rgba(8,13,24,0.94)',
       borderRadius: 16,
       borderRight: `6px solid ${GOLD}`,
@@ -126,15 +128,28 @@ export function DerbyOddsScene({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* The board sits on screen for the whole derby, so the interesting
+              moment is a bettor CHANGING places, not the panel arriving.
+              `layout` glides a row to its new slot instead of the list
+              re-flowing under the viewer, and popLayout lets someone knocked
+              out of the top five leave while the rest close up. */}
+          <AnimatePresence mode="popLayout" initial={false}>
           {top.map((row, i) => {
             const accent = row.team?.primaryColor ?? '#475569'
             const leader = i === 0
             return (
               <motion.div
                 key={row.entryId}
+                layout
                 initial={{ opacity: 0, x: 40 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 260, delay: i * 0.06 }}
+                exit={{ opacity: 0, x: 40 }}
+                transition={{
+                  layout: { type: 'spring', damping: 28, stiffness: 320 },
+                  // No stagger on updates — only the first paint fans in, and
+                  // a delay on every recompute would make a swap look laggy.
+                  default: { type: 'spring', damping: 26, stiffness: 260 },
+                }}
                 style={{
                   position: 'relative', overflow: 'hidden',
                   borderRadius: 10, height: 62,
@@ -149,7 +164,9 @@ export function DerbyOddsScene({
                 <motion.div
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: Math.min(1, row.winProb / scale) }}
-                  transition={{ type: 'spring', damping: 30, stiffness: 140, delay: 0.1 + i * 0.06 }}
+                  // Unhurried on purpose: the bar sliding is how a viewer sees
+                  // a chance move. No delay — it re-animates on every update.
+                  transition={{ type: 'spring', damping: 30, stiffness: 140 }}
                   style={{
                     position: 'absolute', inset: 0, transformOrigin: 'left center',
                     background: leader
@@ -216,6 +233,7 @@ export function DerbyOddsScene({
               </motion.div>
             )
           })}
+          </AnimatePresence>
         </div>
       )}
 

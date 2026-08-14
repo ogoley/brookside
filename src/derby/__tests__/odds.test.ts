@@ -4,6 +4,7 @@ import {
   PRIOR_ROUND_MEAN, DEFAULT_ODDS_TRIALS,
   type DerbyOddsInput,
 } from '../odds'
+import { DEFAULT_DERBY_ODDS } from '../../hooks/useDerbyBroadcast'
 import type { DerbyScoresMap, DerbyBetEntry } from '../logic'
 import type { DerbyOddsState } from '../../types'
 
@@ -291,8 +292,10 @@ describe('determinism', () => {
 })
 
 describe('rotation window', () => {
+  // 'timer' here so the cycle maths is what's under test; 'always' is the
+  // shipped default and is covered on its own below.
   const odds: DerbyOddsState = {
-    enabled: true, pinned: false, startedAt: 1000, intervalMs: 150_000, durationMs: 20_000,
+    enabled: true, mode: 'timer', startedAt: 1000, intervalMs: 150_000, durationMs: 20_000,
   }
 
   it('is up for the first stretch of each cycle', () => {
@@ -314,9 +317,22 @@ describe('rotation window', () => {
     expect(derbyOddsWindow({ ...odds, startedAt: 5000 }, 1000).visible).toBe(true)
   })
 
-  it('holds when pinned and disappears when disabled', () => {
-    expect(derbyOddsWindow({ ...odds, pinned: true }, 1000 + 90_000).visible).toBe(true)
-    expect(derbyOddsWindow({ ...odds, enabled: false, pinned: true }, 1000).visible).toBe(false)
+  it('stays up at every point in the cycle in always mode', () => {
+    const live: DerbyOddsState = { ...odds, mode: 'always' }
+    for (const t of [0, 1000, 1000 + 30_000, 1000 + 90_000, 1000 + 149_999, 1e12]) {
+      expect(derbyOddsWindow(live, t).visible).toBe(true)
+    }
+  })
+
+  it('disappears when disabled, whatever the mode', () => {
+    expect(derbyOddsWindow({ ...odds, enabled: false, mode: 'always' }, 1000).visible).toBe(false)
+    expect(derbyOddsWindow({ ...odds, enabled: false, mode: 'timer' }, 1000).visible).toBe(false)
+  })
+
+  it('defaults to a board that is on and permanent', () => {
+    expect(DEFAULT_DERBY_ODDS.enabled).toBe(true)
+    expect(DEFAULT_DERBY_ODDS.mode).toBe('always')
+    expect(derbyOddsWindow(DEFAULT_DERBY_ODDS, Date.now()).visible).toBe(true)
   })
 })
 

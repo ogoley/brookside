@@ -41,16 +41,18 @@ export const DERBY_ODDS_DURATION_MS = 22_000
 /**
  * Is the odds board up right now?
  *
- * The overlay is read-only, so nothing writes "showing" / "hidden" — the cycle
- * is a pure function of the clock against `startedAt`, exactly like the turn
- * clock derives its remaining time. Controller and overlay therefore agree
- * without a round trip, and a reloaded overlay drops straight back into phase.
+ * In 'always' mode this is just `enabled` — the board lives on screen for the
+ * whole derby and updates in place. In 'timer' mode the overlay is read-only,
+ * so nothing writes "showing" / "hidden": the cycle is a pure function of the
+ * clock against `startedAt`, exactly like the turn clock derives its remaining
+ * time. Controller and overlay therefore agree without a round trip, and a
+ * reloaded overlay drops straight back into phase.
  */
 export function derbyOddsWindow(odds: DerbyOddsState, now: number) {
   const interval = Math.max(10_000, odds.intervalMs)
   const duration = Math.min(interval, Math.max(3_000, odds.durationMs))
   if (!odds.enabled) return { visible: false, msLeft: 0, msUntilNext: 0 }
-  if (odds.pinned) return { visible: true, msLeft: Infinity, msUntilNext: 0 }
+  if (odds.mode !== 'timer') return { visible: true, msLeft: Infinity, msUntilNext: 0 }
   // "Show now" stamps `startedAt` from the producer's clock. If the overlay
   // machine's clock is a few seconds behind, that stamp is in the future, and
   // wrapping the negative phase round would hide the board for a whole cycle
