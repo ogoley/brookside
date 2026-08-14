@@ -10,6 +10,7 @@ import { DerbyRoute } from './routes/DerbyRoute'
 import { DerbyOverlayRoute } from './routes/DerbyOverlayRoute'
 import { DerbyControllerRoute } from './routes/DerbyControllerRoute'
 import { AuthGate } from './components/AuthGate'
+import { DerbyPreviewRoute } from './routes/DerbyPreviewRoute'
 
 export default function App() {
   return (
@@ -21,6 +22,8 @@ export default function App() {
         <Route path="/derby" element={<DerbyRoute />} />
         <Route path="/derby-overlay" element={<DerbyOverlayRoute />} />
         <Route path="/derby-controller" element={<DerbyControllerRoute />} />
+        {/* Dev-only: leaderboard against mock scores, no Firebase. See the file header. */}
+        <Route path="/derby-preview" element={<DerbyPreviewRoute />} />
         {/* All-star routes: the overlay is the same OBS source (it renders whatever
             the scorebug state says); the controller runs in allstar mode — team
             pickers restricted to Rist/Hiller, exhibition-only game list, one-tap

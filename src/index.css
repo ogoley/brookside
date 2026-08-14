@@ -40,3 +40,146 @@ body.overlay-mode {
 .stat-reminder-flash {
   animation: stat-reminder-flash 0.6s ease-in-out infinite;
 }
+
+/* Derby leaderboard "live" row — the hitter currently at the plate.
+   Two layers: a breathing gold rim on the row, and a specular sweep that
+   travels across it. Both are transform/opacity only so OBS composites them
+   on the GPU and the row can still animate its position underneath. */
+@keyframes derby-live-glow {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(251,191,36,0.95), 0 0 26px rgba(251,191,36,0.30); }
+  50%      { box-shadow: inset 0 0 0 2px rgba(251,191,36,0.55), 0 0 46px rgba(251,191,36,0.70); }
+}
+
+@keyframes derby-live-sweep {
+  0%       { transform: translateX(-140%) skewX(-18deg); }
+  60%, 100% { transform: translateX(320%) skewX(-18deg); }
+}
+
+@keyframes derby-live-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.78); }
+}
+
+.derby-live-row { animation: derby-live-glow 1.6s ease-in-out infinite; }
+.derby-live-sweep { animation: derby-live-sweep 2.2s ease-in-out infinite; }
+.derby-live-dot { animation: derby-live-dot 1s ease-in-out infinite; }
+
+/* Derby ticker — right-to-left crawl. The track holds N identical copies of the
+   row list; shifting it by exactly one copy's width (100/N %) loops seamlessly.
+   --derby-ticker-shift is set inline by DerbyTickerScene from the measured copy count. */
+@keyframes derby-ticker-crawl {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(calc(-1 * var(--derby-ticker-shift, 50%)), 0, 0); }
+}
+
+/* ── Money ball ─────────────────────────────────────────────────────────────
+   The full-screen takeover, in CSS rather than JS. Every piece animates
+   transform/opacity ONLY and is promoted with will-change, so OBS runs the
+   whole thing on the compositor and the main thread does nothing after the
+   first frame. Do not add filter/box-shadow/width animations here — they
+   re-rasterise per frame at 1080p and that is what drops the frame rate.
+   One shared 3.2s timeline: impact lands at 12%, everything is clear by 100%.
+   Per-element direction and stagger come in as --mb-* custom properties.
+
+   Second rule, learned the hard way on an M1: composited does not mean free.
+   `scale` on TEXT or VECTOR content re-rasterises the glyphs/paths at every
+   new scale factor, and a stroked 168px headline is brutally expensive to
+   raster. So type, the ball and the plate move with translate/rotate/opacity
+   only — scale is reserved for the shockwave rings and the solid-colour
+   sparks, which are trivial to raster. There is also no wrapper-level opacity
+   animation: fading a parent that contains ~20 composited children forces the
+   compositor to build a full-screen render surface every frame. Each piece
+   fades itself instead. */
+/* No `will-change` on purpose. Chrome already composites an element the moment
+   a transform/opacity animation on it starts; will-change instead promotes and
+   rasterises ALL of them the instant they mount — ~20 layers, including a big
+   gradient and a stroked headline, in one frame. That burst was the visible
+   hitch when the graphic appeared. Without it the layers are created as each
+   piece's delay elapses, spreading the same work over the timeline. */
+.derby-mb-anim {
+  animation-fill-mode: both;
+  backface-visibility: hidden;
+}
+
+@keyframes derby-mb-flash {
+  0%   { opacity: 0; }
+  25%  { opacity: 0.5; }
+  100% { opacity: 0; }
+}
+
+@keyframes derby-mb-ring {
+  from { transform: scale(0.2); opacity: 0.9; }
+  to   { transform: scale(var(--mb-ring-to, 4)); opacity: 0; }
+}
+
+/* Translate + rotate only: the ball is an SVG, and scaling it would re-raster
+   the gradient and every slot path on the way in. */
+@keyframes derby-mb-ball {
+  0%   { transform: translate3d(-1400px, 60px, 0) rotate(-220deg); opacity: 0; }
+  6%   { opacity: 1; }
+  13%  { transform: translate3d(0, 0, 0) rotate(34deg); opacity: 1; }
+  20%  { transform: translate3d(0, 4px, 0) rotate(30deg); opacity: 1; }
+  88%  { transform: translate3d(0, -30px, 0) rotate(30deg); opacity: 1; }
+  100% { transform: translate3d(0, -46px, 0) rotate(30deg); opacity: 0; }
+}
+
+@keyframes derby-mb-glow {
+  0%, 9%   { opacity: 0; }
+  16%      { opacity: 0.85; }
+  30%, 86% { opacity: 0.5; }
+  100%     { opacity: 0; }
+}
+
+@keyframes derby-mb-slam {
+  0%, 9%   { transform: translate3d(0, 46px, 0); opacity: 0; }
+  15%      { transform: translate3d(0, -10px, 0); opacity: 1; }
+  20%      { transform: translate3d(0, 4px, 0); opacity: 1; }
+  25%, 88% { transform: translate3d(0, 0, 0); opacity: 1; }
+  100%     { transform: translate3d(0, -60px, 0); opacity: 0; }
+}
+
+@keyframes derby-mb-plate {
+  0%, 14%  { transform: translate3d(0, 34px, 0); opacity: 0; }
+  22%      { transform: translate3d(0, -6px, 0); opacity: 1; }
+  27%, 88% { transform: translate3d(0, 0, 0); opacity: 1; }
+  100%     { transform: translate3d(0, -26px, 0); opacity: 0; }
+}
+
+@keyframes derby-mb-name {
+  0%, 10%  { transform: translate3d(0, 18px, 0); opacity: 0; }
+  20%, 86% { transform: translate3d(0, 0, 0); opacity: 1; }
+  100%     { transform: translate3d(0, 0, 0); opacity: 0; }
+}
+
+@keyframes derby-mb-spark {
+  from { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); opacity: 1; }
+  to   { transform: translate3d(var(--mb-x), var(--mb-y), 0) rotate(var(--mb-spin)) scale(0.3); opacity: 0; }
+}
+
+@keyframes derby-mb-rain {
+  0%   { transform: translate3d(var(--mb-x), -620px, 0) rotate(0deg); opacity: 0; }
+  8%   { opacity: 1; }
+  78%  { opacity: 1; }
+  100% { transform: translate3d(calc(var(--mb-x) + var(--mb-drift)), 660px, 0) rotate(var(--mb-spin)); opacity: 0; }
+}
+
+/* Home run burst — the per-homer celebration on the hitter card. Same rules as
+   the money ball above, and it reuses `derby-mb-spark` / `derby-mb-ring` for
+   its particles and shockwaves. This one fires dozens of times a night, so it
+   is the last place that should be doing per-frame work on the main thread. */
+@keyframes derby-hr-slam {
+  0%       { transform: translate3d(0, 40px, 0); opacity: 0; }
+  13%      { transform: translate3d(0, -12px, 0); opacity: 1; }
+  20%      { transform: translate3d(0, 4px, 0); opacity: 1; }
+  28%, 85% { transform: translate3d(0, 0, 0); opacity: 1; }
+  100%     { transform: translate3d(0, -55px, 0); opacity: 0; }
+}
+
+/* Turn clock: the last-10-seconds pulse. Opacity only — pulsing `scale` on
+   78px text with a stroke re-rasterises the glyphs every frame. */
+@keyframes derby-clock-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+.derby-clock-pulse { animation: derby-clock-pulse 1.1s ease-in-out infinite; }

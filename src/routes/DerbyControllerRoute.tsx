@@ -4,11 +4,15 @@ import { ref, set, update, remove } from 'firebase/database'
 import { db } from '../firebase'
 import { useDerbyBroadcast } from '../hooks/useDerbyBroadcast'
 import { useDerbyContestants, type DerbyContestant } from '../hooks/useDerbyContestants'
+import { useDerbyClock } from '../hooks/useDerbyTimer'
 import {
   ROUND_KEY, ROUND_LABEL, ADVANCE_COUNT,
-  roundScore, derbyTotal, participantsForRound, advancersFromRound,
+  roundScore, derbyTotal, participantsForRound, effectiveAdvancers, cutInfo, isRoundLocked,
+  derbySeedValue, seedOrderForRound,
+  derbyTimerRemainingMs, formatDerbyClock, DERBY_MONEY_BALL_HR,
 } from '../derby/logic'
-import type { DerbyBroadcastView, DerbyRoundNum } from '../types'
+import type { DerbyBroadcastView, DerbyRoundNum, DerbyAdvancerLocks } from '../types'
+import type { DerbyScoresMap } from '../derby/logic'
 
 // Same front-end gate as the /derby admin footer — the /derby path is
 // intentionally open at the rules layer, so this is a convenience lock only.
@@ -41,7 +45,7 @@ function ControlPanel() {
   const { contestants, contestantById, teams } = useDerbyContestants()
 
   const eligibleIds = useMemo(() => contestants.map(c => c.id), [contestants])
-  const { view, activeRound, leaderboardRound, scores, battingOrder, featuredPlayerId } = broadcast
+  const { view, activeRound, leaderboardRound, scores, battingOrder, featuredPlayerId, ticker, miniBoard, advancers: locks } = broadcast
   const roundKey = ROUND_KEY[activeRound]
 
   // Order may reference players who've since been toggled OUT — keep the raw
@@ -56,21 +60,42 @@ function ControlPanel() {
   const currentScore = currentBatterId ? roundScore(scores, currentBatterId, activeRound) : undefined
 
   const participants = useMemo(
-    () => participantsForRound(eligibleIds, scores, activeRound),
-    [eligibleIds, scores, activeRound],
+    () => participantsForRound(eligibleIds, scores, activeRound, locks),
+    [eligibleIds, scores, activeRound, locks],
   )
   const advancers = useMemo(
-    () => advancersFromRound(participants, scores, activeRound),
-    [participants, scores, activeRound],
+    () => effectiveAdvancers(participants, scores, activeRound, locks),
+    [participants, scores, activeRound, locks],
   )
 
   // ── Writes ────────────────────────────────────────────────────────────
   const setView = (v: DerbyBroadcastView) => set(bcastRef('view'), v)
   const setLeaderboardRound = (r: DerbyRoundNum) => set(bcastRef('leaderboardRound'), r)
   const setFeatured = (id: string | null) => set(bcastRef('featuredPlayerId'), id)
+  const setTicker = (on: boolean) => set(bcastRef('ticker'), on)
+  const setMiniBoard = (on: boolean) => set(bcastRef('miniBoard'), on)
 
-  const setActiveRound = (r: DerbyRoundNum) =>
-    update(bcastRef(), { activeRound: r, leaderboardRound: r })
+  // New round = that round's field, in that round's order, and a fresh turn
+  // clock. Without this the previous round's whole order stayed on screen and
+  // there was no way to tell which round you were looking at.
+  const setActiveRound = (r: DerbyRoundNum) => {
+    const nextField = participantsForRound(eligibleIds, scores, r, locks)
+    const patch: Record<string, unknown> = { activeRound: r, leaderboardRound: r }
+    // Only re-seed when the field actually changes — bouncing between rounds
+    // and back must not throw away hand-dragged order
+    if (!sameSet(order, nextField)) {
+      const seeded = buildSeededOrder(r)
+      patch['battingOrder'] = seeded
+      patch['currentBatterIndex'] = 0
+      patch['featuredPlayerId'] = seeded[0] ?? null
+      Object.assign(patch, timerResetPatch(seeded[0] ?? null))
+    } else {
+      Object.assign(patch, timerResetPatch(order[0] ?? null))
+      patch['currentBatterIndex'] = 0
+      patch['featuredPlayerId'] = order[0] ?? null
+    }
+    return update(bcastRef(), patch)
+  }
 
   const setScore = (playerId: string, round: DerbyRoundNum, n: number | null) => {
     const scoreRef = ref(db, `derby/broadcast/scores/${playerId}/${ROUND_KEY[round]}`)
@@ -82,23 +107,30 @@ function ControlPanel() {
     setScore(currentBatterId, activeRound, Math.max(0, (currentScore ?? 0) + delta))
   }
 
-  // Greatest → least: round 1 seeds by season HR, later rounds by prior-round score
-  const buildSeededOrder = () => {
-    const prevRound = activeRound > 1 ? (activeRound - 1) as DerbyRoundNum : null
-    return [...participants].sort((a, b) => {
-      const aSeed = prevRound ? roundScore(scores, a, prevRound) ?? 0 : contestantById.get(a)?.seasonHr ?? 0
-      const bSeed = prevRound ? roundScore(scores, b, prevRound) ?? 0 : contestantById.get(b)?.seasonHr ?? 0
-      return bSeed - aSeed
-        || (contestantById.get(b)?.seasonHr ?? 0) - (contestantById.get(a)?.seasonHr ?? 0)
-        || (contestantById.get(a)?.name ?? '').localeCompare(contestantById.get(b)?.name ?? '')
-    })
-  }
+  // Seeding rule itself lives in derby/logic.ts (pure + tested)
+  const contestantInfo = (id: string) => ({
+    seasonHr: contestantById.get(id)?.seasonHr ?? 0,
+    name: contestantById.get(id)?.name ?? '',
+  })
+
+  const seedValue = (id: string, round: DerbyRoundNum) =>
+    derbySeedValue(scores, id, round, contestantById.get(id)?.seasonHr ?? 0)
+
+  const buildSeededOrder = (round: DerbyRoundNum) =>
+    seedOrderForRound(participantsForRound(eligibleIds, scores, round, locks), scores, round, contestantInfo)
+
+  const orderRule = activeRound > 1
+    ? `Fewest ${ROUND_LABEL[activeRound - 1 as DerbyRoundNum]} HR first — the leaders hit last`
+    : 'Most season HR first'
 
   const loadOrder = () => {
     if (participants.length === 0) return
-    if (order.length > 0 && !window.confirm(`Replace the batting order with the ${participants.length} hitters of ${ROUND_LABEL[activeRound]}? (Most home runs hits first — drag rows after to fine-tune.)`)) return
-    const seeded = buildSeededOrder()
-    update(bcastRef(), { battingOrder: seeded, currentBatterIndex: 0, featuredPlayerId: seeded[0] ?? null })
+    if (order.length > 0 && !window.confirm(`Replace the batting order with the ${participants.length} hitters of ${ROUND_LABEL[activeRound]}?\n\n${orderRule}. Drag rows after to fine-tune.`)) return
+    const seeded = buildSeededOrder(activeRound)
+    update(bcastRef(), {
+      battingOrder: seeded, currentBatterIndex: 0, featuredPlayerId: seeded[0] ?? null,
+      ...timerResetPatch(seeded[0] ?? null),
+    })
   }
 
   // Auto-fill: if the order is empty once everything has loaded, seed it with
@@ -110,7 +142,7 @@ function ControlPanel() {
     if (order.length > 0) { autoSeededRef.current = true; return }
     if (participants.length === 0) return
     autoSeededRef.current = true
-    const seeded = buildSeededOrder()
+    const seeded = buildSeededOrder(activeRound)
     const updates: Record<string, unknown> = { battingOrder: seeded, currentBatterIndex: 0 }
     if (!featuredPlayerId) updates['featuredPlayerId'] = seeded[0] ?? null
     update(bcastRef(), updates)
@@ -119,7 +151,10 @@ function ControlPanel() {
 
   const goToBatter = (i: number) => {
     const clamped = Math.max(0, Math.min(i, order.length - 1))
-    update(bcastRef(), { currentBatterIndex: clamped, featuredPlayerId: order[clamped] ?? null })
+    update(bcastRef(), {
+      currentBatterIndex: clamped, featuredPlayerId: order[clamped] ?? null,
+      ...timerResetPatch(order[clamped] ?? null),
+    })
   }
 
   const nextBatter = () => {
@@ -132,8 +167,123 @@ function ControlPanel() {
     const newIdx = Math.min(currentIndex + 1, order.length - 1)
     updates['currentBatterIndex'] = newIdx
     updates['featuredPlayerId'] = order[newIdx] ?? null
+    Object.assign(updates, timerResetPatch(order[newIdx] ?? null))
     update(bcastRef(), updates)
   }
+
+  // ── Turn clock: each hitter gets 90s + one 30s timeout inside it ──────
+  // `timer` is the stored state resolved to now — an expired timeout already
+  // reads as the resumed turn clock, so every button acts on what's on screen
+  const rawTimer = broadcast.timer
+  const { timer, remainingMs: timerRemaining } = useDerbyClock(rawTimer)
+  const inTimeout = timer.phase === 'timeout'
+  const timerExpired = !inTimeout && timerRemaining <= 0
+
+  const startClock = () => {
+    if (timerRemaining <= 0) return
+    update(bcastRef('timer'), { running: true, startedAt: Date.now() })
+  }
+
+  // `phase` is written explicitly: if the stored state still says 'timeout'
+  // but it has already rolled over, stopping must commit the rollover too
+  const pauseClock = () => {
+    const rem = derbyTimerRemainingMs(timer, Date.now())
+    update(bcastRef('timer'), inTimeout
+      ? { phase: 'timeout', running: false, startedAt: null, timeoutRemainingMs: rem }
+      : { phase: 'main', running: false, startedAt: null, remainingMs: rem, timeoutRemainingMs: timer.timeoutRemainingMs })
+  }
+
+  // The 30s pause freezes the turn clock exactly where it stands
+  const takeTimeout = () => {
+    if (timer.timeoutUsed || inTimeout) return
+    update(bcastRef('timer'), {
+      remainingMs: derbyTimerRemainingMs(timer, Date.now()),
+      phase: 'timeout',
+      timeoutRemainingMs: timer.timeoutDurationMs,
+      timeoutUsed: true,
+      running: true,
+      startedAt: Date.now(),
+    })
+  }
+
+  // Back to hitting — the turn clock picks straight back up where it froze,
+  // whether the 30s ran out or the producer ended it early
+  const endTimeout = () =>
+    update(bcastRef('timer'), {
+      phase: 'main',
+      timeoutRemainingMs: 0,
+      running: true,
+      startedAt: Date.now(),
+    })
+
+  const setTimerVisible = (v: boolean) => set(bcastRef('timer/visible'), v)
+
+  const setDurations = (durationMs: number, timeoutDurationMs: number) => {
+    const patch: Record<string, unknown> = { durationMs, timeoutDurationMs }
+    // A fresh, untouched clock adopts the new length right away; one that's
+    // mid-turn keeps its number until the next reset
+    if (!timer.running && timer.remainingMs === timer.durationMs) patch['remainingMs'] = durationMs
+    if (!timer.running && timer.timeoutRemainingMs === timer.timeoutDurationMs) {
+      patch['timeoutRemainingMs'] = timeoutDurationMs
+    }
+    update(bcastRef('timer'), patch)
+  }
+
+  // A fresh clock for a new hitter. Returned as multi-path keys so it rides
+  // along in the same update as the batter change — the two can never drift.
+  const timerResetPatch = (playerId: string | null) => ({
+    'timer/phase': 'main',
+    'timer/running': false,
+    'timer/startedAt': null,
+    'timer/remainingMs': timer.durationMs,
+    'timer/timeoutRemainingMs': timer.timeoutDurationMs,
+    'timer/timeoutUsed': false,
+    'timer/playerId': playerId,
+    'timer/moneyBallAt': null,
+  })
+
+  const resetClock = () => update(bcastRef(), timerResetPatch(currentBatterId ?? null))
+
+  // ── Money ball: the one pitch after 0:00, worth 3 ─────────────────────
+  const moneyBallTaken = timer.moneyBallAt != null
+  const moneyBallReady = timerExpired && !moneyBallTaken && !!currentBatterId
+
+  // Score and timestamp go up in ONE atomic update so the overlay sees them in
+  // a single snapshot — that's how the hitter card knows to leave the +3 to the
+  // full-screen money-ball graphic instead of firing its usual home run burst.
+  const hitMoneyBall = () => {
+    if (!moneyBallReady || !currentBatterId) return
+    update(bcastRef(), {
+      [`scores/${currentBatterId}/${roundKey}`]: (currentScore ?? 0) + DERBY_MONEY_BALL_HR,
+      'timer/moneyBallAt': Date.now(),
+    })
+  }
+
+  const undoMoneyBall = () => {
+    if (!moneyBallTaken || !currentBatterId) return
+    update(bcastRef(), {
+      [`scores/${currentBatterId}/${roundKey}`]: Math.max(0, (currentScore ?? 0) - DERBY_MONEY_BALL_HR),
+      'timer/moneyBallAt': null,
+    })
+  }
+
+  // The overlay is read-only, so the controller owns the clock's transitions:
+  // one timeout per running segment, re-derived from `startedAt` after a
+  // reload. Same pattern as the game controller's stat auto-dismiss.
+  // Keyed off the STORED state — this schedules the write that makes the
+  // rollover real for everyone; the overlay derives the same thing meanwhile.
+  useEffect(() => {
+    if (!rawTimer.running || rawTimer.startedAt == null) return
+    const ms = derbyTimerRemainingMs(rawTimer, Date.now())
+    const id = setTimeout(() => {
+      update(bcastRef('timer'), rawTimer.phase === 'timeout'
+        // Timeout over → the turn clock resumes itself, no producer input
+        ? { phase: 'main', timeoutRemainingMs: 0, running: true, startedAt: rawTimer.startedAt! + rawTimer.timeoutRemainingMs }
+        : { running: false, startedAt: null, remainingMs: 0 })
+    }, ms + 80)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawTimer.running, rawTimer.startedAt, rawTimer.phase, rawTimer.remainingMs, rawTimer.timeoutRemainingMs])
 
   // ── Drag-and-drop order: local mirror while dragging, commit on drop ──
   const [localOrder, setLocalOrder] = useState<string[]>(order)
@@ -153,7 +303,7 @@ function ControlPanel() {
 
   const selectBatter = (id: string) => {
     const i = order.indexOf(id)
-    if (i >= 0) update(bcastRef(), { currentBatterIndex: i, featuredPlayerId: id })
+    if (i >= 0) update(bcastRef(), { currentBatterIndex: i, featuredPlayerId: id, ...timerResetPatch(id) })
   }
 
   const removeFromOrder = (id: string) => {
@@ -226,6 +376,45 @@ function ControlPanel() {
               Showing: <strong style={{ color: '#fbbf24' }}>{featured?.name ?? 'nobody — pick a player below'}</strong>
             </div>
           )}
+
+          {/* Ticker is independent of the view — it can crawl under any scene,
+              or over a clean camera shot with everything else hidden */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, paddingTop: 12, borderTop: '1px solid #1e293b' }}>
+            <button
+              onClick={() => setTicker(!ticker)}
+              style={{
+                ...smallBtn, fontWeight: 800,
+                background: ticker ? '#16a34a' : '#1e293b',
+                color: ticker ? '#ffffff' : '#cbd5e1',
+                border: `2px solid ${ticker ? '#16a34a' : '#334155'}`,
+              }}
+            >
+              📊 Ticker: {ticker ? 'ON' : 'OFF'}
+            </button>
+            <span style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+              Bottom crawl — every {ROUND_LABEL[activeRound]} hitter with their score (TBD until they hit). Always on screen, any view.
+            </span>
+          </div>
+
+          {/* Left rail — also view-independent; hides itself under the takeover
+              leaderboard, which says the same thing bigger */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+            <button
+              onClick={() => setMiniBoard(!miniBoard)}
+              style={{
+                ...smallBtn, fontWeight: 800,
+                background: miniBoard ? '#16a34a' : '#1e293b',
+                color: miniBoard ? '#ffffff' : '#cbd5e1',
+                border: `2px solid ${miniBoard ? '#16a34a' : '#334155'}`,
+              }}
+            >
+              🏆 Left rail: {miniBoard ? 'ON' : 'OFF'}
+            </button>
+            <span style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+              Who’s advancing right now — {advanceCount ?? 'all'} {advanceCount === null ? 'finalists' : 'spots'}
+              {advancers.length > (advanceCount ?? Infinity) && `, ${advancers.length} alive on a tie`}. Hides under the big leaderboard.
+            </span>
+          </div>
         </Section>
 
         {/* ── Round ── */}
@@ -258,6 +447,15 @@ function ControlPanel() {
             </div>
           )}
         </Section>
+
+        {/* ── Advancement ── */}
+        <AdvancementSection
+          eligibleIds={eligibleIds}
+          scores={scores}
+          locks={locks}
+          activeRound={activeRound}
+          contestantById={contestantById}
+        />
 
         {/* ── Now batting ── */}
         <Section title="Now batting" accent="#4ade80">
@@ -295,6 +493,44 @@ function ControlPanel() {
                   −1
                 </button>
               </div>
+
+              {/* Money ball — the extra pitch after 0:00. Stays visible but
+                  locked while the clock runs, so the rule is on the panel */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'stretch' }}>
+                <button
+                  onClick={hitMoneyBall}
+                  disabled={!moneyBallReady}
+                  style={{
+                    ...bigBtn, flex: 1, fontSize: 19, position: 'relative',
+                    background: moneyBallReady
+                      ? 'linear-gradient(180deg, #fbbf24, #f59e0b)'
+                      : moneyBallTaken ? '#422006' : '#1e293b',
+                    color: moneyBallReady ? '#0f172a' : moneyBallTaken ? '#fbbf24' : '#475569',
+                    border: `2px solid ${moneyBallReady ? '#fbbf24' : moneyBallTaken ? '#a16207' : '#334155'}`,
+                    boxShadow: moneyBallReady ? '0 0 22px rgba(251,191,36,0.45)' : 'none',
+                    cursor: moneyBallReady ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  💰 MONEY BALL +{DERBY_MONEY_BALL_HR}
+                </button>
+                {moneyBallTaken && (
+                  <button
+                    onClick={undoMoneyBall}
+                    title={`Undo the money ball — takes ${DERBY_MONEY_BALL_HR} back off`}
+                    style={{ ...bigBtn, flex: '0 0 78px', background: '#1e293b', color: '#f87171', border: '2px solid #334155' }}
+                  >
+                    ↺ Undo
+                  </button>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: moneyBallReady ? '#fbbf24' : '#64748b', marginTop: 6, lineHeight: 1.5 }}>
+                {moneyBallTaken
+                  ? `Money ball hit — ${DERBY_MONEY_BALL_HR} home runs added.`
+                  : moneyBallReady
+                    ? 'Time is up — one more pitch. Hit it and the money ball graphic takes over the screen.'
+                    : `Unlocks at 0:00: the final pitch counts as ${DERBY_MONEY_BALL_HR} home runs.`}
+              </div>
+
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => goToBatter(currentIndex - 1)} disabled={currentIndex === 0} style={{ ...smallBtn, flex: 1, background: '#1e293b', color: currentIndex === 0 ? '#475569' : '#cbd5e1', border: '1px solid #334155' }}>
                   ◀ Prev batter
@@ -304,14 +540,160 @@ function ControlPanel() {
                 </button>
               </div>
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
-                “Next batter” locks in the current score (blank becomes 0) and features the next hitter.
+                “Next batter” locks in the current score (blank becomes 0), features the next hitter
+                and puts a fresh clock on them.
               </div>
             </>
           )}
         </Section>
 
+        {/* ── Turn clock ── */}
+        <Section title="Turn clock" accent="#38bdf8">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{
+              fontFamily: 'var(--font-score)', fontSize: 60, fontWeight: 900, lineHeight: 1,
+              minWidth: 140, fontVariantNumeric: 'tabular-nums',
+              color: inTimeout ? '#38bdf8'
+                : moneyBallReady ? '#fbbf24'
+                : timerExpired ? '#f87171'
+                : timerRemaining <= 10_000 ? '#f87171'
+                : timer.running ? '#fbbf24' : '#cbd5e1',
+            }}>
+              {formatDerbyClock(timerRemaining)}
+            </div>
+            <div style={{ flex: '1 1 200px', lineHeight: 1.6 }}>
+              <div style={{
+                fontFamily: 'var(--font-score)', fontSize: 14, fontWeight: 800,
+                textTransform: 'uppercase', letterSpacing: '0.08em',
+                color: inTimeout ? '#38bdf8'
+                  : moneyBallReady ? '#fbbf24'
+                  : timerExpired ? '#f87171'
+                  : timer.running ? '#4ade80' : '#94a3b8',
+              }}>
+                {inTimeout
+                  ? (timer.running ? '30-second timeout' : 'Timeout paused')
+                  : moneyBallReady ? 'Final pitch — money ball'
+                  : timerExpired ? "Time's up"
+                  : timer.running ? 'Hitting' : 'Stopped'}
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                {timer.timeoutUsed
+                  ? <span style={{ color: '#64748b' }}>Timeout used</span>
+                  : <span style={{ color: '#fbbf24' }}>Timeout available</span>}
+                {inTimeout && <> · {formatDerbyClock(timer.remainingMs)} left after</>}
+              </div>
+              {timer.playerId && timer.playerId !== currentBatterId && (
+                <div style={{ fontSize: 12, color: '#fbbf24' }}>
+                  Clock belongs to {contestantById.get(timer.playerId)?.name ?? 'a previous hitter'} — reset to move it.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            {timer.running ? (
+              <button onClick={pauseClock} style={{ ...bigBtn, flex: '2 1 150px', fontSize: 17, background: '#b45309', color: '#ffffff', border: 'none' }}>
+                ⏸ Stop clock
+              </button>
+            ) : (
+              <button
+                onClick={startClock}
+                disabled={timerRemaining <= 0}
+                style={{
+                  ...bigBtn, flex: '2 1 150px', fontSize: 17, border: 'none', color: '#ffffff',
+                  background: timerRemaining <= 0 ? '#334155' : '#16a34a',
+                  cursor: timerRemaining <= 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                ▶ {timerRemaining < timer.durationMs || inTimeout ? 'Resume' : 'Start'} clock
+              </button>
+            )}
+            <button onClick={resetClock} style={{ ...bigBtn, flex: '1 1 110px', background: '#1e293b', color: '#cbd5e1', border: '2px solid #334155' }}>
+              ↺ Reset {Math.round(timer.durationMs / 1000)}s
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            {inTimeout ? (
+              <button onClick={endTimeout} style={{ ...bigBtn, flex: '1 1 100%', fontSize: 15, background: '#0ea5e9', color: '#ffffff', border: 'none' }}>
+                ▶ End timeout early — back to hitting
+              </button>
+            ) : (
+              <button
+                onClick={takeTimeout}
+                disabled={timer.timeoutUsed || timerExpired}
+                style={{
+                  ...bigBtn, flex: '1 1 100%', fontSize: 15, border: 'none', color: '#ffffff',
+                  background: timer.timeoutUsed || timerExpired ? '#334155' : '#0284c7',
+                  cursor: timer.timeoutUsed || timerExpired ? 'not-allowed' : 'pointer',
+                }}
+              >
+                ⏱ {timer.timeoutUsed ? 'Timeout already used' : `Take ${Math.round(timer.timeoutDurationMs / 1000)}s timeout`}
+              </button>
+            )}
+          </div>
+
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            marginTop: 12, paddingTop: 12, borderTop: '1px solid #1e293b',
+          }}>
+            <button
+              onClick={() => setTimerVisible(!timer.visible)}
+              style={{
+                ...smallBtn, fontWeight: 800,
+                background: timer.visible ? '#16a34a' : '#1e293b',
+                color: timer.visible ? '#ffffff' : '#cbd5e1',
+                border: `2px solid ${timer.visible ? '#16a34a' : '#334155'}`,
+              }}
+            >
+              🕑 On screen: {timer.visible ? 'ON' : 'OFF'}
+            </button>
+            <SecondsInput
+              label="Turn"
+              value={timer.durationMs}
+              onCommit={ms => setDurations(ms, timer.timeoutDurationMs)}
+            />
+            <SecondsInput
+              label="Timeout"
+              value={timer.timeoutDurationMs}
+              onCommit={ms => setDurations(timer.durationMs, ms)}
+            />
+          </div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.5 }}>
+            The clock rides top-left on the overlay under the All-Star lockup, on any view.
+            Taking the timeout freezes the turn clock; when the 30s runs out the turn clock
+            resumes on its own. Lengths apply to the next fresh clock.
+          </div>
+        </Section>
+
         {/* ── Batting order ── */}
         <Section title={`Batting order — ${ROUND_LABEL[activeRound]}`} accent="#c084fc">
+          {/* The rule is stated on screen because the seeding is not otherwise
+              guessable from a list of names */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
+            fontSize: 12, color: '#c084fc', fontWeight: 700,
+          }}>
+            <span style={{ fontSize: 14 }}>{activeRound > 1 ? '⬆' : '⬇'}</span>
+            {orderRule}
+          </div>
+
+          {!sameSet(order, participants) && participants.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: 'rgba(251,191,36,0.10)', border: '1px solid #fbbf24',
+              borderRadius: 8, padding: '8px 10px', marginBottom: 10,
+              fontSize: 12, color: '#fbbf24', lineHeight: 1.5,
+            }}>
+              <span style={{ flex: '1 1 200px' }}>
+                This list isn’t the {ROUND_LABEL[activeRound]} field ({order.length} listed, {participants.length} hitting).
+              </span>
+              <button onClick={loadOrder} style={{ ...smallBtn, background: '#fbbf24', color: '#0f172a', border: 'none', fontWeight: 800 }}>
+                Fix order
+              </button>
+            </div>
+          )}
+
           {localOrder.length === 0 ? (
             <div style={{ fontSize: 14, color: '#64748b', padding: '4px 0 8px' }}>
               The order fills itself with every eligible hitter once they load — or press “Load {ROUND_LABEL[activeRound]} order” above.
@@ -359,6 +741,10 @@ function ControlPanel() {
                         userSelect: 'none',
                       }}>
                         {c.name}
+                        {/* The number this row was sorted on, so the order reads at a glance */}
+                        <span style={{ color: '#c084fc', fontWeight: 700, fontSize: 12 }}>
+                          {' · '}{seedValue(id, activeRound)} {activeRound > 1 ? `R${activeRound - 1}` : 'szn'}
+                        </span>
                         <span style={{ color: '#64748b', fontWeight: 400, fontSize: 12 }}> · {teams[c.teamId]?.shortName ?? ''}</span>
                         {isCurrent && <span style={{ color: '#fbbf24', fontSize: 11, fontWeight: 700, marginLeft: 6 }}>● NOW</span>}
                       </span>
@@ -451,6 +837,219 @@ function ControlPanel() {
   )
 }
 
+// ── Advancement: confirm who moves on out of a round ─────────────────────────
+// The score cut is only a proposal. A tie for the last seat is settled by a
+// swing-off that happens on the field, so the producer ticks the real field
+// here and locks it — that written list then governs the next round's
+// participants, the leaderboard's cut line, and the batting-order seeding.
+
+const CUT_ROUNDS: DerbyRoundNum[] = [1, 2]
+
+const CUT_TITLE: Record<number, string> = {
+  1: 'Round 1 → Round 2',
+  2: 'Round 2 → Final',
+}
+
+function sameSet(a: string[], b: string[]) {
+  return a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|')
+}
+
+function AdvancementSection({ eligibleIds, scores, locks, activeRound, contestantById }: {
+  eligibleIds: string[]
+  scores: DerbyScoresMap
+  locks: DerbyAdvancerLocks
+  activeRound: DerbyRoundNum
+  contestantById: Map<string, DerbyContestant>
+}) {
+  // Follows the live round — the final has no cut of its own, so it shows the
+  // one that produced it (still editable after the fact)
+  const [cutRound, setCutRound] = useState<DerbyRoundNum>(Math.min(activeRound, 2) as DerbyRoundNum)
+  const [draft, setDraft] = useState<string[] | null>(null)
+  const [open, setOpen] = useState(true)
+
+  // Follow the live round without an effect: adjusting state during render is
+  // the supported way to react to a changed input, and it drops any half-made
+  // selection at the same time
+  const [followedRound, setFollowedRound] = useState(activeRound)
+  if (followedRound !== activeRound) {
+    setFollowedRound(activeRound)
+    setCutRound(Math.min(activeRound, 2) as DerbyRoundNum)
+    setDraft(null)
+  }
+
+  const pickCutRound = (r: DerbyRoundNum) => { setCutRound(r); setDraft(null) }
+
+  const key = ROUND_KEY[cutRound] as 'r1' | 'r2'
+  const locked = isRoundLocked(cutRound, locks)
+
+  const participants = useMemo(
+    () => participantsForRound(eligibleIds, scores, cutRound, locks),
+    [eligibleIds, scores, cutRound, locks],
+  )
+  const info = useMemo(() => cutInfo(participants, scores, cutRound), [participants, scores, cutRound])
+  const committed = useMemo(
+    () => effectiveAdvancers(participants, scores, cutRound, locks),
+    [participants, scores, cutRound, locks],
+  )
+
+  const selection = draft ?? committed
+  const dirty = draft !== null && !sameSet(draft, committed)
+  const slots = info.slots ?? 0
+  const tiedSet = new Set(info.tied)
+
+  const rows = useMemo(() => {
+    return [...participants].sort((a, b) => {
+      const as = roundScore(scores, a, cutRound)
+      const bs = roundScore(scores, b, cutRound)
+      if (as === undefined && bs === undefined) return 0
+      if (as === undefined) return 1
+      if (bs === undefined) return -1
+      return bs - as
+    })
+  }, [participants, scores, cutRound])
+
+  const toggle = (id: string) =>
+    setDraft(sel => {
+      const cur = sel ?? committed
+      return cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]
+    })
+
+  const confirm = () => set(bcastRef(`advancers/${key}`), selection).then(() => setDraft(null))
+  const unlock = () => remove(bcastRef(`advancers/${key}`)).then(() => setDraft(null))
+  const useLiveCut = () => setDraft(info.provisional)
+
+  const name = (id: string) => contestantById.get(id)?.name ?? '?'
+
+  return (
+    <Section
+      title="Advancement"
+      accent="#4ade80"
+      collapsible
+      open={open}
+      onToggle={() => setOpen(o => !o)}
+    >
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        {CUT_ROUNDS.map(r => (
+          <Chip key={r} active={cutRound === r} onClick={() => pickCutRound(r)} big>
+            {CUT_TITLE[r]}
+          </Chip>
+        ))}
+        <span style={{
+          marginLeft: 'auto', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
+          textTransform: 'uppercase', padding: '5px 12px', borderRadius: 20,
+          background: locked ? 'rgba(74,222,128,0.15)' : 'rgba(148,163,184,0.12)',
+          color: locked ? '#4ade80' : '#94a3b8',
+          border: `1px solid ${locked ? '#4ade80' : '#334155'}`,
+        }}>
+          {locked ? '✓ Field set' : 'Live cut'}
+        </span>
+      </div>
+
+      {/* ── Status ── */}
+      <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.7, marginBottom: 10 }}>
+        <div>
+          <strong style={{ color: '#e2e8f0' }}>{slots} spots</strong> · {participants.length} hitters
+          {' · '}
+          <span style={{ color: selection.length === slots ? '#4ade80' : '#fbbf24', fontWeight: 700 }}>
+            {selection.length} selected
+          </span>
+        </div>
+        {info.unscored.length > 0 && (
+          <div style={{ color: '#fbbf24' }}>
+            ⚠ {info.unscored.length} {info.unscored.length === 1 ? 'hitter hasn’t' : 'hitters haven’t'} gone yet
+            {' — '}{info.unscored.map(name).join(', ')}
+          </div>
+        )}
+        {info.contested && !locked && (
+          <div style={{ color: '#f59e0b' }}>
+            ⚡ Swing-off: {info.tied.length} tied at {roundScore(scores, info.tied[0], cutRound)} HR for the last{' '}
+            {info.spotsLeft} {info.spotsLeft === 1 ? 'spot' : 'spots'} — {info.tied.map(name).join(', ')}.
+            Hit it off, then tick the winner{info.spotsLeft === 1 ? '' : 's'} below and confirm.
+          </div>
+        )}
+      </div>
+
+      {/* ── Pick the field ── */}
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 13, color: '#64748b', padding: '4px 0 8px' }}>
+          Nobody in this round yet.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+          {rows.map(id => {
+            const picked = selection.includes(id)
+            const s = roundScore(scores, id, cutRound)
+            const isTied = tiedSet.has(id) && info.contested && !locked
+            return (
+              <button
+                key={id}
+                onClick={() => toggle(id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px',
+                  borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                  background: picked ? 'rgba(74,222,128,0.13)' : '#1e293b',
+                  border: `1px solid ${picked ? '#4ade80' : isTied ? '#f59e0b' : '#334155'}`,
+                  fontFamily: 'var(--font-ui)',
+                }}
+              >
+                <span style={{
+                  width: 20, height: 20, borderRadius: 5, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: picked ? '#4ade80' : 'transparent',
+                  border: `2px solid ${picked ? '#4ade80' : '#475569'}`,
+                  color: '#0f172a', fontSize: 13, fontWeight: 900, lineHeight: 1,
+                }}>
+                  {picked ? '✓' : ''}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, color: '#e2e8f0', fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {name(id)}
+                  {isTied && <span style={{ color: '#f59e0b', fontSize: 11, fontWeight: 800, marginLeft: 8, letterSpacing: '0.08em' }}>SWING-OFF</span>}
+                </span>
+                <span style={{
+                  fontFamily: 'var(--font-score)', fontSize: 18, fontWeight: 900, flexShrink: 0,
+                  color: s === undefined ? '#475569' : '#fbbf24',
+                }}>
+                  {s ?? '–'}
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', marginLeft: 3 }}>HR</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Commit ── */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          onClick={confirm}
+          disabled={selection.length === 0 || (locked && !dirty)}
+          style={{
+            ...smallBtn, flex: '2 1 180px', fontWeight: 800,
+            background: selection.length === 0 || (locked && !dirty) ? '#334155' : '#16a34a',
+            color: '#ffffff', border: 'none',
+            cursor: selection.length === 0 || (locked && !dirty) ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {locked ? (dirty ? `Update field (${selection.length})` : 'Field confirmed') : `✓ Confirm these ${selection.length}`}
+        </button>
+        <button onClick={useLiveCut} style={{ ...smallBtn, flex: '1 1 110px', background: '#1e293b', color: '#cbd5e1', border: '1px solid #334155' }}>
+          Reset to score cut
+        </button>
+        {locked && (
+          <button onClick={unlock} style={{ ...smallBtn, flex: '1 1 90px', background: '#1e293b', color: '#f87171', border: '1px solid #7f1d1d' }}>
+            Unlock
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.6 }}>
+        Confirming sets the {cutRound === 1 ? 'Round 2' : 'Final'} field — the overlay draws its cut line here and the
+        next round's batting order seeds from it. Editable at any time; switch the round above and press
+        “Load order” after you confirm.
+      </div>
+    </Section>
+  )
+}
+
 // ── All-scores table row ─────────────────────────────────────────────────────
 
 function ScoreRow({ contestant, scores, total, onCommit }: {
@@ -511,6 +1110,44 @@ function ScoreInput({ value, onCommit }: { value: number | undefined; onCommit: 
         border: '1px solid #334155', fontFamily: 'var(--font-score)', fontSize: 15, fontWeight: 700,
       }}
     />
+  )
+}
+
+// ── Clock length input (seconds in, ms out) ──────────────────────────────────
+
+function SecondsInput({ label, value, onCommit }: {
+  label: string
+  value: number
+  onCommit: (ms: number) => void
+}) {
+  const [draft, setDraft] = useState(String(Math.round(value / 1000)))
+  useEffect(() => { setDraft(String(Math.round(value / 1000))) }, [value])
+
+  const commit = () => {
+    const n = parseInt(draft.trim(), 10)
+    if (!isNaN(n) && n > 0 && n * 1000 !== value) onCommit(n * 1000)
+    else setDraft(String(Math.round(value / 1000)))
+  }
+
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8' }}>
+      {label}
+      <input
+        type="number"
+        min={1}
+        inputMode="numeric"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        style={{
+          width: 58, padding: '5px 6px', textAlign: 'center', borderRadius: 6,
+          background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155',
+          fontFamily: 'var(--font-score)', fontSize: 15, fontWeight: 700,
+        }}
+      />
+      s
+    </label>
   )
 }
 

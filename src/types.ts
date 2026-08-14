@@ -335,6 +335,40 @@ export interface DerbyRoundScores {
 
 export type DerbyBroadcastView = 'hidden' | 'player' | 'leaderboard' | 'upNext'
 
+// Producer-confirmed advancers out of a round, keyed by the round they came
+// OUT of (r1 = who moved into round 2, r2 = who moved into the final). A
+// missing key means "not locked yet" — the live score-based cut stands.
+// This exists because a tie for the last slot is settled by a swing-off that
+// happens off-system: the derby crew hits, then records the winner here.
+export interface DerbyAdvancerLocks {
+  r1?: string[]
+  r2?: string[]
+}
+
+// Which clock is counting down right now. 'main' = the hitter's turn,
+// 'timeout' = their one 30-second pause (the turn clock is frozen meanwhile).
+export type DerbyTimerPhase = 'main' | 'timeout'
+
+// Every hitter gets one turn clock (90s) plus one timeout (30s) they may call
+// at any point during it. The controller is the only writer — the overlay
+// derives the live number from `startedAt` so both devices agree.
+export interface DerbyTimerState {
+  phase: DerbyTimerPhase
+  running: boolean
+  startedAt: number | null      // epoch ms the current running segment began; null = stopped
+  remainingMs: number           // turn clock left at the last stop (frozen during a timeout)
+  timeoutRemainingMs: number    // timeout clock left at the last stop
+  durationMs: number            // full turn length — live-adjustable from the controller
+  timeoutDurationMs: number     // full timeout length
+  timeoutUsed: boolean          // one per hitter per round; cleared on reset
+  playerId: string | null       // whose turn this clock belongs to
+  visible: boolean              // on-screen toggle — independent of `view`, like the ticker
+  // The money ball: once the clock hits 0:00 the hitter gets one more pitch,
+  // worth 3 home runs. Epoch ms it was hit — null = not taken (yet or at all).
+  // Doubles as the overlay's animation trigger; cleared by the per-turn reset.
+  moneyBallAt: number | null
+}
+
 // /derby/broadcast — written by /derby-controller, read by /derby-overlay.
 // Lives under /derby so it shares that path's open write rule (front-end
 // password gate only, same accepted risk as the 50/50 page).
@@ -346,4 +380,8 @@ export interface DerbyBroadcastState {
   battingOrder: string[]            // playerIds in hitting order for the active round
   currentBatterIndex: number        // pointer into battingOrder
   scores: Record<string, DerbyRoundScores>  // playerId → per-round HR
+  ticker: boolean                   // bottom crawl — independent of `view`
+  miniBoard: boolean                // always-on left rail of who's advancing
+  timer: DerbyTimerState            // turn clock — independent of `view`
+  advancers: DerbyAdvancerLocks     // producer-confirmed cuts; overrides the live score cut
 }
