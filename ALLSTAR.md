@@ -102,9 +102,9 @@ at-bat edit modal, both lineup-position computations), SummaryRoute.
 3. **Controller**: link the game as Live Game for the scorebug, run scenes as usual.
    The **⭐ Lineups** scene shows both batting orders with season stats and each
    player's league-team logo under the All-Star Weekend lockup.
-4. **After the event**: nothing to do. Do NOT finalize (the UI won't let you).
-   Optionally `/config` → All-Star Game → *Remove* to drop the teams from pickers;
-   the game + at-bat log keep working as a historical record either way.
+4. **After the event**: do NOT finalize (the UI won't let you). Then
+   `/config` → All-Star Game → *Archive & remove* (see "Archive & resurrect"
+   below). The teams leave every picker and the nav; nothing is lost.
 
 ## Navigation
 
@@ -140,8 +140,49 @@ buttons and one small config edit:
    `allstar-weekend.svg` (year-independent filename — nothing else references
    the year).
 3. `npm run deploy`, then `/config` → All-Star Game → *Create / Re-seed*.
-4. After the event: `/config` → All-Star Game → *Remove* (optional). History
-   is safe either way — game records carry `isExhibition: true`.
+4. After the event: `/config` → All-Star Game → *Archive & remove* (enter the
+   season year). Game records, if a scorekeeper game was used, stay in `/games`
+   flagged `isExhibition: true` and never touch season stats.
+
+### Archive & resurrect
+
+The all-star teams are ephemeral on the live app but must survive for history and
+for reuse. Everything lives in Firebase; no code changes are involved.
+
+**Archive (after the event) — one button:**
+`/config` → All-Star Game → *Archive & remove* → type the season year → *Confirm
+archive*. This is a single atomic multi-path write (`buildAllstarArchiveUpdates`
+in `src/allstar.ts`, unit-tested):
+
+| Moves | From | To |
+|---|---|---|
+| Team records (name, colours, logoUrl, `isExhibition`) | `/teams/team_rist`, `/teams/team_hiller` | `/config/allstarArchive/{year}/teams/{id}` |
+| Draft rosters (ordered playerId[]) | `/config/allstar/rosters/{id}` | `/config/allstarArchive/{year}/rosters/{id}` |
+
+Effects: the teams vanish from the controller/scorekeeper pickers, `/config`, and
+the All-Star nav pages fall back to their empty state. The static logos in
+`public/logos/` and the roster constants in `src/allstar.ts` are untouched (they
+are the next year's template). A game run off the plain scorebug (2026) leaves
+nothing else behind; a game run through the scorekeeper stays in `/games` +
+`/gameStats` flagged exhibition — the Game Editor can still open it.
+
+**Resurrect a past season (e.g. to show 2026 lineups again):**
+`/config` → All-Star Game → *Archived seasons* → *Restore* next to the year. Puts
+the same two teams + rosters back exactly as they were (`buildAllstarRestoreUpdates`).
+Restore is disabled while a current all-star pair is live — archive that first so
+two seasons never coexist. The archive entry is kept; re-archive under the same
+year is refused (pick the real year, or restore then archive again).
+
+**Next year's game (new captains):** do NOT restore — follow steps 1–3 above
+(edit the two yearly files, regenerate logos, deploy, *Create All-Star Teams +
+Rosters*). Use new team ids (e.g. `team_<captain>`), keep `isExhibition: true`.
+Archive it after the event the same way. Each season ends up as its own
+`/config/allstarArchive/{year}` entry.
+
+**Manual fallback (no UI):** the archive is plain JSON under `/config` — the
+Firebase console or `firebase database:get /config/allstarArchive` shows it,
+and copying `teams/*` back to `/teams/*` plus `rosters/*` to
+`/config/allstar/rosters/*` is a full restore.
 
 **Derby (same pool paths every year):**
 1. After the payout is settled: `/derby` → admin mode → **Season tools** →

@@ -138,3 +138,59 @@ export function buildPlayerTeamMap(
   }
   return map
 }
+
+// ── Season archive ───────────────────────────────────────────────────────────
+// After the event the all-star teams must leave the live app (pickers, nav,
+// the /config card) but nothing may be lost: the team records and rosters
+// move to /config/allstarArchive/{year} (admin-writable, same path family as
+// the rosters) and can be restored with one button. See ALLSTAR.md.
+
+export interface AllstarArchive {
+  year: number
+  archivedAt: number
+  teams: Record<string, Team>
+  rosters: AllstarRosters
+}
+
+export type AllstarArchives = Record<string, AllstarArchive>
+
+/**
+ * Multi-path update that snapshots the live all-star teams + rosters into
+ * /config/allstarArchive/{year} and deletes them from /teams and /config/allstar.
+ * Throws if there is nothing to archive (never overwrite an archive with nothing).
+ */
+export function buildAllstarArchiveUpdates(
+  year: number,
+  teams: TeamsMap,
+  rosters: AllstarRosters | null,
+  now = Date.now(),
+): Record<string, unknown> {
+  const liveIds = Object.keys(teams).filter(id => isExhibitionTeam(id, teams))
+  if (liveIds.length === 0) throw new Error('No all-star teams to archive')
+  const archive: AllstarArchive = {
+    year,
+    archivedAt: now,
+    teams: Object.fromEntries(liveIds.map(id => [id, teams[id]])),
+    rosters: Object.fromEntries(liveIds.map(id => [id, rosters?.[id] ?? []])),
+  }
+  const updates: Record<string, unknown> = {
+    [`config/allstarArchive/${year}`]: archive,
+    'config/allstar': null,
+  }
+  for (const id of liveIds) updates[`teams/${id}`] = null
+  return updates
+}
+
+/**
+ * Multi-path update that puts an archived season back on the live app exactly
+ * as it was (teams + rosters). The archive entry itself is kept.
+ */
+export function buildAllstarRestoreUpdates(archive: AllstarArchive): Record<string, unknown> {
+  const updates: Record<string, unknown> = {}
+  for (const [id, team] of Object.entries(archive.teams ?? {})) {
+    updates[`teams/${id}`] = { ...team, isExhibition: true }
+    updates[`config/allstar/rosters/${id}`] = archive.rosters?.[id] ?? []
+  }
+  if (Object.keys(updates).length === 0) throw new Error('Archive has no teams to restore')
+  return updates
+}

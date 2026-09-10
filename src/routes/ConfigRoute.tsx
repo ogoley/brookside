@@ -12,7 +12,8 @@ import { LogoUpload } from '../components/LogoUpload'
 import { deleteStorageLogo } from '../storageUtils'
 import { SponsorsSection } from '../components/SponsorsSection'
 import { useAllstarRosters } from '../hooks/useAllstarRosters'
-import { ALLSTAR_SEED_TEAMS, ALLSTAR_SEED_ROSTERS, ALLSTAR_TEAM_IDS } from '../allstar'
+import { useAllstarArchives } from '../hooks/useAllstarArchives'
+import { ALLSTAR_SEED_TEAMS, ALLSTAR_SEED_ROSTERS, ALLSTAR_TEAM_IDS, buildAllstarArchiveUpdates, buildAllstarRestoreUpdates } from '../allstar'
 import type { Team, Player, PlayersMap, TeamsMap } from '../types'
 
 const EMPTY_TEAM: Team = {
@@ -580,8 +581,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function AllstarSection({ teams, players }: { teams: TeamsMap; players: PlayersMap }) {
   const rosters = useAllstarRosters()
+  const { archives } = useAllstarArchives()
   const [busy, setBusy] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [archiveYear, setArchiveYear] = useState(String(new Date().getFullYear()))
+  const [error, setError] = useState<string | null>(null)
 
   const seeded = ALLSTAR_TEAM_IDS.every(id => !!teams[id]) && !!rosters
 
@@ -599,13 +603,31 @@ function AllstarSection({ teams, players }: { teams: TeamsMap; players: PlayersM
     }
   }
 
-  const removeAllstar = async () => {
-    setBusy(true)
+  // Archive & remove: snapshot teams + rosters to config/allstarArchive/{year},
+  // then take them off the live app. Restore reverses it. See ALLSTAR.md.
+  const archiveAllstar = async () => {
+    const year = Number(archiveYear)
+    if (!Number.isInteger(year) || year < 2000) { setError('Enter a 4-digit year'); return }
+    if (archives.some(([y]) => y === String(year))) { setError(`${year} is already archived — pick another year or restore it first`); return }
+    setBusy(true); setError(null)
     try {
-      const updates: Record<string, unknown> = { 'config/allstar': null }
-      for (const id of ALLSTAR_TEAM_IDS) updates[`teams/${id}`] = null
-      await update(ref(db), updates)
+      await update(ref(db), buildAllstarArchiveUpdates(year, teams, rosters))
       setConfirmRemove(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restoreAllstar = async (year: string) => {
+    const entry = archives.find(([y]) => y === year)?.[1]
+    if (!entry) return
+    setBusy(true); setError(null)
+    try {
+      await update(ref(db), buildAllstarRestoreUpdates(entry))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
@@ -677,20 +699,56 @@ function AllstarSection({ teams, players }: { teams: TeamsMap; players: PlayersM
                   className="h-10 px-4 rounded-xl font-semibold text-xs uppercase tracking-wider"
                   style={{ background: 'rgba(127,29,29,0.3)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
                 >
-                  Remove
+                  Archive & remove
                 </button>
               ) : (
-                <button
-                  onClick={removeAllstar}
-                  disabled={busy}
-                  className="h-10 px-4 rounded-xl font-bold text-xs uppercase tracking-wider"
-                  style={{ background: '#b91c1c', color: '#fff' }}
-                >
-                  Confirm remove
-                </button>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={archiveYear}
+                    onChange={e => setArchiveYear(e.target.value)}
+                    className="w-20 h-10 rounded-xl px-2 text-center text-sm font-bold"
+                    style={{ background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
+                    title="Season year for the archive"
+                  />
+                  <button
+                    onClick={archiveAllstar}
+                    disabled={busy}
+                    className="h-10 px-4 rounded-xl font-bold text-xs uppercase tracking-wider"
+                    style={{ background: '#b91c1c', color: '#fff' }}
+                  >
+                    {busy ? 'Archiving…' : 'Confirm archive'}
+                  </button>
+                  <button onClick={() => setConfirmRemove(false)} className="h-10 px-3 rounded-xl text-xs font-semibold" style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.6)' }}>Cancel</button>
+                </div>
               )}
             </div>
           </>
+        )}
+
+        {error && <p className="text-xs font-semibold" style={{ color: '#f87171' }}>{error}</p>}
+
+        {archives.length > 0 && (
+          <div className="flex flex-col gap-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <span className="text-white/40 text-xs uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>Archived seasons</span>
+            {archives.map(([year, a]) => (
+              <div key={year} className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: '#1c2333', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <span className="text-white font-black text-base" style={{ fontFamily: 'var(--font-score)' }}>{year}</span>
+                <span className="flex-1 text-white/50 text-xs truncate">
+                  {Object.values(a.teams ?? {}).map(t => t.name).join(' vs ')} · {Object.values(a.rosters ?? {}).reduce((n, r) => n + (r?.length ?? 0), 0)} players · archived {new Date(a.archivedAt).toLocaleDateString()}
+                </span>
+                <button
+                  onClick={() => restoreAllstar(year)}
+                  disabled={busy || seeded}
+                  title={seeded ? 'Archive the current all-star teams first' : 'Put these teams + rosters back on the live app'}
+                  className="h-9 px-4 rounded-lg text-xs font-bold uppercase tracking-wider shrink-0"
+                  style={{ background: seeded ? '#1c2333' : 'rgba(37,99,235,0.15)', color: seeded ? 'rgba(255,255,255,0.3)' : '#60a5fa', border: '1px solid rgba(37,99,235,0.3)', cursor: seeded ? 'not-allowed' : 'pointer' }}
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
