@@ -60,6 +60,8 @@ export const SECTION_ORDER: TickerSectionId[] = [
 ]
 
 const MAX_RESULTS = 6
+/** Leaders shown per ticker segment (batting, home runs, pitching) */
+const TICKER_LEADERS = 10
 const MAX_MESSAGE_LEN = 140
 
 /** Last name with a first initial: "Jonathan Spring" → "J. Spring". */
@@ -103,7 +105,7 @@ export function standingsItems({ teams, standings }: TickerSources): TickerItem[
 
 export function battingItems({ teams, players, standings }: TickerSources): TickerItem[] {
   const teamGames = teamGamesFromStandings(standings)
-  return battingLeaders(players, teamGames, 5).map(({ id, player }, i) => {
+  return battingLeaders(players, teamGames, TICKER_LEADERS).map(({ id, player }, i) => {
     const h = player.stats.hitting!
     const t = teams[player.teamId]
     return {
@@ -119,7 +121,7 @@ export function battingItems({ teams, players, standings }: TickerSources): Tick
 }
 
 export function homeRunItems({ teams, players }: TickerSources): TickerItem[] {
-  return homeRunLeaders(players, 5).map(({ id, player }, i) => {
+  return homeRunLeaders(players, TICKER_LEADERS).map(({ id, player }, i) => {
     const h = player.stats.hitting!
     const t = teams[player.teamId]
     return {
@@ -136,7 +138,7 @@ export function homeRunItems({ teams, players }: TickerSources): TickerItem[] {
 
 export function pitchingItems({ teams, players, standings }: TickerSources): TickerItem[] {
   const teamGames = teamGamesFromStandings(standings)
-  return pitchingLeaders(players, teamGames, 5).map(({ id, player }, i) => {
+  return pitchingLeaders(players, teamGames, TICKER_LEADERS).map(({ id, player }, i) => {
     const p = player.stats.pitching!
     const t = teams[player.teamId]
     return {

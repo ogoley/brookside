@@ -299,3 +299,19 @@ describe('playoffItems / upcomingItems', () => {
     expect(ids.indexOf('upcoming')).toBeLessThan(ids.indexOf('sponsors'))
   })
 })
+
+describe('leader segments show up to 10', () => {
+  it('batting / home run / pitching segments are capped at 10, not 5', () => {
+    const many: PlayersMap = {}
+    for (let i = 0; i < 14; i++) {
+      many[`h${i}`] = hitter(`Hitter ${i}`, 'swing_mafia', { ab: 40, avg: 0.3 + i / 100, ops: 1, hr: i + 1, rbi: 5 })
+      many[`p${i}`] = pitcher(`Pitcher ${i}`, 'swing_mafia', { era: 2 + i / 10, k: 20, inningsPitched: 30 })
+    }
+    const src: TickerSources = { ...sources, players: many }
+    expect(battingItems(src)).toHaveLength(10)
+    expect(homeRunItems(src)).toHaveLength(10)
+    expect(pitchingItems(src)).toHaveLength(10)
+    expect(battingItems(src)[0].text).toBe('H. 13')
+    expect(battingItems(src)[9].lead).toBe('10')
+  })
+})
