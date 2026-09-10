@@ -99,7 +99,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
   }
 
   const showSponsor = (sponsorId: string, inning: number) => {
-    const durationMs = overlay.sponsor.durationMs > 0 ? overlay.sponsor.durationMs : 10_000
+    const durationMs = overlay.sponsor.durationMs > 0 ? overlay.sponsor.durationMs : 30_000
     update(ref(db, 'overlay/sponsor'), {
       active: true,
       sponsorId,
@@ -132,7 +132,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
     const triggeredAt = overlay.sponsor.triggeredAt || Date.now()
     if (handledSponsorTriggerRef.current === triggeredAt) return
     handledSponsorTriggerRef.current = triggeredAt
-    const remaining = (overlay.sponsor.durationMs || 10_000) - (Date.now() - triggeredAt)
+    const remaining = (overlay.sponsor.durationMs || 30_000) - (Date.now() - triggeredAt)
     if (remaining <= 0) {
       update(ref(db, 'overlay/sponsor'), { active: false })
     } else {
@@ -1493,7 +1493,7 @@ function SponsorControl({ sponsors, state, game, onShow, onHide }: {
   const enabled = list.filter(s => s.enabled)
   const byInning = inningAssignments(sponsors)
   const liveSponsor = state.active ? sponsors[state.sponsorId] : undefined
-  const durationSec = Math.round((state.durationMs || 10_000) / 1000)
+  const durationSec = Math.round((state.durationMs || 30_000) / 1000)
 
   return (
     <div className="flex flex-col gap-3">

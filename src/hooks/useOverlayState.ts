@@ -37,7 +37,7 @@ const DEFAULT_OVERLAY: OverlayState = {
     sponsorId: '',
     inning: 1,
     triggeredAt: 0,
-    durationMs: 10_000,
+    durationMs: 30_000,
     autoShow: true,
   },
   ticker: {

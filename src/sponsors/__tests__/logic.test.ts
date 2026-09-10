@@ -170,3 +170,32 @@ describe('sponsorStillActive', () => {
     expect(sponsorStillActive({ active: true, triggeredAt: 5, durationMs: 0 }, Date.now())).toBe(true)
   })
 })
+
+describe('one sponsor, many innings (no duplicate records needed)', () => {
+  // Exactly what the admin form writes when three inning chips are toggled on
+  const saved: SponsorsMap = {
+    pintus: sponsor({ name: "Pintu's Indian Palace", innings: inningsToMap([1, 4, 7]), order: 1 }),
+    pafumis: sponsor({ name: "Pafumi's on Main", innings: inningsToMap([2]), order: 2 }),
+  }
+
+  it('the same sponsor record fires for each of its innings', () => {
+    expect(pickSponsorForInning(saved, 1)?.id).toBe('pintus')
+    expect(pickSponsorForInning(saved, 4)?.id).toBe('pintus')
+    expect(pickSponsorForInning(saved, 7)?.id).toBe('pintus')
+    expect(pickSponsorForInning(saved, 2)?.id).toBe('pafumis')
+    expect(pickSponsorForInning(saved, 3)).toBeNull()
+  })
+
+  it('the controller inning strip lists that sponsor under every inning it owns', () => {
+    const strip = inningAssignments(saved)
+    expect([...strip.entries()].filter(([, ids]) => ids.includes('pintus')).map(([n]) => n)).toEqual([1, 4, 7])
+    expect(Object.keys(saved)).toHaveLength(2)   // still just two records
+  })
+
+  it('the admin form reads the innings back as the same list it saved', () => {
+    expect(normalizeSponsor('pintus', saved.pintus).innings).toEqual([1, 4, 7])
+    // …including after RTDB's array coercion of small integer keys
+    const coerced = { ...saved.pintus, innings: [null, true, null, null, true, null, null, true] as unknown as Record<string, boolean> }
+    expect(normalizeSponsor('pintus', coerced).innings).toEqual([1, 4, 7])
+  })
+})
