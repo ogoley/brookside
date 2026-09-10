@@ -10,9 +10,11 @@ interface Props {
   players: PlayersMap
   teams: TeamsMap
   gameId: string | null
+  /** Lift the strip above the bottom-line ticker when it is on air */
+  bottomOffset?: number
 }
 
-export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
+export function StatOverlay({ statOverlay, players, teams, gameId, bottomOffset = 0 }: Props) {
   const { visible, playerId, type } = statOverlay
 
   const { game } = useGameData()
@@ -59,10 +61,10 @@ export function StatOverlay({ statOverlay, players, teams, gameId }: Props) {
         <motion.div
           key={`stat-overlay-${playerId}`}
           className="absolute bottom-0 left-0 right-0 overflow-hidden"
-          style={{ height: 260 }}
-          initial={{ y: 260 }}
+          style={{ height: 260, bottom: bottomOffset }}
+          initial={{ y: 260 + bottomOffset }}
           animate={{ y: 0 }}
-          exit={{ y: 260 }}
+          exit={{ y: 260 + bottomOffset }}
           transition={{ type: 'spring', stiffness: 260, damping: 28 }}
         >
           {/* Dark base */}

@@ -11,9 +11,11 @@ interface Props {
   teams: TeamsMap
   players: PlayersMap
   matchup: MatchupState
+  /** Height of the ticker currently on air (0 when hidden) — lifts the stat strip */
+  bottomInset?: number
 }
 
-export function GameScene({ game, overlay, teams, players, matchup }: Props) {
+export function GameScene({ game, overlay, teams, players, matchup, bottomInset = 0 }: Props) {
   const homeTeam = teams[game.homeTeamId]
   const awayTeam = teams[game.awayTeamId]
 
@@ -61,6 +63,7 @@ export function GameScene({ game, overlay, teams, players, matchup }: Props) {
         players={players}
         teams={teams}
         gameId={game.currentGameId ?? null}
+        bottomOffset={bottomInset}
       />
     </div>
   )

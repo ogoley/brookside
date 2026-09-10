@@ -1,0 +1,477 @@
+{
+ "asOf": "2026-09-10",
+ "teams": [
+  "base_invaders",
+  "gamecocks",
+  "moose_knucklers",
+  "nuke_squad",
+  "swing_mafia",
+  "trash_pandas",
+  "wiffle_whalers",
+  "yellow_bat_yetis"
+ ],
+ "results": [
+  {
+   "id": "2026-04-09_nuke_squad_base_invaders",
+   "date": "2026-04-09",
+   "homeTeamId": "nuke_squad",
+   "awayTeamId": "base_invaders",
+   "homeScore": 25,
+   "awayScore": 3
+  },
+  {
+   "id": "2026-04-09_swing_mafia_wiffle_whalers",
+   "date": "2026-04-09",
+   "homeTeamId": "swing_mafia",
+   "awayTeamId": "wiffle_whalers",
+   "homeScore": 9,
+   "awayScore": 0
+  },
+  {
+   "id": "2026-04-09_trash_pandas_gamecocks",
+   "date": "2026-04-09",
+   "homeTeamId": "trash_pandas",
+   "awayTeamId": "gamecocks",
+   "homeScore": 14,
+   "awayScore": 1
+  },
+  {
+   "id": "2026-04-09_yellow_bat_yetis_moose_knucklers",
+   "date": "2026-04-09",
+   "homeTeamId": "yellow_bat_yetis",
+   "awayTeamId": "moose_knucklers",
+   "homeScore": 15,
+   "awayScore": 6
+  },
+  {
+   "id": "2026-04-11_base_invaders_trash_pandas",
+   "date": "2026-04-11",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "trash_pandas",
+   "homeScore": 13,
+   "awayScore": 5
+  },
+  {
+   "id": "2026-04-11_moose_knucklers_gamecocks",
+   "date": "2026-04-11",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "gamecocks",
+   "homeScore": 16,
+   "awayScore": 23
+  },
+  {
+   "id": "2026-04-11_wiffle_whalers_nuke_squad",
+   "date": "2026-04-11",
+   "homeTeamId": "wiffle_whalers",
+   "awayTeamId": "nuke_squad",
+   "homeScore": 4,
+   "awayScore": 8
+  },
+  {
+   "id": "2026-04-11_yellow_bat_yetis_swing_mafia",
+   "date": "2026-04-11",
+   "homeTeamId": "yellow_bat_yetis",
+   "awayTeamId": "swing_mafia",
+   "homeScore": 10,
+   "awayScore": 11
+  },
+  {
+   "id": "2026-04-24_base_invaders_wiffle_whalers",
+   "date": "2026-04-24",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "wiffle_whalers",
+   "homeScore": 4,
+   "awayScore": 20
+  },
+  {
+   "id": "2026-04-24_nuke_squad_yellow_bat_yetis",
+   "date": "2026-04-24",
+   "homeTeamId": "nuke_squad",
+   "awayTeamId": "yellow_bat_yetis",
+   "homeScore": 12,
+   "awayScore": 6
+  },
+  {
+   "id": "2026-04-24_swing_mafia_gamecocks",
+   "date": "2026-04-24",
+   "homeTeamId": "swing_mafia",
+   "awayTeamId": "gamecocks",
+   "homeScore": 17,
+   "awayScore": 4
+  },
+  {
+   "id": "2026-04-24_trash_pandas_moose_knucklers",
+   "date": "2026-04-24",
+   "homeTeamId": "trash_pandas",
+   "awayTeamId": "moose_knucklers",
+   "homeScore": 10,
+   "awayScore": 6
+  },
+  {
+   "id": "2026-05-07_nuke_squad_wiffle_whalers",
+   "date": "2026-05-07",
+   "homeTeamId": "nuke_squad",
+   "awayTeamId": "wiffle_whalers",
+   "homeScore": 7,
+   "awayScore": 6
+  },
+  {
+   "id": "2026-05-07_swing_mafia_yellow_bat_yetis",
+   "date": "2026-05-07",
+   "homeTeamId": "swing_mafia",
+   "awayTeamId": "yellow_bat_yetis",
+   "homeScore": 4,
+   "awayScore": 3
+  },
+  {
+   "id": "2026-05-22_gamecocks_nuke_squad",
+   "date": "2026-05-22",
+   "homeTeamId": "gamecocks",
+   "awayTeamId": "nuke_squad",
+   "homeScore": 4,
+   "awayScore": 21
+  },
+  {
+   "id": "2026-05-22_moose_knucklers_swing_mafia",
+   "date": "2026-05-22",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "swing_mafia",
+   "homeScore": 12,
+   "awayScore": 15
+  },
+  {
+   "id": "2026-05-22_yellow_bat_yetis_base_invaders",
+   "date": "2026-05-22",
+   "homeTeamId": "yellow_bat_yetis",
+   "awayTeamId": "base_invaders",
+   "homeScore": 0,
+   "awayScore": 12
+  },
+  {
+   "id": "2026-05-31_moose_knucklers_nuke_squad",
+   "date": "2026-05-31",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "nuke_squad",
+   "homeScore": 0,
+   "awayScore": 13
+  },
+  {
+   "id": "2026-05-31_wiffle_whalers_trash_pandas",
+   "date": "2026-05-31",
+   "homeTeamId": "wiffle_whalers",
+   "awayTeamId": "trash_pandas",
+   "homeScore": 5,
+   "awayScore": 11
+  },
+  {
+   "id": "2026-05-31_yellow_bat_yetis_wiffle_whalers",
+   "date": "2026-05-31",
+   "homeTeamId": "yellow_bat_yetis",
+   "awayTeamId": "wiffle_whalers",
+   "homeScore": 2,
+   "awayScore": 5
+  },
+  {
+   "id": "2026-06-11_base_invaders_trash_pandas",
+   "date": "2026-06-11",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "trash_pandas",
+   "homeScore": 3,
+   "awayScore": 7
+  },
+  {
+   "id": "2026-06-11_gamecocks_moose_knucklers",
+   "date": "2026-06-11",
+   "homeTeamId": "gamecocks",
+   "awayTeamId": "moose_knucklers",
+   "homeScore": 0,
+   "awayScore": 2
+  },
+  {
+   "id": "2026-06-14_nuke_squad_swing_mafia",
+   "date": "2026-06-14",
+   "homeTeamId": "nuke_squad",
+   "awayTeamId": "swing_mafia",
+   "homeScore": 6,
+   "awayScore": 0
+  },
+  {
+   "id": "2026-06-14_wiffle_whalers_gamecocks",
+   "date": "2026-06-14",
+   "homeTeamId": "wiffle_whalers",
+   "awayTeamId": "gamecocks",
+   "homeScore": 14,
+   "awayScore": 2
+  },
+  {
+   "id": "2026-06-14_yellow_bat_yetis_trash_pandas",
+   "date": "2026-06-14",
+   "homeTeamId": "yellow_bat_yetis",
+   "awayTeamId": "trash_pandas",
+   "homeScore": 5,
+   "awayScore": 14
+  },
+  {
+   "id": "2026-06-21_base_invaders_gamecocks",
+   "date": "2026-06-21",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "gamecocks",
+   "homeScore": 13,
+   "awayScore": 2
+  },
+  {
+   "id": "2026-06-21_nuke_squad_moose_knucklers",
+   "date": "2026-06-21",
+   "homeTeamId": "nuke_squad",
+   "awayTeamId": "moose_knucklers",
+   "homeScore": 23,
+   "awayScore": 7
+  },
+  {
+   "id": "2026-06-21_swing_mafia_trash_pandas",
+   "date": "2026-06-21",
+   "homeTeamId": "swing_mafia",
+   "awayTeamId": "trash_pandas",
+   "homeScore": 5,
+   "awayScore": 9
+  },
+  {
+   "id": "2026-06-21_wiffle_whalers_yellow_bat_yetis",
+   "date": "2026-06-21",
+   "homeTeamId": "wiffle_whalers",
+   "awayTeamId": "yellow_bat_yetis",
+   "homeScore": 15,
+   "awayScore": 6
+  },
+  {
+   "id": "2026-07-02_gamecocks_swing_mafia",
+   "date": "2026-07-02",
+   "homeTeamId": "gamecocks",
+   "awayTeamId": "swing_mafia",
+   "homeScore": 6,
+   "awayScore": 1
+  },
+  {
+   "id": "2026-07-02_wiffle_whalers_base_invaders",
+   "date": "2026-07-02",
+   "homeTeamId": "wiffle_whalers",
+   "awayTeamId": "base_invaders",
+   "homeScore": 7,
+   "awayScore": 10
+  },
+  {
+   "id": "2026-07-09_moose_knucklers_trash_pandas",
+   "date": "2026-07-09",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "trash_pandas",
+   "homeScore": 2,
+   "awayScore": 9
+  },
+  {
+   "id": "2026-07-09_yellow_bat_yetis_nuke_squad",
+   "date": "2026-07-09",
+   "homeTeamId": "yellow_bat_yetis",
+   "awayTeamId": "nuke_squad",
+   "homeScore": 4,
+   "awayScore": 7
+  },
+  {
+   "id": "2026-07-11_base_invaders_moose_knucklers",
+   "date": "2026-07-11",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "moose_knucklers",
+   "homeScore": 5,
+   "awayScore": 10
+  },
+  {
+   "id": "2026-07-11_gamecocks_yellow_bat_yetis",
+   "date": "2026-07-11",
+   "homeTeamId": "gamecocks",
+   "awayTeamId": "yellow_bat_yetis",
+   "homeScore": 5,
+   "awayScore": 4
+  },
+  {
+   "id": "2026-07-11_trash_pandas_swing_mafia",
+   "date": "2026-07-11",
+   "homeTeamId": "trash_pandas",
+   "awayTeamId": "swing_mafia",
+   "homeScore": 2,
+   "awayScore": 15
+  },
+  {
+   "id": "2026-08-09_gamecocks_wiffle_whalers",
+   "date": "2026-08-09",
+   "homeTeamId": "gamecocks",
+   "awayTeamId": "wiffle_whalers",
+   "homeScore": 17,
+   "awayScore": 14
+  },
+  {
+   "id": "2026-08-09_moose_knucklers_base_invaders",
+   "date": "2026-08-09",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "base_invaders",
+   "homeScore": 0,
+   "awayScore": 16
+  },
+  {
+   "id": "2026-08-09_swing_mafia_nuke_squad",
+   "date": "2026-08-09",
+   "homeTeamId": "swing_mafia",
+   "awayTeamId": "nuke_squad",
+   "homeScore": 3,
+   "awayScore": 9
+  },
+  {
+   "id": "2026-08-09_trash_pandas_yellow_bat_yetis",
+   "date": "2026-08-09",
+   "homeTeamId": "trash_pandas",
+   "awayTeamId": "yellow_bat_yetis",
+   "homeScore": 17,
+   "awayScore": 2
+  },
+  {
+   "id": "2026-08-28_base_invaders_swing_mafia",
+   "date": "2026-08-28",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "swing_mafia",
+   "homeScore": 6,
+   "awayScore": 5
+  },
+  {
+   "id": "2026-08-28_moose_knucklers_wiffle_whalers",
+   "date": "2026-08-28",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "wiffle_whalers",
+   "homeScore": 3,
+   "awayScore": 15
+  },
+  {
+   "id": "2026-08-28_nuke_squad_trash_pandas",
+   "date": "2026-08-28",
+   "homeTeamId": "nuke_squad",
+   "awayTeamId": "trash_pandas",
+   "homeScore": 8,
+   "awayScore": 9
+  },
+  {
+   "id": "2026-08-28_yellow_bat_yetis_gamecocks",
+   "date": "2026-08-28",
+   "homeTeamId": "yellow_bat_yetis",
+   "awayTeamId": "gamecocks",
+   "homeScore": 7,
+   "awayScore": 2
+  }
+ ],
+ "schedule": [
+  {
+   "id": "d02d3438-f3c9-42b5-880a-cde921ed92fd",
+   "date": "2026-05-09",
+   "time": "15:30",
+   "homeTeamId": "gamecocks",
+   "awayTeamId": "base_invaders",
+   "status": "postponed",
+   "venue": "Bittersweet Park"
+  },
+  {
+   "id": "ead6c19f-01b0-41ca-ae65-f24114a3668e",
+   "date": "2026-09-10",
+   "time": "16:30",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "yellow_bat_yetis",
+   "status": "scheduled",
+   "venue": "Bittersweet Park"
+  },
+  {
+   "id": "9aeda206-8ce0-4c2d-8039-5c474a919cd8",
+   "date": "2026-09-10",
+   "time": "18:00",
+   "homeTeamId": "nuke_squad",
+   "awayTeamId": "gamecocks",
+   "status": "scheduled",
+   "venue": "Bittersweet Park"
+  },
+  {
+   "id": "146a3461-d0e3-4c53-8455-996f4c21d3fa",
+   "date": "2026-09-12",
+   "time": "14:00",
+   "homeTeamId": "swing_mafia",
+   "awayTeamId": "base_invaders",
+   "status": "scheduled",
+   "venue": "Bittersweet Park"
+  },
+  {
+   "id": "d3581afa-2d60-418b-93d6-975c8d87f059",
+   "date": "2026-09-12",
+   "time": "15:30",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "wiffle_whalers",
+   "status": "scheduled",
+   "venue": "Bittersweet Park"
+  },
+  {
+   "id": "019e06ff-660a-4e04-a759-0321658a96fa",
+   "date": "2026-09-12",
+   "time": "17:00",
+   "homeTeamId": "trash_pandas",
+   "awayTeamId": "nuke_squad",
+   "status": "scheduled",
+   "venue": "Bittersweet Park"
+  },
+  {
+   "id": "08b399e5-ee98-4113-b61a-0f92a7d053a3",
+   "date": "2026-09-20",
+   "time": "19:00",
+   "homeTeamId": "moose_knucklers",
+   "awayTeamId": "yellow_bat_yetis",
+   "status": "scheduled",
+   "venue": "Soccer City"
+  },
+  {
+   "id": "5404b2b2-094d-4240-93cf-b3cfa8d9d25d",
+   "date": "2026-09-20",
+   "time": "19:00",
+   "homeTeamId": "base_invaders",
+   "awayTeamId": "nuke_squad",
+   "status": "scheduled",
+   "venue": "Soccer City"
+  },
+  {
+   "id": "17af842f-a1f7-4f44-8952-f7b06bf6899a",
+   "date": "2026-09-20",
+   "time": "20:30",
+   "homeTeamId": "trash_pandas",
+   "awayTeamId": "gamecocks",
+   "status": "scheduled",
+   "venue": "Soccer City"
+  },
+  {
+   "id": "5de415a2-5689-475a-8433-ad2d7e36bce4",
+   "date": "2026-09-20",
+   "time": "20:30",
+   "homeTeamId": "wiffle_whalers",
+   "awayTeamId": "swing_mafia",
+   "status": "scheduled",
+   "venue": "Soccer City"
+  },
+  {
+   "id": "0bd2bc18-98bf-4ef3-9d41-e3c38af69729",
+   "date": "2026-09-27",
+   "time": "19:00",
+   "homeTeamId": "swing_mafia",
+   "awayTeamId": "moose_knucklers",
+   "status": "scheduled",
+   "venue": "Soccer City"
+  },
+  {
+   "id": "51a5b15b-a088-407d-8a76-f742384a6572",
+   "date": "2026-09-27",
+   "time": "19:00",
+   "homeTeamId": "trash_pandas",
+   "awayTeamId": "wiffle_whalers",
+   "status": "scheduled",
+   "venue": "Soccer City"
+  }
+ ]
+}

@@ -1,11 +1,16 @@
 import { motion } from 'framer-motion'
 import type { TeamsMap, StandingsData } from '../types'
+import { statusTag, type PlayoffPicture } from '../playoffs/engine'
 
 interface Props {
   teams: TeamsMap
   // Derived by useStandings() from finalized /games records. Falls back to STUB_STANDINGS
   // when no finalized games exist (pre-season / dev).
   standings?: StandingsData
+  // Exact clinch/elimination results (src/playoffs/engine.ts). When present the
+  // row tags tell the truth ("Clinched bye", "Eliminated") instead of the
+  // position-based labels.
+  picture?: PlayoffPicture | null
 }
 
 // ── Fallback data — shown only when no finalized games exist yet ──
@@ -84,6 +89,7 @@ function StandingRow({
   leaderL,
   leaderT,
   zone,
+  tag,
   delay,
 }: {
   rank: number
@@ -94,6 +100,8 @@ function StandingRow({
   leaderL: number
   leaderT: number
   zone: 'bye' | 'playoff' | 'eliminated'
+  /** undefined = no picture available → position-based fallback labels */
+  tag?: { text: string; tone: 'gold' | 'green' | 'red' | 'muted' } | null
   delay: number
 }) {
   const team = teams[teamId]
@@ -178,42 +186,35 @@ function StandingRow({
         >
           {team?.name ?? teamId}
         </div>
-        {zone === 'bye' && (
-          <div style={{
-            display: 'inline-block',
-            marginTop: 5,
-            background: 'rgba(251,191,36,0.18)',
-            border: '1px solid rgba(251,191,36,0.4)',
-            borderRadius: 4,
-            padding: '2px 8px',
-            fontFamily: 'var(--font-score)',
-            fontSize: 10,
-            fontWeight: 700,
-            color: '#fbbf24',
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-          }}>
-            Playoff Bye
-          </div>
-        )}
-        {zone === 'eliminated' && (
-          <div style={{
-            display: 'inline-block',
-            marginTop: 5,
-            background: 'rgba(239,68,68,0.15)',
-            border: '1px solid rgba(239,68,68,0.35)',
-            borderRadius: 4,
-            padding: '2px 8px',
-            fontFamily: 'var(--font-score)',
-            fontSize: 10,
-            fontWeight: 700,
-            color: '#f87171',
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-          }}>
-            Eliminated
-          </div>
-        )}
+        {/* With the exact playoff picture the tag is the truth (clinched /
+            eliminated); without it, fall back to the position-based labels. */}
+        {(() => {
+          const t = tag !== undefined
+            ? tag
+            : zone === 'bye' ? { text: 'Playoff Bye', tone: 'gold' as const }
+              : zone === 'eliminated' ? { text: 'Eliminated', tone: 'red' as const }
+                : null
+          if (!t) return null
+          const color = t.tone === 'gold' ? '#fbbf24' : t.tone === 'green' ? '#4ade80' : t.tone === 'red' ? '#f87171' : 'rgba(255,255,255,0.6)'
+          return (
+            <div style={{
+              display: 'inline-block',
+              marginTop: 5,
+              background: `${color}2e`,
+              border: `1px solid ${color}66`,
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontFamily: 'var(--font-score)',
+              fontSize: 10,
+              fontWeight: 700,
+              color,
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+            }}>
+              {t.text}
+            </div>
+          )
+        })()}
       </div>
 
       {/* W */}
@@ -267,7 +268,8 @@ function StatCell({ label, value, highlight, eliminated, wide }: {
 
 // ── Main scene ────────────────────────────────────────────────────────────────
 
-export function StandingsScene({ teams, standings }: Props) {
+export function StandingsScene({ teams, standings, picture }: Props) {
+  const outlookById = picture ? new Map(picture.teams.map(t => [t.teamId, t])) : null
   const rows = standings ?? STUB_STANDINGS
   const leader = rows[0]
 
@@ -390,6 +392,7 @@ export function StandingsScene({ teams, standings }: Props) {
               leaderL={leader?.l ?? 0}
               leaderT={leader?.t ?? 0}
               zone={item.zone}
+              tag={outlookById ? (() => { const o = outlookById.get(item.entry.teamId); return o ? statusTag(o) : null })() : undefined}
               delay={delays[i]}
             />
           ) : (

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
@@ -7,8 +7,14 @@ import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { useStandings } from '../hooks/useStandings'
-import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene } from '../scenes'
+import { useGames } from '../hooks/useGames'
+import { useSponsors } from '../hooks/useSponsors'
+import { usePlayoffPicture } from '../hooks/usePlayoffPicture'
+import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene, PlayoffScene } from '../scenes'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
+import { SponsorInterstitial } from '../components/SponsorInterstitial'
+import { Ticker, TICKER_HEIGHT } from '../components/Ticker'
+import { buildTickerSections } from '../ticker/items'
 import { isExhibitionGame, ALLSTAR_LOGO_URL } from '../allstar'
 
 function OverlayContent() {
@@ -19,6 +25,9 @@ function OverlayContent() {
   const { matchup } = useMatchup()
   const { config } = useLeagueConfig()
   const { standings } = useStandings()
+  const { games } = useGames()
+  const { sponsors } = useSponsors()
+  const { picture } = usePlayoffPicture()
 
   // Mark body as overlay mode so CSS can set transparent background
   useEffect(() => {
@@ -28,6 +37,16 @@ function OverlayContent() {
 
   const sceneKey = overlay.activeScene
 
+  // Bottom-line ticker content — recomputed only when its inputs change.
+  const tickerSections = useMemo(
+    () => buildTickerSections({ teams, players, standings, games, sponsors, schedule: picture?.remainingGames, picture }, overlay.ticker),
+    [teams, players, standings, games, sponsors, picture, overlay.ticker],
+  )
+  // The ticker rides along the game scene only — full-screen scenes own the
+  // whole canvas (their bottom rows would be covered otherwise).
+  const tickerOnAir = overlay.ticker.visible && tickerSections.length > 0 && sceneKey === 'game'
+  const bottomInset = tickerOnAir ? TICKER_HEIGHT : 0
+
   return (
     // Fixed 1920×1080 canvas — OBS crops/scales this
     <div
@@ -36,7 +55,7 @@ function OverlayContent() {
     >
       {/* Base layer — always present so scoreboard is visible under any scene */}
       <div className="absolute inset-0">
-        <GameScene game={game} overlay={overlay} teams={teams} players={players} matchup={matchup} />
+        <GameScene game={game} overlay={overlay} teams={teams} players={players} matchup={matchup} bottomInset={bottomInset} />
       </div>
 
       {/* Overlay scenes — rendered on top, animated in/out */}
@@ -86,7 +105,19 @@ function OverlayContent() {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 220 }}
           >
-            <StandingsScene teams={teams} standings={standings.length ? standings : undefined} />
+            <StandingsScene teams={teams} standings={standings.length ? standings : undefined} picture={picture} />
+          </motion.div>
+        )}
+        {sceneKey === 'playoffs' && (
+          <motion.div
+            key="playoffs"
+            className="absolute inset-0"
+            initial={{ y: '-100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+          >
+            <PlayoffScene teams={teams} picture={picture} />
           </motion.div>
         )}
         {sceneKey === 'insights' && (
@@ -127,19 +158,28 @@ function OverlayContent() {
         )}
       </AnimatePresence>
 
-      {/* League logo bug — rendered last so it sits above all scenes */}
+      {/* Between-innings sponsor card — above every scene: it's a paid
+          placement, so it wins even if a full-screen board is up. */}
+      <SponsorInterstitial state={overlay.sponsor} sponsor={sponsors[overlay.sponsor.sponsorId]} />
+
+      {/* Bottom-line ticker — game scene only (see tickerOnAir) */}
+      <Ticker ticker={{ ...overlay.ticker, visible: tickerOnAir }} sections={tickerSections} />
+
+      {/* League logo bug — rendered last so it sits above all scenes;
+          lifts above the ticker while it's on air */}
       {config.leagueLogo && (
         <img
           src={config.leagueLogo}
           alt=""
           style={{
             position: 'absolute',
-            bottom: 24,
+            bottom: 24 + bottomInset,
             right: 32,
+            transition: 'bottom 0.4s ease, opacity 0.3s ease',
             width: 96,
             height: 96,
             objectFit: 'contain',
-            opacity: 0.7,
+            opacity: overlay.statOverlay.visible && sceneKey === 'game' ? 0 : 0.7,  // the stat strip owns the bottom-right while it is up
             pointerEvents: 'none',
           }}
         />

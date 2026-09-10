@@ -1,10 +1,9 @@
 import { motion } from 'framer-motion'
 import type { TeamsMap, PlayersMap, StandingsData, Team, Player } from '../types'
 
-// ── Qualification constants ───────────────────────────────────────────────────
-const MIN_AB_PER_GAME = 2   // minimum at-bats per team game to qualify for batting leaderboard
-const MIN_IP_PCTG   = 0.30  // pitcher must have thrown in ≥30% of team's games
-const GAME_INNINGS  = 7     // innings per game — used to compute min IP
+// Qualification thresholds + leader queries live in src/stats/leaders.ts —
+// shared with the bottom-line ticker so both always agree on who qualifies.
+import { battingLeaders, pitchingLeaders, teamGamesFromStandings } from '../stats/leaders'
 
 // ── Stub standings (used when no live standings prop is passed) ───────────────
 const STUB_STANDINGS: StandingsData = [
@@ -206,36 +205,13 @@ function ColumnHeader({ title, color, stats, delay }: {
 export function LeaderboardScene({ teams, players, standings }: Props) {
   const standingsData = standings ?? STUB_STANDINGS
 
-  // Build team games map: teamId → total games played
-  const teamGamesMap: Record<string, number> = {}
-  standingsData.forEach(s => { teamGamesMap[s.teamId] = s.w + s.l + s.t })
+  const teamGamesMap = teamGamesFromStandings(standingsData)
 
-  // Top 10 batters — min 2 AB per team game, sorted by AVG desc
-  const topBatters = Object.entries(players)
-    .filter(([, p]) => {
-      if (p.isSub) return false   // ephemeral subs never appear on leaderboards
-      const teamGames = teamGamesMap[p.teamId] ?? 0
-      const minAb = Math.max(1, teamGames * MIN_AB_PER_GAME)
-      return (p.stats.hitting?.ab ?? 0) >= minAb && p.stats.hitting?.avg !== undefined
-    })
-    .sort(([, a], [, b]) => {
-      const avgDiff = (b.stats.hitting!.avg ?? 0) - (a.stats.hitting!.avg ?? 0)
-      if (avgDiff !== 0) return avgDiff
-      return (b.stats.hitting!.ops ?? 0) - (a.stats.hitting!.ops ?? 0)
-    })
-    .slice(0, 10)
+  // Top 10 batters — min 2 AB per team game, sorted by AVG desc (tie: OPS)
+  const topBatters = battingLeaders(players, teamGamesMap, 10).map(e => [e.id, e.player] as const)
 
   // Top 6 pitchers — qualification filter, sorted by ERA asc
-  const topPitchers = Object.entries(players)
-    .filter(([, p]) => {
-      if (p.isSub) return false
-      const ip        = p.stats.pitching?.inningsPitched ?? 0
-      const teamGames = teamGamesMap[p.teamId] ?? 0
-      const minIP     = teamGames * MIN_IP_PCTG * GAME_INNINGS
-      return ip >= minIP && p.stats.pitching?.era !== undefined
-    })
-    .sort(([, a], [, b]) => (a.stats.pitching!.era! - b.stats.pitching!.era!))
-    .slice(0, 6)
+  const topPitchers = pitchingLeaders(players, teamGamesMap, 6).map(e => [e.id, e.player] as const)
 
   return (
     <div

@@ -81,17 +81,77 @@ export interface InsightsState {
   visibleCount: number // 0–4: how many points are currently revealed
 }
 
+// ── Sponsors ─────────────────────────────────────────────────────────────────
+
+// /config/sponsors/{sponsorId} — admin-managed (the /config path is
+// admin-writable), read by the overlay + controller.
+export interface Sponsor {
+  name: string
+  /** Short line under the name, e.g. "Authentic Indian cuisine · Springfield, MA" */
+  tagline?: string
+  /** Same-origin path (/sponsors/x.svg) or Firebase Storage URL */
+  logoUrl: string
+  /** Shown as a pill on the interstitial + in the ticker, e.g. "pintus.website" */
+  website?: string
+  /** Brand accent used for the interstitial edge/pill and ticker chip */
+  accentColor?: string
+  /** Render the logo on a white plate — for logos that are not dark-background safe */
+  lightPlate?: boolean
+  /** Innings this sponsor presents (a sponsor may own several). Stored as a
+   *  map so RTDB never has to hold a sparse array. */
+  innings?: Record<string, boolean>
+  enabled?: boolean
+  /** Display order in admin + tie-break when several sponsors share an inning */
+  order?: number
+}
+
+export type SponsorsMap = Record<string, Sponsor>
+
+// /overlay/sponsor — written ONLY by the controller. `active` is ephemeral
+// (dismissed by the controller's timer, like homerun); `autoShow` and
+// `durationMs` are producer settings that survive a dismiss.
+export interface SponsorOverlayState {
+  active: boolean
+  sponsorId: string
+  /** Inning the card is presenting (drives the "2ND INNING PRESENTED BY" line) */
+  inning: number
+  triggeredAt: number
+  durationMs: number
+  /** Fire automatically when the scorebug inning advances */
+  autoShow: boolean
+}
+
+// ── Bottom-line ticker ───────────────────────────────────────────────────────
+
+export type TickerSectionId =
+  | 'standings' | 'playoffs' | 'batting' | 'homeRuns' | 'pitching' | 'results' | 'upcoming' | 'sponsors' | 'messages'
+
+// /overlay/ticker — producer settings; the overlay computes the content itself
+// from /players, /games, /teams, /config/sponsors (read-only, no writes).
+export interface TickerState {
+  visible: boolean
+  /** Crawl speed in px/s at 1920 wide */
+  speed: number
+  /** Cap + highlight colour — swap to fit the broadcast theme */
+  accentColor: string
+  sections: Record<TickerSectionId, boolean>
+  /** Free-text producer messages ("NEXT WEEK: ...") — keyed map, ordered by key */
+  messages: Record<string, string>
+}
+
 export interface OverlayState {
-  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'allstarLineups' | 'idle'
+  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'insights' | 'allstarLineups' | 'idle'
   statOverlay: StatOverlayState
   timer: TimerState
   homerun: HomrunState
   insights: InsightsState
+  sponsor: SponsorOverlayState
+  ticker: TickerState
   scoreboardBorder: boolean
   scoreboardScale: number
 }
 
-export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'insights' | 'allstarLineups' | 'idle'
+export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'insights' | 'allstarLineups' | 'idle'
 
 export interface HittingStats {
   gp?: number       // games played

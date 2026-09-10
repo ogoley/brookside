@@ -24,8 +24,13 @@ A live broadcast overlay system for a small wiffle ball league. Runs as a single
 /game/meta                         — GameMeta: scores, inning, outs, bases, team IDs
 /game/matchup                      — MatchupState: { batterId, pitcherId, lastPitcherHome, lastPitcherAway }
 /teams/{teamId}                    — Team: name, shortName, primaryColor, secondaryColor, logoUrl
-/overlay                           — activeScene + statOverlay + timer + scoreboardBorder + scoreboardScale
+/overlay                           — activeScene + statOverlay + timer + sponsor + ticker + scoreboardBorder + scoreboardScale
 /overlay/timer                     — TimerState: { durationMs, startedAt, running } — default 60 min
+/overlay/sponsor                   — SponsorOverlayState: { active, sponsorId, inning, triggeredAt, durationMs, autoShow }
+/overlay/ticker                    — TickerState: { visible, speed, accentColor, sections{...}, messages{pushKey: text} }
+/config/sponsors/{sponsorId}       — Sponsor: name, tagline, logoUrl, website, accentColor, lightPlate, innings{"N":true}, enabled, order
+/config/schedule/{siteGameId}      — remaining games: date, time, homeTeamId, awayTeamId, status (scheduled|postponed|cancelled), venue, source
+/config/scheduleMeta               — { syncedAt, source, season, scheduled, postponed } written by scripts/syncSchedule.mjs
 /players/{id}                      — Player: name, teamId, position, stats: { hitting?: HittingStats, pitching?: PitchingStats }
 /games/{gameId}                    — GameRecord: teams, date, inning, outs, scores, finalized, lineups, lineupPosition, matchup
 /games/{gameId}/matchup            — { pitcherId, batterId, lastPitcherHome, lastPitcherAway } — persists pitcher across refresh
@@ -56,6 +61,21 @@ Full type definitions in `src/types.ts`.
 - **Batter auto-clears on play result** — `ControllerRoute` has a `useEffect` that writes `batterId: null` to `/game/matchup` whenever `game.outs` or any base changes. A `mountedRef` guard prevents firing on initial load.
 - **Controller "At Bat" section is the single source of truth for who is up** — one unified section handles: batter dropdown (auto-triggers 20s stat overlay on select), HOME RUN button (uses selected batter, auto-scores bases), pitcher dropdown, delay picker, Batter Stats / Pitcher Stats / Dismiss buttons. There are no separate Matchup / Home Run / Stat Overlay sections.
 - **`scoreboardBorder` and `scoreboardScale`** live in `/overlay` and are exposed as dev controls in the controller (border toggle, size slider). `showBorder` prop on `Scoreboard` gates the `-webkit-text-stroke`.
+
+## Inning sponsors + bottom-line ticker
+- **Sponsors are data, not code** — `/config/sponsors/{id}` (admin-writable, managed in `/config` → "Inning Sponsors" via `SponsorsSection.tsx`). A sponsor can own several innings (`innings` is a `{"N": true}` map — RTDB turns small integer keys into sparse arrays, `inningsFromMap` tolerates both). Two starters (Pintu's → inning 1, Pafumi's → inning 2) ship as same-origin art in `public/sponsors/` and can be (re)seeded with `node scripts/seedSponsors.mjs` or the admin panel's "Add starter sponsors" button; `src/sponsors/starter.ts` and the script must stay in sync.
+- **All sponsor rules live in `src/sponsors/logic.ts`** (pure, tested): `pickSponsorForInning` = enabled sponsors claiming the inning, first by `order` wins (the admin panel shows a conflict warning when an inning has several). Never re-derive "who presents inning N" elsewhere.
+- **The interstitial fires from the controller, not the overlay** — `ControllerRoute` watches `game.inning` (works whether this panel's ▶½ or the scorekeeper's mirror write advanced it); on an *increase* with `overlay/sponsor.autoShow` on it writes `overlay/sponsor = { active: true, sponsorId, inning, triggeredAt, durationMs }` and schedules the dismiss, with the same triggeredAt-based self-heal as the homerun banner. Rewinds and the initial load never fire; inning 1 is manual (per-sponsor "Show" buttons / inning strip). `SponsorInterstitial` additionally hides itself once `triggeredAt + durationMs` passes (`sponsorStillActive`) so a dead controller can never freeze a card on air — still zero overlay writes.
+- **The interstitial renders above every scene** (paid placement wins), slides in from the left and exits right; `lightPlate: true` puts the logo on a white card for light-background logos (Pintu's), otherwise the logo sits straight on the dark panel (Pafumi's white wordmark SVG).
+- **Ticker content is computed on the overlay** from `/players`, `/games`, `/teams`, `/config/sponsors` + `overlay/ticker` by `buildTickerSections` in `src/ticker/items.ts` (pure, tested). Fixed on-air order: standings → batting → HR → pitching → recent results → sponsors → producer messages; empty sections are dropped. Qualification thresholds are shared with the Leaders scene via `src/stats/leaders.ts` — change them in one place.
+- **Ticker crawl = one section at a time**, ESPN BottomLine style: `Ticker.tsx` measures the track once per crawl, animates it right→left with framer's imperative `animate`, then advances. Live data updates re-render items in place but never restart a crawl (the measurement effect deliberately ignores the items). Only shown on the `game` scene; the StatOverlay strip and league logo bug lift by `TICKER_HEIGHT` while it's on air, and the logo bug fades while the stat strip is up.
+- **Ticker theme is producer-adjustable** from the controller (`overlay/ticker`): accent colour (presets + home/away team colours + custom picker; cap text auto-contrasts via `readableOn`), crawl speed, section toggles, and free-text "League Wire" messages (push keys → chronological order).
+
+## Playoff picture (src/playoffs/)
+- **Format (2026)**: 6 of 8 qualify, seeds 1–2 get a bye, QF = 3v6 / 4v5, semifinals RESEED (1 seed hosts the lowest survivor). `DEFAULT_PLAYOFF_CONFIG` in `engine.ts`; tiebreakers head-to-head → run differential → runs allowed (→ flagged coin flip). Ranking is by win **pct** (ties = ½) because the postponed game leaves teams with unequal games played.
+- **Clinch / elimination is exact, not heuristic** — `buildPlayoffPicture` enumerates every win/loss outcome of the remaining scheduled games (≤ 2^16; above that it falls back to max-wins bounds and says so via `exact: false`) and re-ranks each with the full tiebreak procedure. Per team: best/worst seed, `playoffOdds` (share of outcomes), and "own destiny" numbers `winsToClinch` / `winsToBye` / `winsToTop` / `lossesToElimination`. There is deliberately NO classic magic number — it assumes equal games played and was wrong here. `src/playoffs/__tests__/fixtures/season-2026-09-10.json` is the real season snapshot; the tests assert the real answers with the May 9 makeup counted (Whalers clinched, Gamecocks 95% and clinch with one win, Yetis alive at 3% via the run-differential tiebreak, Moose Knucklers 1.6%) and the cancelled-makeup counterfactual (Yetis out, Nuke Squad bye locked).
+- **Schedule lives at `/config/schedule/{siteGameId}`** — synced from the public site's JSON API by `npm run schedule:sync` (`scripts/syncSchedule.mjs`; the API has no CORS so the browser can't read it). Verified 2026-09-10 game-for-game against Spond. `/config/scheduleMeta` records the sync. **Policy: postponed games WILL be made up** (`countPostponed: true` in `DEFAULT_PLAYOFF_CONFIG`), so a postponed game counts as a remaining game in the enumeration and shows in "Still to play" as "Makeup · date TBD" — a team can never clinch for free by not playing it. The schedule node keeps the honest status (`postponed`); only flip `countPostponed` to false if the league formally cancels a game. `dedupeSchedule` drops any scheduled game that already has a finalized result so a game is never counted twice between syncs. To add a makeup game by hand, write a node under `/config/schedule` with the same shape.
+- **`usePlayoffPicture()`** = finalized non-exhibition `/games` + `/config/schedule` → picture (memoized). Consumers: `PlayoffScene` (overlay `playoffs` scene, "Playoff Picture" button), `StandingsScene` (row tags now say the truth — "Clinched bye" / "Eliminated" — instead of position labels), ticker segments `playoffs` and `upcoming`, and the public `/stats` "Playoffs" tab (`PlayoffPicturePanel`). Display strings come from `src/playoffs/format.ts` so all four agree.
 
 ## Scorekeeper architecture (ScorekeeperRoute.tsx)
 - **Event-sourced scoring** — all game state is derivable by replaying `gameStats/{gameId}`. `liveRunners` and score totals in `games/{gameId}` are derived/cached values, not the source of truth.
@@ -130,6 +150,9 @@ src/
     useLiveRunners.ts       — /liveRunners/{gameId} listener (RunnersState)
     useDerbyBroadcast.ts    — /derby/broadcast listener (DerbyBroadcastState, merged over defaults)
     useDerbyContestants.ts  — derby-eligible player pool: ≥1 season HR (incl. live games), minus derby/disabledPlayers
+    useSponsors.ts          — /config/sponsors listener (SponsorsMap)
+    useSchedule.ts          — /config/schedule listener (remaining games, date-ordered) + scheduleMeta
+    usePlayoffPicture.ts    — finalized games + schedule → exact PlayoffPicture (memoized)
   components/
     Scoreboard.tsx          — broadcast overlay scoreboard; pill layout built inline (not via TeamBug); always shows countdown timer; centered at 36% width in GameScene
     TeamBug.tsx             — logo + short name + score block (not used in Scoreboard); accepts mirrored prop; available for other scenes
@@ -140,9 +163,15 @@ src/
     PlayerCard.tsx          — reusable stat display block (used in StatCardScene)
     TeamColorInjector.tsx   — injects CSS vars on mount; renders nothing
     RunnerDiamond.tsx       — scorekeeper-only; shows live base runners with player names
+    SponsorInterstitial.tsx — between-innings sponsor card (reads overlay/sponsor; time-guarded, never writes)
+    Ticker.tsx              — bottom-line crawl, one section at a time; content from ticker/items.ts
+    SponsorsSection.tsx     — /config admin UI for sponsors (add/edit/order/innings, starter seed)
+    PlayoffPicturePanel.tsx — light-theme playoff picture for the public /stats Playoffs tab
+    LogoUpload.tsx          — Firebase Storage image uploader (teams, league logo, sponsors)
   scenes/
     GameScene.tsx           — scoreboard over transparent bg + stat overlay
     StatCardScene.tsx       — full-screen between-innings team stat table
+    PlayoffScene.tsx        — full-screen playoff picture: clinch tags, seed ranges, odds, projected bracket, remaining games
     IdleScene.tsx           — league logo / waiting screen
     MatchupScene.tsx        — pitcher vs batter card (stub, stretch goal)
     index.ts                — barrel export (main overlay scenes only)
@@ -155,6 +184,17 @@ src/
     gameId.ts               — generateGameId, getEasternDateString helpers
   derby/
     logic.ts                — pure derby bracket logic: advancement (top 8 / top 3, ties advance), round participants, leaderboard ranking
+  sponsors/
+    logic.ts                — pure sponsor rules: innings map ⇄ list, pickSponsorForInning, ordinal, sponsorStillActive
+    starter.ts              — Pintu's / Pafumi's starter records (mirrors scripts/seedSponsors.mjs)
+  ticker/
+    items.ts                — pure ticker content builders (standings, leaders, results, sponsors, messages) + crawl timing
+  playoffs/
+    engine.ts               — pure: standings lines, tiebreak ranking, exact outcome enumeration, bracket projection/reseeding
+    format.ts               — shared display strings (pct, diff, odds label, game date/time, seed range)
+  stats/
+    leaders.ts              — shared season leader queries + qualification thresholds (Leaders scene + ticker)
+  storageUtils.ts           — deleteStorageLogo helper
   routes/
     OverlayRoute.tsx        — 1920×1080 canvas, AnimatePresence scene switcher
     ControllerRoute.tsx     — all game controls; only file that writes game state
@@ -181,6 +221,8 @@ These files are needed for development/setup but do not ship to production. Trac
 | `scripts/exportSnapshot.js` | Captures current Firebase state to `firebase-snapshot.json` | No longer need to reset Firebase during development |
 | `scripts/resetDb.js` | Wipes Firebase and restores from snapshot | Development is done, no more test resets needed |
 | `scripts/migrateTeamIds.js` | One-time migration: GUID team IDs → slug IDs | Already ran — can delete now |
+| `scripts/syncSchedule.mjs` | Pulls remaining games from brooksidewiffle.com/api into `/config/schedule` (`npm run schedule:sync`) | The season is over, or the schedule gets a first-party source |
+| `scripts/seedSponsors.mjs` | Seeds the two starter inning sponsors into `/config/sponsors` (idempotent; `--force` overwrites) | Sponsors are managed purely from the admin panel |
 | `firebase-snapshot.json` | Clean-state Firebase snapshot used by `npm run reset` | Development is done |
 | ~~`firebase-seed.json`~~ | ~~Old placeholder seed data — superseded~~ | ✅ Deleted |
 | ~~`brookside-11361-default-rtdb-pitchingStats-export.json`~~ | ~~Raw pitching stats export — inlined in `seedPlayers.js`~~ | ✅ Deleted |

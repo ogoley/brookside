@@ -32,9 +32,36 @@ const DEFAULT_OVERLAY: OverlayState = {
     point4: '',
     visibleCount: 0,
   },
+  sponsor: {
+    active: false,
+    sponsorId: '',
+    inning: 1,
+    triggeredAt: 0,
+    durationMs: 10_000,
+    autoShow: true,
+  },
+  ticker: {
+    visible: false,
+    speed: 120,
+    accentColor: '#fbbf24',
+    sections: {
+      standings: true,
+      playoffs: true,
+      batting: true,
+      homeRuns: true,
+      pitching: true,
+      results: true,
+      upcoming: true,
+      sponsors: true,
+      messages: true,
+    },
+    messages: {},
+  },
   scoreboardBorder: true,
   scoreboardScale: 0.75,
 }
+
+export { DEFAULT_OVERLAY }
 
 export function useOverlayState() {
   const [overlay, setOverlay] = useState<OverlayState>(DEFAULT_OVERLAY)
@@ -62,6 +89,19 @@ export function useOverlayState() {
           insights: {
             ...DEFAULT_OVERLAY.insights,
             ...(data.insights ?? {}),
+          },
+          sponsor: {
+            ...DEFAULT_OVERLAY.sponsor,
+            ...(data.sponsor ?? {}),
+          },
+          ticker: {
+            ...DEFAULT_OVERLAY.ticker,
+            ...(data.ticker ?? {}),
+            sections: {
+              ...DEFAULT_OVERLAY.ticker.sections,
+              ...(data.ticker?.sections ?? {}),
+            },
+            messages: data.ticker?.messages ?? {},
           },
           scoreboardBorder: data.scoreboardBorder ?? DEFAULT_OVERLAY.scoreboardBorder,
           scoreboardScale: data.scoreboardScale ?? DEFAULT_OVERLAY.scoreboardScale,

@@ -7,6 +7,8 @@ import { useTeams } from '../hooks/useTeams'
 import { usePlayers } from '../hooks/usePlayers'
 import { useGames } from '../hooks/useGames'
 import { useLeagueConfig } from '../hooks/useLeagueConfig'
+import { usePlayoffPicture } from '../hooks/usePlayoffPicture'
+import { PlayoffPicturePanel } from '../components/PlayoffPicturePanel'
 import { computeGameStats, mergeHittingStats, mergePitchingStats } from '../scoring/engine'
 import { isExhibitionGame } from '../allstar'
 import type { GameRecord, PlayersMap, TeamsMap, AtBatRecord, HittingStats, PitchingStats } from '../types'
@@ -21,7 +23,7 @@ interface ColDef<R> {
   minWidth?: number
 }
 
-type Tab = 'standings' | 'hitting' | 'pitching' | 'results'
+type Tab = 'standings' | 'playoffs' | 'hitting' | 'pitching' | 'results'
 type SortDir = 'asc' | 'desc'
 
 interface HittingRow {
@@ -289,6 +291,7 @@ export function StatsRoute() {
   const { players } = usePlayers()
   const { games } = useGames()
   const { config } = useLeagueConfig()
+  const { picture } = usePlayoffPicture()
 
   const [tab, setTab] = useState<Tab>('standings')
   const [hittingSort, setHittingSort] = useState<{ col: keyof HittingRow; dir: SortDir }>({ col: 'avg', dir: 'desc' })
@@ -421,6 +424,7 @@ export function StatsRoute() {
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 0, overflowX: 'auto', alignItems: 'flex-end' }}>
             <TabButton active={tab === 'standings'} onClick={() => setTab('standings')}>Standings</TabButton>
+            <TabButton active={tab === 'playoffs'} onClick={() => setTab('playoffs')}>Playoffs</TabButton>
             <TabButton active={tab === 'hitting'} onClick={() => setTab('hitting')}>Hitting</TabButton>
             <TabButton active={tab === 'pitching'} onClick={() => setTab('pitching')}>Pitching</TabButton>
             <TabButton active={tab === 'results'} onClick={() => setTab('results')}>Results</TabButton>
@@ -514,6 +518,8 @@ export function StatsRoute() {
               </div>
             )}
           </div>
+        ) : tab === 'playoffs' ? (
+          <PlayoffPicturePanel teams={teams} picture={picture} />
         ) : tab === 'hitting' ? (
           /* ── Hitting ────────────────────────────────────────────── */
           sortedHitting.length === 0 ? (

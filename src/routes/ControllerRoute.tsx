@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ref, update, set, get, remove } from 'firebase/database'
+import { ref, update, set, get, remove, push } from 'firebase/database'
 // TODO: hrPlayerName is a temporary text input. Replace with playerId resolved from /players once the player roster feature is built out.
 import { Link } from 'react-router-dom'
 import { HomeButton } from '../components/HomeButton'
@@ -12,10 +12,13 @@ import { usePlayers } from '../hooks/usePlayers'
 import { useMatchup } from '../hooks/useMatchup'
 import { useGames } from '../hooks/useGames'
 import { useAllstarRosters } from '../hooks/useAllstarRosters'
+import { useSponsors } from '../hooks/useSponsors'
 import { playerOnTeam, isExhibitionGame, isExhibitionTeam, ALLSTAR_LOGO_URL } from '../allstar'
 import { InteractiveScoreboard } from '../components/InteractiveScoreboard'
-import type { SceneName, TimerState, AtBatRecord } from '../types'
+import type { SceneName, TimerState, AtBatRecord, SponsorsMap, SponsorOverlayState, TickerState, TickerSectionId, TeamsMap, GameMeta } from '../types'
 import { computeFinalization } from '../scoring/finalization'
+import { pickSponsorForInning, sortedSponsors, inningAssignments, SPONSOR_INNING_CHOICES, ordinal } from '../sponsors/logic'
+import { SECTION_LABELS, SECTION_ORDER } from '../ticker/items'
 
 const SCENES: { id: SceneName; label: string }[] = [
   { id: 'game', label: 'Game' },
@@ -23,6 +26,7 @@ const SCENES: { id: SceneName; label: string }[] = [
   { id: 'matchup', label: 'Matchup' },
   { id: 'standings', label: 'Standings' },
   { id: 'leaderboard', label: 'Leaders' },
+  { id: 'playoffs', label: 'Playoff Picture' },
   { id: 'allstarLineups', label: '⭐ Lineups' },
   { id: 'idle', label: 'Idle' },
 ]
@@ -41,6 +45,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
   const { matchup } = useMatchup()
   const { games } = useGames()
   const allstarRosters = useAllstarRosters()
+  const { sponsors } = useSponsors()
 
   const [dismissDelay, setDismissDelay] = useState(20000)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -83,10 +88,70 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
     }, ms)
   }
 
+  // Sponsor interstitial — same pattern: the controller flips active=true,
+  // schedules the dismiss, and self-heals from triggeredAt after a reload.
+  const sponsorDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleSponsorDismiss = (ms: number) => {
+    if (sponsorDismissRef.current) clearTimeout(sponsorDismissRef.current)
+    sponsorDismissRef.current = setTimeout(() => {
+      update(ref(db, 'overlay/sponsor'), { active: false })
+    }, ms)
+  }
+
+  const showSponsor = (sponsorId: string, inning: number) => {
+    const durationMs = overlay.sponsor.durationMs > 0 ? overlay.sponsor.durationMs : 10_000
+    update(ref(db, 'overlay/sponsor'), {
+      active: true,
+      sponsorId,
+      inning,
+      triggeredAt: Date.now(),
+      durationMs,
+    })
+    scheduleSponsorDismiss(durationMs)
+  }
+
+  const hideSponsor = () => {
+    if (sponsorDismissRef.current) clearTimeout(sponsorDismissRef.current)
+    update(ref(db, 'overlay/sponsor'), { active: false })
+  }
+
   useEffect(() => () => {
     if (statDismissRef.current) clearTimeout(statDismissRef.current)
     if (homerunDismissRef.current) clearTimeout(homerunDismissRef.current)
+    if (sponsorDismissRef.current) clearTimeout(sponsorDismissRef.current)
   }, [])
+
+  // Self-healing sponsor dismiss (mirrors the homerun watcher below): if the
+  // controller reloads mid-card, re-derive the remaining time from triggeredAt.
+  const handledSponsorTriggerRef = useRef<number>(0)
+  useEffect(() => {
+    if (!overlay.sponsor.active) {
+      handledSponsorTriggerRef.current = 0
+      return
+    }
+    const triggeredAt = overlay.sponsor.triggeredAt || Date.now()
+    if (handledSponsorTriggerRef.current === triggeredAt) return
+    handledSponsorTriggerRef.current = triggeredAt
+    const remaining = (overlay.sponsor.durationMs || 10_000) - (Date.now() - triggeredAt)
+    if (remaining <= 0) {
+      update(ref(db, 'overlay/sponsor'), { active: false })
+    } else {
+      scheduleSponsorDismiss(remaining)
+    }
+  }, [overlay.sponsor.active, overlay.sponsor.triggeredAt])
+
+  // Auto-fire the sponsor card when the scorebug inning advances — whichever
+  // side drove it (this panel's ▶½ button or the scorekeeper's mirror write).
+  // Rewinds and the initial load never fire.
+  const prevInningRef = useRef<number | null>(null)
+  useEffect(() => {
+    const prev = prevInningRef.current
+    prevInningRef.current = game.inning
+    if (prev === null || game.inning <= prev) return
+    if (!overlay.sponsor.autoShow) return
+    const pick = pickSponsorForInning(sponsors, game.inning)
+    if (pick) showSponsor(pick.id, game.inning)
+  }, [game.inning])
 
   // Self-healing homerun dismiss watcher. The scorekeeper can write
   // overlay/homerun.active=true directly when it logs a home run, in which case
@@ -839,6 +904,17 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
             </div>
           </Section>
 
+          {/* SPONSORS */}
+          <Section title="Inning Sponsors">
+            <SponsorControl
+              sponsors={sponsors}
+              state={overlay.sponsor}
+              game={game}
+              onShow={showSponsor}
+              onHide={hideSponsor}
+            />
+          </Section>
+
         </div>
 
         {/* ── RIGHT COLUMN ── */}
@@ -927,6 +1003,11 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
               onStop={timerStop}
               onReset={timerReset}
             />
+          </Section>
+
+          {/* BOTTOM-LINE TICKER */}
+          <Section title="Bottom-Line Ticker">
+            <TickerControl ticker={overlay.ticker} teams={teams} game={game} activeScene={overlay.activeScene} />
           </Section>
 
           {/* DEV — SCOREBUG CONTROLS (temporary) */}
@@ -1391,6 +1472,351 @@ function TimerControl({ timer, onPreset, onStart, onStop, onReset }: TimerContro
         Reset
       </button>
     </div>
+  )
+}
+
+/* ── Inning sponsors ── */
+
+const inputStyle: React.CSSProperties = {
+  background: '#1c2333', color: '#fff', border: '1px solid rgba(255,255,255,0.15)',
+}
+const labelStyle: React.CSSProperties = { fontFamily: 'var(--font-score)' }
+
+function SponsorControl({ sponsors, state, game, onShow, onHide }: {
+  sponsors: SponsorsMap
+  state: SponsorOverlayState
+  game: GameMeta
+  onShow: (sponsorId: string, inning: number) => void
+  onHide: () => void
+}) {
+  const list = sortedSponsors(sponsors)
+  const enabled = list.filter(s => s.enabled)
+  const byInning = inningAssignments(sponsors)
+  const liveSponsor = state.active ? sponsors[state.sponsorId] : undefined
+  const durationSec = Math.round((state.durationMs || 10_000) / 1000)
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Auto-show + duration */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-white/40 text-xs uppercase tracking-widest" style={labelStyle}>Auto on inning change</span>
+          <button
+            onClick={() => update(ref(db, 'overlay/sponsor'), { autoShow: !state.autoShow })}
+            className="px-4 h-9 rounded-lg font-semibold text-sm"
+            style={{ background: state.autoShow ? '#16a34a' : '#374151', color: '#fff' }}
+          >
+            {state.autoShow ? 'ON' : 'OFF'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-white/40 text-xs uppercase tracking-widest" style={labelStyle}>On screen</span>
+          <input
+            type="number"
+            min={3}
+            max={60}
+            value={durationSec}
+            onChange={e => {
+              const secs = Math.min(60, Math.max(3, Number(e.target.value) || 3))
+              update(ref(db, 'overlay/sponsor'), { durationMs: secs * 1000 })
+            }}
+            className="w-16 h-9 rounded-lg px-2 text-center text-sm font-bold"
+            style={inputStyle}
+          />
+          <span className="text-white/40 text-xs">sec</span>
+        </div>
+      </div>
+
+      {/* Inning strip — tap an inning to fire its sponsor now */}
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${SPONSOR_INNING_CHOICES.length}, minmax(0, 1fr))` }}>
+        {SPONSOR_INNING_CHOICES.map(n => {
+          const ids = byInning.get(n) ?? []
+          const first = ids[0] ? sponsors[ids[0]] : undefined
+          const isCurrent = game.inning === n
+          const filled = !!first
+          return (
+            <button
+              key={n}
+              onClick={() => { if (ids[0]) onShow(ids[0], n) }}
+              disabled={!filled}
+              title={filled ? `Show ${first!.name} (${ordinal(n)} inning)` : 'No sponsor for this inning'}
+              className="rounded-lg flex flex-col items-center justify-center gap-0.5 py-1.5 px-0.5 min-w-0"
+              style={{
+                background: filled ? (isCurrent ? 'rgba(251,191,36,0.18)' : 'rgba(255,255,255,0.07)') : 'rgba(255,255,255,0.02)',
+                border: isCurrent ? '1px solid rgba(251,191,36,0.6)' : '1px solid rgba(255,255,255,0.08)',
+                cursor: filled ? 'pointer' : 'not-allowed',
+                minHeight: 52,
+              }}
+            >
+              <span className="text-sm font-black" style={{ ...labelStyle, color: isCurrent ? '#fbbf24' : filled ? '#fff' : 'rgba(255,255,255,0.25)' }}>
+                {n}
+              </span>
+              <span
+                className="text-[10px] uppercase tracking-wider truncate w-full text-center"
+                style={{ ...labelStyle, color: filled ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.15)' }}
+              >
+                {first ? first.name.split(/['\s]/)[0] : '—'}
+              </span>
+              {ids.length > 1 && (
+                <span className="text-[9px]" style={{ color: '#fbbf24' }}>+{ids.length - 1}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Sponsor rows */}
+      {enabled.length === 0 ? (
+        <p className="text-white/30 text-xs text-center py-2">
+          No sponsors yet — add them in{' '}
+          <Link to="/config" className="underline text-white/50">Config → Sponsors</Link>.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {enabled.map(({ id, sponsor, innings }) => {
+            const isLive = state.active && state.sponsorId === id
+            return (
+              <div
+                key={id}
+                className="flex items-center gap-3 rounded-xl px-3 py-2"
+                style={{
+                  background: isLive ? 'rgba(22,163,74,0.12)' : '#1c2333',
+                  border: isLive ? '1px solid rgba(34,197,94,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                <div
+                  className="w-12 h-9 rounded-md flex items-center justify-center shrink-0 overflow-hidden"
+                  style={{ background: sponsor.lightPlate ? '#fff' : 'rgba(0,0,0,0.4)' }}
+                >
+                  {sponsor.logoUrl
+                    ? <img src={sponsor.logoUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                    : <span className="text-white/30 text-xs">—</span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-semibold text-sm truncate">{sponsor.name}</p>
+                  <p className="text-[11px] uppercase tracking-widest" style={{ ...labelStyle, color: 'rgba(255,255,255,0.4)' }}>
+                    {innings.length ? `Inning${innings.length > 1 ? 's' : ''} ${innings.join(', ')}` : 'No innings assigned'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => onShow(id, innings.includes(game.inning) ? game.inning : (innings[0] ?? game.inning))}
+                  className="h-9 px-4 rounded-lg text-sm font-bold uppercase tracking-wider shrink-0"
+                  style={{ background: isLive ? '#16a34a' : '#1d4ed8', color: '#fff' }}
+                >
+                  {isLive ? 'Live' : 'Show'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onHide}
+          disabled={!state.active}
+          className="flex-1 h-11 rounded-xl font-bold text-sm uppercase tracking-wider"
+          style={{
+            background: state.active ? '#3d1515' : '#1c2333',
+            color: state.active ? '#f87171' : 'rgba(255,255,255,0.3)',
+            border: state.active ? '1px solid #7f1d1d' : '1px solid transparent',
+            cursor: state.active ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Hide Sponsor
+        </button>
+        <Link
+          to="/config#sponsors"
+          className="h-11 px-4 rounded-xl text-sm font-semibold flex items-center"
+          style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
+        >
+          Manage
+        </Link>
+      </div>
+      {liveSponsor && (
+        <p className="text-green-400 text-xs text-center">
+          {liveSponsor.name} is on air — {ordinal(state.inning)} inning
+        </p>
+      )}
+    </div>
+  )
+}
+
+/* ── Bottom-line ticker ── */
+
+const TICKER_ACCENT_PRESETS = [
+  { label: 'Amber', color: '#fbbf24' },
+  { label: 'White', color: '#f8fafc' },
+  { label: 'Sky', color: '#38bdf8' },
+  { label: 'Red', color: '#ef4444' },
+  { label: 'Green', color: '#22c55e' },
+]
+
+function TickerControl({ ticker, teams, game, activeScene }: {
+  ticker: TickerState
+  teams: TeamsMap
+  game: GameMeta
+  activeScene: string
+}) {
+  const [draft, setDraft] = useState('')
+  const messages = Object.entries(ticker.messages ?? {}).sort(([a], [b]) => a.localeCompare(b))
+  const homeColor = teams[game.homeTeamId]?.primaryColor
+  const awayColor = teams[game.awayTeamId]?.primaryColor
+
+  const setSection = (id: TickerSectionId, on: boolean) =>
+    update(ref(db, 'overlay/ticker/sections'), { [id]: on })
+
+  const addMessage = async () => {
+    const text = draft.trim()
+    if (!text) return
+    setDraft('')
+    // push keys sort chronologically, which is the on-air order
+    await set(push(ref(db, 'overlay/ticker/messages')), text.slice(0, 140))
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-2">
+        <button
+          onClick={() => update(ref(db, 'overlay/ticker'), { visible: !ticker.visible })}
+          className="flex-1 h-12 rounded-xl font-bold text-sm uppercase tracking-wider"
+          style={{ background: ticker.visible ? '#b91c1c' : '#16a34a', color: '#fff' }}
+        >
+          {ticker.visible ? 'Hide Ticker' : 'Show Ticker'}
+        </button>
+      </div>
+      {ticker.visible && activeScene !== 'game' && (
+        <p className="text-amber-300/80 text-xs text-center">
+          Ticker is armed but hidden while the "{activeScene}" scene is up — it returns on the Game scene.
+        </p>
+      )}
+      {ticker.visible && activeScene === 'game' && (
+        <p className="text-green-400 text-xs text-center">Ticker is live</p>
+      )}
+
+      {/* Speed */}
+      <div className="flex flex-col gap-1">
+        <div className="flex justify-between">
+          <span className="text-white/40 text-xs uppercase tracking-widest" style={labelStyle}>Crawl speed</span>
+          <span className="text-white/70 text-xs">{ticker.speed} px/s</span>
+        </div>
+        <input
+          type="range"
+          min={60}
+          max={240}
+          step={10}
+          value={ticker.speed}
+          onChange={e => update(ref(db, 'overlay/ticker'), { speed: Number(e.target.value) })}
+          className="w-full"
+        />
+      </div>
+
+      {/* Accent colour */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-white/40 text-xs uppercase tracking-widest" style={labelStyle}>Accent colour</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {TICKER_ACCENT_PRESETS.map(p => (
+            <Swatch key={p.color} color={p.color} label={p.label} active={ticker.accentColor.toLowerCase() === p.color} onPick={c => update(ref(db, 'overlay/ticker'), { accentColor: c })} />
+          ))}
+          {homeColor && <Swatch color={homeColor} label="Home" active={ticker.accentColor.toLowerCase() === homeColor.toLowerCase()} onPick={c => update(ref(db, 'overlay/ticker'), { accentColor: c })} />}
+          {awayColor && <Swatch color={awayColor} label="Away" active={ticker.accentColor.toLowerCase() === awayColor.toLowerCase()} onPick={c => update(ref(db, 'overlay/ticker'), { accentColor: c })} />}
+          <input
+            type="color"
+            value={/^#[0-9a-f]{6}$/i.test(ticker.accentColor) ? ticker.accentColor : '#fbbf24'}
+            onChange={e => update(ref(db, 'overlay/ticker'), { accentColor: e.target.value })}
+            className="rounded-lg cursor-pointer"
+            style={{ width: 36, height: 36, padding: 2, ...inputStyle }}
+            title="Custom colour"
+          />
+        </div>
+      </div>
+
+      {/* Sections */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-white/40 text-xs uppercase tracking-widest" style={labelStyle}>Segments</span>
+        <div className="flex flex-wrap gap-1.5">
+          {SECTION_ORDER.map(id => {
+            const on = ticker.sections?.[id] !== false
+            return (
+              <button
+                key={id}
+                onClick={() => setSection(id, !on)}
+                className="h-9 px-3 rounded-lg text-xs font-bold uppercase tracking-wider"
+                style={{
+                  background: on ? 'rgba(37,99,235,0.9)' : 'rgba(255,255,255,0.06)',
+                  color: on ? '#fff' : 'rgba(255,255,255,0.45)',
+                  border: on ? '1px solid rgba(96,165,250,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                  fontFamily: 'var(--font-score)',
+                }}
+              >
+                {SECTION_LABELS[id]}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-white/40 text-xs uppercase tracking-widest" style={labelStyle}>League wire messages</span>
+        {messages.length > 0 && (
+          <div className="flex flex-col gap-1">
+            {messages.map(([key, text]) => (
+              <div key={key} className="flex items-center gap-2 rounded-lg px-3 py-1.5" style={{ background: '#1c2333', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <span className="flex-1 text-white text-sm truncate">{text}</span>
+                <button
+                  onClick={() => remove(ref(db, `overlay/ticker/messages/${key}`))}
+                  className="h-7 w-7 rounded-md text-sm font-bold shrink-0"
+                  style={{ background: '#3d1515', color: '#f87171', border: '1px solid #7f1d1d' }}
+                  title="Remove"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={draft}
+            maxLength={140}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addMessage()}
+            placeholder="e.g. NEXT WEEK: Swing Mafia vs Gamecocks — Fri 7pm"
+            className="flex-1 h-10 rounded-lg px-3 text-sm"
+            style={inputStyle}
+          />
+          <button
+            onClick={addMessage}
+            disabled={!draft.trim()}
+            className="h-10 px-4 rounded-lg text-sm font-bold uppercase tracking-wider"
+            style={{
+              background: draft.trim() ? '#1d4ed8' : '#1c2333',
+              color: draft.trim() ? '#fff' : 'rgba(255,255,255,0.3)',
+              cursor: draft.trim() ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Swatch({ color, label, active, onPick }: { color: string; label: string; active: boolean; onPick: (c: string) => void }) {
+  return (
+    <button
+      onClick={() => onPick(color)}
+      title={label}
+      className="rounded-full"
+      style={{
+        width: 30, height: 30, background: color,
+        border: active ? '3px solid #fff' : '2px solid rgba(255,255,255,0.2)',
+        boxShadow: active ? `0 0 0 2px ${color}` : 'none',
+      }}
+    />
   )
 }
 
