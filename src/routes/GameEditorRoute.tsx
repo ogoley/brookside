@@ -1520,8 +1520,11 @@ export function GameEditorRoute() {
         if (s.teamId === selectedGame.homeTeamId) homeScore += s.r ?? 0
         else if (s.teamId === selectedGame.awayTeamId) awayScore += s.r ?? 0
       }
-      updates[`games/${selectedGameId}/homeScore`] = homeScore
-      updates[`games/${selectedGameId}/awayScore`] = awayScore
+      // Forfeits keep their stored 1-0 score — there are no runs to sum.
+      if (!selectedGame.forfeit) {
+        updates[`games/${selectedGameId}/homeScore`] = homeScore
+        updates[`games/${selectedGameId}/awayScore`] = awayScore
+      }
       updates[`games/${selectedGameId}/wPitcherId`] = wPitcherId ?? null
       updates[`games/${selectedGameId}/lPitcherId`] = lPitcherId ?? null
 

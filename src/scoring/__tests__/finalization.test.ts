@@ -650,3 +650,56 @@ describe('computeFinalization — auto_out', () => {
     expect(pitcherSummary.inningsPitched).toBeCloseTo(0.33, 1)
   })
 })
+
+// ── Forfeit ──────────────────────────────────────────────────────────────
+
+describe('computeFinalization — forfeit', () => {
+  const forfeitGame = makeGame({
+    homeScore: 1,
+    awayScore: 0,
+    forfeit: { winnerTeamId: 'home', forfeitingTeamId: 'away' },
+  })
+
+  it('keeps the stored 1-0 score instead of deriving 0-0 from an empty log', () => {
+    const { updates } = computeFinalization({
+      gameId: 'g_forfeit',
+      game: forfeitGame,
+      currentGameAtBats: [],
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+    expect(updates).not.toHaveProperty('games/g_forfeit/homeScore')
+    expect(updates).not.toHaveProperty('games/g_forfeit/awayScore')
+    expect(updates['games/g_forfeit/finalized']).toBe(true)
+  })
+
+  it('writes no player stats and no game summaries', () => {
+    const { updates } = computeFinalization({
+      gameId: 'g_forfeit',
+      game: forfeitGame,
+      currentGameAtBats: [],
+      previousAtBats: [],
+      previousGames: {},
+      players: basePlayers,
+    })
+    const statPaths = Object.keys(updates).filter(p => p.startsWith('players/') || p.startsWith('subPlayers/') || p.startsWith('gameSummaries/'))
+    expect(statPaths).toEqual([])
+  })
+
+  it('awards no W/L when a finalized forfeit sits among previous games', () => {
+    const atBats = [makeAtBat({ batterId: 'h1', result: 'home_run', batterAdvancedTo: 'home', isTopInning: false, pitcherId: 'p_away', rbiCount: 1 })]
+    const { updates } = computeFinalization({
+      gameId: 'g1',
+      game: makeGame({ homeScore: 1, awayScore: 0 }),
+      currentGameAtBats: atBats,
+      previousAtBats: [],
+      previousGames: { g_forfeit: { ...forfeitGame, finalized: true } },
+      players: basePlayers,
+    })
+    const pitching = updates['players/p_away/stats/pitching'] as PitchingStats
+    expect(pitching.gp).toBe(1)
+    expect(pitching.w ?? 0).toBe(0)
+    expect(pitching.l ?? 0).toBe(0)
+  })
+})

@@ -32,7 +32,7 @@ A live broadcast overlay system for a small wiffle ball league. Runs as a single
 /config/schedule/{siteGameId}      — remaining games: date, time, homeTeamId, awayTeamId, status (scheduled|postponed|cancelled), venue, source
 /config/scheduleMeta               — { syncedAt, source, season, scheduled, postponed } written by scripts/syncSchedule.mjs
 /players/{id}                      — Player: name, teamId, position, stats: { hitting?: HittingStats, pitching?: PitchingStats }
-/games/{gameId}                    — GameRecord: teams, date, inning, outs, scores, finalized, lineups, lineupPosition, matchup
+/games/{gameId}                    — GameRecord: teams, date, inning, outs, scores, finalized, lineups, lineupPosition, matchup, forfeit? (see Forfeits)
 /games/{gameId}/matchup            — { pitcherId, batterId, lastPitcherHome, lastPitcherAway } — persists pitcher across refresh
 /games/{gameId}/lineups/{teamId}   — GameLineup (ordered LineupEntry[])
 /games/{gameId}/lineupPosition/{teamId} — current batting order index (int)
@@ -131,6 +131,15 @@ Full type definitions in `src/types.ts`.
 - **`allstarLineups` scene** (`⭐ Lineups` button) — full-screen board: All-Star Weekend lockup on top, both batting orders side by side with season AVG/HR/RBI and each player's league-team logo. Order preference: scorekeeper lineup (if a game is linked) → drafted roster order → team filter.
 - **Logos are static SVGs in `public/logos/`** — `team-rist.svg`, `team-hiller.svg`, `allstar-2026.svg` (`ALLSTAR_LOGO_URL`). Served same-origin (no Firebase Storage upload); `logoUrl` uses absolute paths like `/logos/team-rist.svg`.
 - **Known mapping caveats** — "Macker" was mapped to `brendan_mcdonald` (only Brendan in the league); "Mike LaFleur" is the push-key id `-OtHHZTZG-3lDFkt196W`.
+
+## Forfeits
+- **A forfeit is a finalized game scored 1-0 to the winner with no at-bats**, tagged `games/{gameId}/forfeit = { winnerTeamId, forfeitingTeamId }`. It counts in standings, results, and the playoff picture like any other final; it adds nothing to season stats, box scores, or pitcher W/L (all of those are rebuilt from `gameStats`, and a forfeit has none).
+- **The stored score is authoritative for forfeits** — finalization and the GameEditor box-score Save normally re-derive `homeScore`/`awayScore` from runs, which would turn a forfeit into 0-0. `computeFinalization` and `GameEditorRoute`'s Save both skip the score write when `game.forfeit` is set (tested in `finalization.test.ts`). Any new code that re-derives a game's score must honour the same check.
+- **There is no UI for recording a forfeit** — do it as a direct admin write (firebase-admin + `service-account.json`), after `npm run backup`:
+  1. Confirm the game has no `gameStats/{gameId}` or `gameSummaries/{gameId}`. If at-bats were logged, delete them first, or they WILL be rolled into season stats by the next finalize anywhere.
+  2. Make `date`, `homeTeamId`, `awayTeamId` match the `/config/schedule` entry exactly. `dedupeSchedule` matches on `date|away@home`, so a mismatch leaves the game counted as both played and still-to-play.
+  3. In one multi-path `update`: winner's score `1`, loser's `0`, `forfeit`, `finalized: true`, `finalizedAt`, and `matchup: null`.
+- **History** — 2026-09-20 Swing Mafia @ Wiffle Whalers (record id `2026-09-21_swing_mafia_wiffle_whalers`; the scorekeeper created it the next morning with home/away flipped, and the record was corrected to match the schedule): Swing Mafia forfeited, Whalers win 1-0.
 
 ## File map
 ```

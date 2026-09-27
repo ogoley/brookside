@@ -312,6 +312,13 @@ export interface GameRecord {
   wPitcherId?: string | null
   /** Pitcher credited with the loss */
   lPitcherId?: string | null
+  /** Set when the game was decided by forfeit. The stored score (1-0 to the
+   *  winner) is authoritative — there are no at-bats to derive it from, and
+   *  finalization must never overwrite it. */
+  forfeit?: {
+    winnerTeamId: string
+    forfeitingTeamId: string
+  }
 }
 
 // /games/{gameId}/lineups/{teamId} — ordered batting lineup

@@ -241,9 +241,15 @@ export function computeFinalization(input: FinalizeInput): FinalizeOutput {
     if (ab.isTopInning) derivedAwayScore += plays
     else derivedHomeScore += plays
   }
-  updates[`games/${gameId}/homeScore`] = derivedHomeScore
-  updates[`games/${gameId}/awayScore`] = derivedAwayScore
-  summary.push(`  Recomputed score: away ${derivedAwayScore}, home ${derivedHomeScore}`)
+  // Forfeits have no at-bats, so the derived score would be 0-0 — keep the
+  // stored forfeit score instead.
+  if (game.forfeit) {
+    summary.push(`  Forfeit — keeping stored score: away ${awayScore}, home ${homeScore}`)
+  } else {
+    updates[`games/${gameId}/homeScore`] = derivedHomeScore
+    updates[`games/${gameId}/awayScore`] = derivedAwayScore
+    summary.push(`  Recomputed score: away ${derivedAwayScore}, home ${derivedHomeScore}`)
+  }
 
   // Finalize flags
   updates[`games/${gameId}/finalized`] = true
