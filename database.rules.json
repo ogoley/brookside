@@ -33,6 +33,32 @@
     },
     "derby": {
       ".write": true
+    },
+    "voting": {
+      ".write": "auth != null && auth.token.role === 'admin'",
+      "ballots": {
+        "$playerId": {
+          ".write": "!data.exists() && newData.exists() && root.child('voting/meta/open').val() === true && root.child('voting/voters/' + newData.child('token').val() + '/playerId').val() === $playerId && !root.child('voting/excluded/' + $playerId).exists()",
+          ".validate": "newData.hasChildren(['token', 'picks', 'submittedAt'])",
+          "token": { ".validate": "newData.isString()" },
+          "submittedAt": { ".validate": "newData.isNumber() && (newData.val() === now || (auth != null && auth.token.role === 'admin'))" },
+          "editedAt": { ".validate": "newData.isNumber() && auth != null && auth.token.role === 'admin'" },
+          "picks": {
+            "$awardId": {
+              ".validate": "newData.isString() && root.child('voting/awards/' + $awardId + '/name').exists() && (!root.child('voting/awards/' + $awardId + '/candidates').exists() || root.child('voting/awards/' + $awardId + '/candidates/' + newData.val()).val() === true) && ((root.child('voting/awards/' + $awardId + '/kind').val() === 'player' && root.child('players/' + newData.val() + '/name').exists() && !root.child('voting/excluded/' + newData.val()).exists() && newData.val() !== $playerId) || (root.child('voting/awards/' + $awardId + '/kind').val() === 'team' && root.child('teams/' + newData.val() + '/name').exists() && root.child('teams/' + newData.val() + '/isExhibition').val() !== true && newData.val() !== root.child('players/' + $playerId + '/teamId').val()))"
+            }
+          },
+          "$other": { ".validate": false }
+        }
+      },
+      "voters": {
+        "$token": {
+          "votedAt": {
+            ".write": "!data.exists() && root.child('voting/meta/open').val() === true && newData.parent().parent().parent().child('ballots/' + root.child('voting/voters/' + $token + '/playerId').val() + '/token').val() === $token",
+            ".validate": "newData.isNumber() && (newData.val() === now || (auth != null && auth.token.role === 'admin'))"
+          }
+        }
+      }
     }
   }
 }

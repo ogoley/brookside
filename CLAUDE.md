@@ -38,6 +38,11 @@ A live broadcast overlay system for a small wiffle ball league. Runs as a single
 /games/{gameId}/lineupPosition/{teamId} — current batting order index (int)
 /gameStats/{gameId}/{atBatId}      — AtBatRecord: full at-bat log entry
 /liveRunners/{gameId}              — RunnersState: { first, second, third } — current base state
+/voting/meta                       — { open, title } — season-awards poll status
+/voting/awards/{awardId}           — Award: name, kind (player|team), order, description?, candidates?{id:true}
+/voting/voters/{token}             — Voter: { playerId, createdAt, votedAt? } — token = the /vote/<token> link
+/voting/ballots/{playerId}         — Ballot: { token, picks{awardId: id}, submittedAt, editedAt? }
+/voting/excluded/{playerId}        — true = kept out of voting (no link, not on ballot, not in turnout); stats untouched
 ```
 Full type definitions in `src/types.ts`.
 
@@ -141,6 +146,20 @@ Full type definitions in `src/types.ts`.
   3. In one multi-path `update`: winner's score `1`, loser's `0`, `forfeit`, `finalized: true`, `finalizedAt`, and `matchup: null`.
 - **History** — 2026-09-20 Swing Mafia @ Wiffle Whalers (record id `2026-09-21_swing_mafia_wiffle_whalers`; the scorekeeper created it the next morning with home/away flipped, and the record was corrected to match the schedule): Swing Mafia forfeited, Whalers win 1-0.
 
+## Season awards voting (VoteRoute.tsx + VoteAdminRoute.tsx)
+**Full product doc + current status + runbooks: `VOTING.md` — read it before touching voting code or data.**
+- **Each player gets a personal link** `https://www.ogoley.com/vote/<uuid>` (`VOTE_LINK_BASE`). The token goes in the PATH, never a query string: the bare `ogoley.com` redirect drops query strings (verified 2026-10-06); `www.ogoley.com` 302s to `brookside-14b4b.web.app` with path intact. ogoly.com (no "e") is a parked domain, not ours.
+- **The token is the credential, enforced by `database.rules.json` → `voting`.** Anonymous users get exactly one write: `voting/ballots/{playerId}` + `voting/voters/{token}/votedAt` in one multi-path update (`buildBallotUpdates`), only if the token maps to that playerId, the ballot doesn't exist yet (write-once — no edit/delete), polls are open, `submittedAt` is server time, and every pick is valid (real player / non-exhibition team, not yourself / your own team, inside `candidates` when set). Everything else under `/voting` is admin-only; nothing outside `/voting` changed. Admin writes are still held to the pick validation.
+- **The ballot page is a dead end on purpose** — no `AppNav`, no `HomeButton`, no links anywhere (the league logo is a plain image), on every state: ballot, review, done, already-voted, closed, invalid link. Players arrive from their Spond DM, vote, and leave. Never add navigation to `VoteRoute` (verified 2026-10-06: zero `<a href>` on the live page).
+- **No silent skips** — the ballot never offers skipping up front. "Review & submit" with blank awards opens a "You didn't pick for…" sheet: per award, **Pick someone** (scrolls to and opens that picker) or **No vote**; only when every blank is answered does it become the review sheet. "No vote" is page-only state — the stored ballot simply omits that award (rules require ≥1 pick).
+- **Ballots are keyed by player, not token** — one ballot per person even if a link is reissued. Reissue carries `votedAt` to the new token when a ballot exists; admin "Reset" deletes the ballot + `votedAt` so the same link can vote again.
+- **Rules tests**: `npm run test:rules` boots the RTDB emulator (demo project, never touches prod) and runs `src/voting/__tests__/rules.test.ts` — includes "anonymous can't write game/players/teams/config/overlay". Run it after ANY rules change. Plain `npm test` skips that file.
+- **Known exposure (accepted, harden later)**: root `".read": true` means `/voting/voters` (every link) and `/voting/ballots` are publicly readable to anyone who looks at the raw database. Fix = move `.read: true` from the root onto each public top-level path and leave `voting` admin-read (plus `.read: true` on `voting/meta`, `voting/awards`, `voting/voters/$token`). The ballot page (`useBallotSetup`) already only reads those three, so it keeps working.
+- **Voter pool** = named, non-sub `/players` minus `/voting/excluded` (`rosterPlayerIds(players, excluded)`); team ballot = non-exhibition teams. Exclusion is enforced in the rules too (an excluded player can't vote even with a link, and can't be picked). 2026: `mark_gee` is excluded (left the league after one game). All "who can pick whom" rules live in `src/voting/logic.ts` (pure, tested) and mirror the database rules — change both together.
+- **Admin screen `/vote-admin`** (admin login, also in AppNav): open/close polls, ballot title, turnout by team ("waiting on…"), awards editor (player/team, optional finalists shortlist, starter set via `STARTER_AWARDS`), links (create / copy / copy invite / reissue / revoke / CSV with invite text), ballots (edit, enter on behalf, reset), live results. `/vote/preview?as=<playerId>` renders the real ballot with submit disabled, even while closed.
+- **Links + Spond mapping**: `node scripts/voteLinks.mjs [--create] [--exclude <playerId>]` mints missing links (admin SDK) and writes `vote-links/vote-links.csv` (gitignored — rows are live credentials) with team, name, playerId, Spond subgroup, Spond display name, link, voted, invite message. Spond is one group "Brookside Athletics Wiffle Ball" with a subgroup per team; subgroup "Big Ol' Hitties" = `base_invaders`, "Whalers" = `wiffle_whalers`; four Spond names differ only in case (`SPOND_NAME` in the script). Mike Verteramo is an admin in every subgroup (he plays for the Whalers).
+- **Sending invites** is manual / browser-driven through Spond (one DM per player) — there is no Spond API integration. The CSV's `message` column is the invite text (`inviteMessage`; the script duplicates it — keep in sync).
+
 ## File map
 ```
 src/
@@ -162,6 +181,7 @@ src/
     useSponsors.ts          — /config/sponsors listener (SponsorsMap)
     useSchedule.ts          — /config/schedule listener (remaining games, date-ordered) + scheduleMeta
     usePlayoffPicture.ts    — finalized games + schedule → exact PlayoffPicture (memoized)
+    useVoting.ts            — /voting listener (admin) + useBallotSetup(token): meta, awards, own voter record only
   components/
     Scoreboard.tsx          — broadcast overlay scoreboard; pill layout built inline (not via TeamBug); always shows countdown timer; centered at 36% width in GameScene
     TeamBug.tsx             — logo + short name + score block (not used in Scoreboard); accepts mirrored prop; available for other scenes
@@ -177,6 +197,7 @@ src/
     SponsorsSection.tsx     — /config admin UI for sponsors (add/edit/order/innings, starter seed)
     PlayoffPicturePanel.tsx — light-theme playoff picture for the public /stats Playoffs tab
     LogoUpload.tsx          — Firebase Storage image uploader (teams, league logo, sponsors)
+    SearchSelect.tsx        — generic type-ahead dropdown (light/dark), used by the voting pages
   scenes/
     GameScene.tsx           — scoreboard over transparent bg + stat overlay
     StatCardScene.tsx       — full-screen between-innings team stat table
@@ -201,6 +222,8 @@ src/
   playoffs/
     engine.ts               — pure: standings lines, tiebreak ranking, exact outcome enumeration, bracket projection/reseeding
     format.ts               — shared display strings (pct, diff, odds label, game date/time, seed range)
+  voting/
+    logic.ts                — pure awards-voting rules: links, eligible options, pick cleaning, turnout, tallies, starter awards
   stats/
     leaders.ts              — shared season leader queries + qualification thresholds (Leaders scene + ticker)
   storageUtils.ts           — deleteStorageLogo helper
@@ -210,6 +233,8 @@ src/
     ScorekeeperRoute.tsx    — at-bat log entry wizard; writes /games, /gameStats, /liveRunners
     DerbyOverlayRoute.tsx   — 1920×1080 derby broadcast overlay (read-only, OBS source)
     DerbyControllerRoute.tsx — derby producer panel; only writer of /derby/broadcast
+    VoteRoute.tsx           — public ballot page /vote/:token (and /vote/preview)
+    VoteAdminRoute.tsx      — /vote-admin: polls, awards, links, ballots, results
 ```
 
 ## Dev setup
@@ -231,6 +256,7 @@ These files are needed for development/setup but do not ship to production. Trac
 | `scripts/resetDb.js` | Wipes Firebase and restores from snapshot | Development is done, no more test resets needed |
 | `scripts/migrateTeamIds.js` | One-time migration: GUID team IDs → slug IDs | Already ran — can delete now |
 | `scripts/syncSchedule.mjs` | Pulls remaining games from brooksidewiffle.com/api into `/config/schedule` (`npm run schedule:sync`) | The season is over, or the schedule gets a first-party source |
+| `scripts/voteLinks.mjs` | Creates/exports season-awards vote links with the Spond mapping into gitignored `vote-links/` | Awards voting is over |
 | `scripts/seedSponsors.mjs` | Seeds the two starter inning sponsors into `/config/sponsors` (idempotent; `--force` overwrites) | Sponsors are managed purely from the admin panel |
 | `firebase-snapshot.json` | Clean-state Firebase snapshot used by `npm run reset` | Development is done |
 | ~~`firebase-seed.json`~~ | ~~Old placeholder seed data — superseded~~ | ✅ Deleted |

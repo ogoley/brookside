@@ -414,3 +414,66 @@ export interface DerbyBroadcastState {
   currentBatterIndex: number        // pointer into battingOrder
   scores: Record<string, DerbyRoundScores>  // playerId → per-round HR
 }
+
+// ── Season awards voting ─────────────────────────────────────────────────────
+// /voting — admin-writable. The one anonymous write is a player's own ballot,
+// authorised by the unguessable token in their /vote/<token> link (see
+// database.rules.json and src/voting/logic.ts).
+
+export type AwardKind = 'player' | 'team'
+
+export interface Award {
+  name: string
+  kind: AwardKind
+  order: number
+  description?: string
+  /** Restricted ballot (e.g. Rookie, Captain finalists): only these player/team
+   *  ids can be picked. Absent = every eligible player (or team) is on it. */
+  candidates?: Record<string, true>
+}
+
+export interface AwardsMap {
+  [awardId: string]: Award
+}
+
+export interface VotingMeta {
+  open: boolean
+  title?: string
+}
+
+/** /voting/voters/{token} — the token IS the credential; one per player. */
+export interface Voter {
+  playerId: string
+  createdAt: number
+  votedAt?: number
+}
+
+export interface VotersMap {
+  [token: string]: Voter
+}
+
+/** /voting/ballots/{playerId} — keyed by player, so one ballot per person no
+ *  matter how many links they've been issued. Write-once for voters. */
+export interface Ballot {
+  token: string
+  picks: Record<string, string>   // awardId → playerId or teamId
+  submittedAt: number
+  editedAt?: number               // set when an admin edits or enters the ballot
+}
+
+export interface BallotsMap {
+  [playerId: string]: Ballot
+}
+
+/** /voting/excluded/{playerId} — players kept out of voting entirely (no
+ *  link, not on the ballot, not in turnout) without touching their stats,
+ *  e.g. someone who left the league mid-season. */
+export type VotingExcluded = Record<string, true>
+
+export interface VotingState {
+  meta: VotingMeta
+  awards: AwardsMap
+  voters: VotersMap
+  ballots: BallotsMap
+  excluded: VotingExcluded
+}

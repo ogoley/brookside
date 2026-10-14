@@ -27,3 +27,6 @@ backups/
 
 # Firebase admin service account key — DO NOT COMMIT
 service-account.json
+
+# Season-awards voting links (scripts/voteLinks.mjs) — every row is a live ballot credential
+vote-links/

@@ -28,6 +28,7 @@ const LINKS: NavLink[] = [
   { to: '/game-editor', label: 'Game Editor', minRole: 'admin' },
   { to: '/ai-summary', label: 'AI Summary', minRole: 'admin' },
   { to: '/config', label: 'Config', minRole: 'admin' },
+  { to: '/vote-admin', label: 'Awards Voting', minRole: 'admin' },
 ]
 
 const itemStyle: React.CSSProperties = {

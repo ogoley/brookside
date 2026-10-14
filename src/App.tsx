@@ -9,6 +9,8 @@ import { SummaryRoute } from './routes/SummaryRoute'
 import { DerbyRoute } from './routes/DerbyRoute'
 import { DerbyOverlayRoute } from './routes/DerbyOverlayRoute'
 import { DerbyControllerRoute } from './routes/DerbyControllerRoute'
+import { VoteRoute } from './routes/VoteRoute'
+import { VoteAdminRoute } from './routes/VoteAdminRoute'
 import { AuthGate } from './components/AuthGate'
 
 export default function App() {
@@ -21,6 +23,12 @@ export default function App() {
         <Route path="/derby" element={<DerbyRoute />} />
         <Route path="/derby-overlay" element={<DerbyOverlayRoute />} />
         <Route path="/derby-controller" element={<DerbyControllerRoute />} />
+        {/* Season awards ballot — the token in the path is the voter's credential */}
+        <Route path="/vote/:token" element={<VoteRoute />} />
+        <Route
+          path="/vote-admin"
+          element={<AuthGate requiredRole="admin"><VoteAdminRoute /></AuthGate>}
+        />
         {/* All-star routes: the overlay is the same OBS source (it renders whatever
             the scorebug state says); the controller runs in allstar mode — team
             pickers restricted to Rist/Hiller, exhibition-only game list, one-tap
