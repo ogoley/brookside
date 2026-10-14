@@ -9,8 +9,8 @@ voting-related. CLAUDE.md → "Season awards voting" has the condensed engineeri
 ## ▶ Resume here — status as of 2026-10-06
 
 **Live right now**
-- Site + database rules are **deployed** (`brookside-14b4b`). Code is **NOT committed** yet
-  (branch `brookside-scorekeeper`).
+- Site + database rules are **deployed** (`brookside-14b4b`). Code is **committed and pushed**
+  on branch `brookside-scorekeeper` (2026-10-14, commit 52a2175).
 - **Voting is OPEN** — opened only so a commissioner could test their own link. Close it
   in `/vote-admin` (big toggle) until launch.
 - 5 test awards exist in prod: MVP, Cy Young, Hitter of the Year, Rookie of the Year, Best
@@ -33,7 +33,7 @@ votes, but the data is readable. See [Hardening plan](#hardening-plan-do-this-be
 3. Finalize the award list + finalist lists (Rookie, Best Value Pick, likely Best Captain).
 4. Do the [hardening plan](#hardening-plan-do-this-before-launch), then **reissue all 57
    links** (they've been publicly readable while voting was open; unsent, so free to replace).
-5. Commit the code.
+5. ~~Commit the code.~~ Done 2026-10-14.
 6. [Launch runbook](#launch-runbook): export CSV → open voting → send DMs via Spond.
 
 ---
