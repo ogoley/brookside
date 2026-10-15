@@ -14,6 +14,8 @@ interface Props {
   matchup?: MatchupState
   players?: PlayersMap
   statOverlayVisible?: boolean
+  /** Playoff round tag shown in the notch when the countdown is hidden */
+  roundTag?: { season: number; label: string } | null
 }
 
 function useCountdown(timer?: TimerState): string {
@@ -129,7 +131,7 @@ function PlayerNotch({
   )
 }
 
-export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true, matchup, players, statOverlayVisible }: Props) {
+export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true, matchup, players, statOverlayVisible, roundTag }: Props) {
   const countdown = useCountdown(timer)
   const allstarRosters = useAllstarRosters()
 
@@ -232,21 +234,56 @@ export function Scoreboard({ game, homeTeam, awayTeam, timer, showBorder = true,
           </div>
         </div>
 
-        {/* Timer notch */}
-        <div className="absolute left-0 right-0 flex justify-center" style={{ top: '100%' }}>
-          <div style={{
-            background: 'rgba(0,0,0,0.88)',
-            borderRadius: '0 0 8px 8px',
-            padding: '3px 14px',
-          }}>
-            <span
-              className="tabular-nums"
-              style={{ fontFamily: 'var(--font-score)', color: 'rgba(255,255,255,0.6)', fontSize: 20, fontWeight: 700, letterSpacing: '0.05em' }}
-            >
-              {countdown}
-            </span>
+        {/* Notch under the center strip: countdown when shown, else the
+            playoff round tag (FIFA-style "2026 PLAYOFFS · ROUND" label).
+            Keep the copy short — it must fit under the black strip, clear of
+            the batter/pitcher notches under the pills. */}
+        {timer?.visible ? (
+          <div className="absolute left-0 right-0 flex justify-center" style={{ top: '100%' }}>
+            <div style={{
+              background: 'rgba(0,0,0,0.88)',
+              borderRadius: '0 0 8px 8px',
+              padding: '3px 14px',
+            }}>
+              <span
+                className="tabular-nums"
+                style={{ fontFamily: 'var(--font-score)', color: 'rgba(255,255,255,0.6)', fontSize: 20, fontWeight: 700, letterSpacing: '0.05em' }}
+              >
+                {countdown}
+              </span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <AnimatePresence>
+            {roundTag && (
+              <motion.div
+                key={roundTag.label}
+                className="absolute left-0 right-0 flex justify-center"
+                style={{ top: '100%' }}
+                initial={{ opacity: 0, y: -12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ type: 'spring', damping: 22, stiffness: 260 }}
+              >
+                <div
+                  className="flex items-center whitespace-nowrap"
+                  style={{
+                    background: 'rgba(0,0,0,0.88)',
+                    borderRadius: '0 0 12px 12px',
+                    padding: '7px 22px 8px',
+                    gap: 12,
+                    fontFamily: 'var(--font-score)', fontSize: 23, fontWeight: 800, letterSpacing: '0.12em',
+                    textTransform: 'uppercase', lineHeight: 1,
+                  }}
+                >
+                  <span style={{ color: 'rgba(255,255,255,0.92)' }}>{roundTag.season} Playoffs</span>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'rgba(255,255,255,0.45)' }} />
+                  <span style={{ color: '#facc15' }}>{roundTag.label}</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
       </div>
 
       {/* ── Home pill (right) ── */}

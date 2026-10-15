@@ -11,7 +11,7 @@
  * producer set `winnerOverride` on the slot (wins over the game result).
  */
 
-import type { GameRecord, LogoMode } from '../types'
+import type { GameRecord, RoundTagMode } from '../types'
 
 export type RoundKey = 'qf' | 'sf' | 'final'
 export type SlotId = 'qf36' | 'qf45' | 'sf1' | 'sf2' | 'final'
@@ -182,9 +182,9 @@ export function resolveBracket(config: BracketConfig, games: PostseasonGameEntry
   return { season: config.season, slots, currentRound, champion }
 }
 
-/** Corner-logo round: null = plain league logo; 'auto' follows the bracket. */
-export function resolveLogoRound(mode: LogoMode, bracket: ResolvedBracket | null): RoundKey | null {
-  if (mode === 'league') return null
+/** Scorebug round tag: null = no tag; 'auto' follows the bracket. */
+export function resolveRoundTag(mode: RoundTagMode, bracket: ResolvedBracket | null): RoundKey | null {
+  if (mode === 'off') return null
   if (mode === 'auto') return bracket?.currentRound ?? 'qf'
   return mode
 }

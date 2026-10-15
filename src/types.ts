@@ -43,6 +43,9 @@ export interface TimerState {
   durationMs: number       // total countdown length
   startedAt: number | null // epoch ms when last started; null = not running
   running: boolean
+  /** Show the countdown notch under the scorebug. When hidden, the notch
+   *  slot shows the playoff round tag instead (if one is on). */
+  visible: boolean
 }
 
 export interface HomrunState {
@@ -149,12 +152,12 @@ export interface OverlayState {
   ticker: TickerState
   scoreboardBorder: boolean
   scoreboardScale: number
-  /** Corner logo bug: plain league logo, a playoff-round badge, or 'auto'
-   *  (round badge following the bracket's current round). */
-  logoMode: LogoMode
+  /** Playoff round tag in the notch under the scorebug: off, a fixed round,
+   *  or 'auto' (follows the bracket's current round). */
+  roundTag: RoundTagMode
 }
 
-export type LogoMode = 'league' | 'auto' | 'qf' | 'sf' | 'final'
+export type RoundTagMode = 'off' | 'auto' | 'qf' | 'sf' | 'final'
 
 export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'bracket' | 'insights' | 'allstarLineups' | 'idle'
 

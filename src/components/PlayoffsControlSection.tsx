@@ -4,19 +4,19 @@
  * one header row + the logo switch (rarely touched mid-game); the Bracket
  * scene button lives in the Scene grid while playoff mode is on.
  *
- * Writes: /postseason/meta, /postseason/brackets/{season}, /overlay/logoMode.
+ * Writes: /postseason/meta, /postseason/brackets/{season}, /overlay/roundTag.
  */
 import { useState } from 'react'
 import { ref, update, set } from 'firebase/database'
 import { db } from '../firebase'
 import { usePostseason } from '../hooks/usePostseason'
 import { SLOTS, ROUND_LABEL, ROUND_SHORT, BRACKET_2026, slotWhen, type SlotId } from '../postseason/bracket'
-import type { LogoMode, TeamsMap } from '../types'
+import type { RoundTagMode, TeamsMap } from '../types'
 
 const GOLD = '#fbbf24'
 
-const LOGO_MODES: { id: LogoMode; label: string }[] = [
-  { id: 'league', label: 'League' },
+const TAG_MODES: { id: RoundTagMode; label: string }[] = [
+  { id: 'off', label: 'Off' },
   { id: 'auto', label: 'Auto' },
   { id: 'qf', label: 'QF' },
   { id: 'sf', label: 'SF' },
@@ -29,9 +29,10 @@ function readCollapsed(): boolean {
   try { return localStorage.getItem(COLLAPSE_KEY) !== '0' } catch { return true }
 }
 
-export function PlayoffsControlSection({ teams, logoMode }: {
+export function PlayoffsControlSection({ teams, roundTag, timerVisible }: {
   teams: TeamsMap
-  logoMode: LogoMode
+  roundTag: RoundTagMode
+  timerVisible: boolean
 }) {
   const { meta, config, bracket } = usePostseason()
   const [collapsed, setCollapsed] = useState(readCollapsed)
@@ -87,19 +88,20 @@ export function PlayoffsControlSection({ teams, logoMode }: {
         </button>
       ) : (
         <>
-          {/* Corner logo quick switch */}
+          {/* Scorebug round tag quick switch */}
           <div className="flex flex-col gap-1.5">
             <span className="text-white/40 text-[11px] uppercase tracking-widest" style={{ fontFamily: 'var(--font-score)' }}>
-              Corner logo{logoMode === 'auto' && bracket ? ` · auto = ${ROUND_LABEL[bracket.currentRound]}` : ''}
+              Scorebug round tag{roundTag === 'auto' && bracket ? ` · auto = ${ROUND_LABEL[bracket.currentRound]}` : ''}
+              {timerVisible && roundTag !== 'off' && <span className="normal-case tracking-normal text-amber-400/80"> · hidden while the countdown timer is shown</span>}
             </span>
             <div className="grid grid-cols-5 gap-1.5">
-              {LOGO_MODES.map(m => (
-                <button key={m.id} onClick={() => update(ref(db, 'overlay'), { logoMode: m.id })}
+              {TAG_MODES.map(m => (
+                <button key={m.id} onClick={() => update(ref(db, 'overlay'), { roundTag: m.id })}
                   className="h-10 rounded-lg text-xs font-bold uppercase"
                   style={{
-                    background: logoMode === m.id ? 'rgba(37,99,235,0.9)' : 'rgba(255,255,255,0.06)',
-                    color: logoMode === m.id ? '#fff' : 'rgba(255,255,255,0.65)',
-                    border: `1px solid ${logoMode === m.id ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                    background: roundTag === m.id ? 'rgba(37,99,235,0.9)' : 'rgba(255,255,255,0.06)',
+                    color: roundTag === m.id ? '#fff' : 'rgba(255,255,255,0.65)',
+                    border: `1px solid ${roundTag === m.id ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
                   }}>
                   {m.label}
                 </button>

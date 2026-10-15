@@ -13,9 +13,11 @@ interface Props {
   matchup: MatchupState
   /** Height of the ticker currently on air (0 when hidden) — lifts the stat strip */
   bottomInset?: number
+  /** Playoff round tag for the notch under the scorebug (null = none) */
+  roundTag?: { season: number; label: string } | null
 }
 
-export function GameScene({ game, overlay, teams, players, matchup, bottomInset = 0 }: Props) {
+export function GameScene({ game, overlay, teams, players, matchup, bottomInset = 0, roundTag = null }: Props) {
   const homeTeam = teams[game.homeTeamId]
   const awayTeam = teams[game.awayTeamId]
 
@@ -51,6 +53,7 @@ export function GameScene({ game, overlay, teams, players, matchup, bottomInset 
                 matchup={matchup}
                 players={players}
                 statOverlayVisible={overlay.statOverlay.visible}
+                roundTag={roundTag}
               />
             </motion.div>
           )}

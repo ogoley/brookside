@@ -637,7 +637,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
 
           {/* PLAYOFFS — switch, bracket, corner logo */}
           {!allstar && (
-            <PlayoffsControlSection teams={teams} logoMode={overlay.logoMode} />
+            <PlayoffsControlSection teams={teams} roundTag={overlay.roundTag} timerVisible={overlay.timer.visible} />
           )}
 
           {/* SCENE SWITCHER */}
@@ -1014,13 +1014,24 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
 
           {/* TIMER */}
           <Section title="Countdown Timer">
-            <TimerControl
+            <button
+              onClick={() => update(ref(db, 'overlay/timer'), { visible: !overlay.timer.visible })}
+              className="h-11 rounded-xl text-sm font-bold uppercase tracking-wider"
+              style={{
+                background: overlay.timer.visible ? 'rgba(37,99,235,0.9)' : 'rgba(255,255,255,0.06)',
+                color: overlay.timer.visible ? '#fff' : 'rgba(255,255,255,0.6)',
+                border: `1px solid ${overlay.timer.visible ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+              }}
+            >
+              {overlay.timer.visible ? '● Shown on scorebug — tap to hide' : '○ Hidden — tap to show on scorebug'}
+            </button>
+            {overlay.timer.visible && <TimerControl
               timer={overlay.timer}
               onPreset={timerPreset}
               onStart={timerStart}
               onStop={timerStop}
               onReset={timerReset}
-            />
+            />}
           </Section>
 
           {/* BOTTOM-LINE TICKER */}

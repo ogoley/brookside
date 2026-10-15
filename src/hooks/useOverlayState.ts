@@ -15,6 +15,7 @@ const DEFAULT_OVERLAY: OverlayState = {
     durationMs: 3_600_000, // 60 minutes default
     startedAt: null,
     running: false,
+    visible: false,
   },
   homerun: {
     active: false,
@@ -59,7 +60,7 @@ const DEFAULT_OVERLAY: OverlayState = {
   },
   scoreboardBorder: true,
   scoreboardScale: 0.75,
-  logoMode: 'league',
+  roundTag: 'off',
 }
 
 export { DEFAULT_OVERLAY }
@@ -106,7 +107,7 @@ export function useOverlayState() {
           },
           scoreboardBorder: data.scoreboardBorder ?? DEFAULT_OVERLAY.scoreboardBorder,
           scoreboardScale: data.scoreboardScale ?? DEFAULT_OVERLAY.scoreboardScale,
-          logoMode: data.logoMode ?? DEFAULT_OVERLAY.logoMode,
+          roundTag: data.roundTag ?? DEFAULT_OVERLAY.roundTag,
         })
       }
       setLoading(false)
