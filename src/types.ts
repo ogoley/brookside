@@ -435,6 +435,8 @@ export interface Award {
   kind: AwardKind
   order: number
   description?: string
+  /** Badge image URL; falls back to /awards/{awardId}.svg for known awards (awardIcon). */
+  icon?: string
   /** Restricted ballot (e.g. Rookie, Captain finalists): only these player/team
    *  ids can be picked. Absent = every eligible player (or team) is on it. */
   candidates?: Record<string, true>
@@ -447,6 +449,9 @@ export interface AwardsMap {
 export interface VotingMeta {
   open: boolean
   title?: string
+  /** Hard deadline (epoch ms). Ballots are accepted only while `open` AND
+   *  before this instant — enforced by the database rules with server time. */
+  closesAt?: number
 }
 
 /** /voting/voters/{token} — the token IS the credential; one per player. */

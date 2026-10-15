@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { ref, update, serverTimestamp } from 'firebase/database'
 import { db } from '../firebase'
@@ -9,7 +9,7 @@ import { useLeagueConfig } from '../hooks/useLeagueConfig'
 import { SearchSelect } from '../components/SearchSelect'
 import {
   sortedAwards, optionsForAward, cleanPicks, buildBallotUpdates, optionLabel,
-  candidateIds, rosterPlayerIds, DEFAULT_VOTING_TITLE, type AwardEntry,
+  candidateIds, rosterPlayerIds, DEFAULT_VOTING_TITLE, awardIcon, votingAccepting, formatDeadline, type AwardEntry, type VoteOption,
 } from '../voting/logic'
 import type { PlayersMap, TeamsMap, VotingExcluded } from '../types'
 
@@ -39,6 +39,16 @@ export function VoteRoute() {
   const [sheet, setSheet] = useState<'missing' | 'review' | null>(null)
   const [submit, setSubmit] = useState<SubmitState>('idle')
   const [submitted, setSubmitted] = useState<Record<string, string> | null>(null)
+  // Ticks so the page flips to "closed" on its own when the deadline passes
+  // (the database rule is the real cutoff; this just keeps the UI honest).
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15_000)
+    return () => clearInterval(id)
+  }, [])
+  const expire = useCallback(() => setNow(Date.now()), [])
+  const deadline = meta?.closesAt ?? null
+  const pastDeadline = deadline != null && now >= deadline
 
   const title = meta?.title || DEFAULT_VOTING_TITLE
   useEffect(() => { document.title = `${title} · Ballot` }, [title])
@@ -96,7 +106,15 @@ export function VoteRoute() {
     )
   }
 
-  if (!preview && !meta?.open) {
+  if (!preview && pastDeadline) {
+    return shell(
+      <Notice icon="🔒" heading="Voting has closed">
+        The deadline was {formatDeadline(deadline!)}. Thanks for being part of the season. Results are coming soon.
+      </Notice>,
+    )
+  }
+
+  if (!preview && !votingAccepting(meta, now)) {
     return shell(
       <Notice icon="⏳" heading="Voting isn't open right now">
         Hang on to this link. It's your personal ballot and it will work as soon as voting opens.
@@ -117,6 +135,7 @@ export function VoteRoute() {
       setSheet(null)
       setSubmit('idle')
     } catch {
+      setNow(Date.now())   // if the deadline just passed, the page switches to "closed"
       setSubmit('error')
     } finally {
       clearTimeout(slow)
@@ -150,9 +169,11 @@ export function VoteRoute() {
     <>
       {preview && (
         <div style={{ ...statusMsg, margin: '0 0 12px', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe' }}>
-          <b>Preview</b> as {me.name}. Submitting is disabled{meta?.open ? '' : ', and voting is currently closed'}.
+          <b>Preview</b> as {me.name}. Submitting is disabled{votingAccepting(meta, now) ? '' : pastDeadline ? ', and the deadline has passed' : ', and voting is currently closed'}.
         </div>
       )}
+
+      {deadline != null && !pastDeadline && <DeadlineCountdown deadline={deadline} onExpire={expire} />}
 
       {/* Who this ballot belongs to */}
       <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14, borderTop: `4px solid ${NAVY}` }}>
@@ -173,7 +194,10 @@ export function VoteRoute() {
 
       <div style={{ ...card, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 18 }}>
         <div style={{ fontSize: 14, color: '#78350f', lineHeight: 1.55 }}>
-          Pick one for each award. You can't vote for yourself or your own team.
+          {deadline != null && (
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>Vote by {formatDeadline(deadline)}.</div>
+          )}
+          Vote on every award you have a preference on, and skip the rest. You can't vote for yourself{awardList.some(a => a.kind === 'team') ? ' or your own team' : ''}.
           <b> Once you submit, your ballot is final.</b>
         </div>
       </div>
@@ -211,6 +235,7 @@ export function VoteRoute() {
           <div style={{ fontSize: 14, color: '#475569', fontWeight: 600 }}>
             <span style={{ fontFamily: 'var(--font-score)', fontSize: 20, fontWeight: 900, color: NAVY }}>{pickedCount}</span>
             {' '}of {awardList.length} picked
+            {deadline != null && !pastDeadline && <MiniCountdown deadline={deadline} />}
           </div>
           <button
             onClick={() => setSheet(unanswered.length ? 'missing' : 'review')}
@@ -237,8 +262,13 @@ export function VoteRoute() {
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
             {unanswered.map((a, i) => (
               <div key={a.id} style={{ padding: '12px 14px', borderTop: i ? '1px solid #eef2f7' : 'none' }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{a.name}</div>
-                {a.description && <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 1 }}>{a.description}</div>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <AwardBadge award={a} size={34} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{a.name}</div>
+                    {a.description && <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 1 }}>{a.description}</div>}
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button
                     onClick={() => pickNow(a.id)}
@@ -283,7 +313,7 @@ export function VoteRoute() {
             )}
             {submit === 'error' && (
               <p style={{ ...statusMsg, background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
-                Your ballot wasn't accepted. Voting may have just closed, or this link was already used.
+                Your ballot wasn't accepted. {pastDeadline ? `Voting closed ${formatDeadline(deadline!)}.` : 'Voting may have just closed, or this link was already used.'}
                 Contact the commissioner if that seems wrong.
               </p>
             )}
@@ -355,11 +385,18 @@ function AwardCard({ index, award, value, noVote, onChange, players, teams, vote
   return (
     <div id={`award-${award.id}`} style={{ ...card, borderLeft: `4px solid ${done ? '#16a34a' : '#cbd5e1'}`, transition: 'border-color 0.2s', scrollMarginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-        <span style={{
-          flexShrink: 0, width: 28, height: 28, borderRadius: 14, display: 'grid', placeItems: 'center',
-          background: done ? '#16a34a' : noVote ? '#94a3b8' : NAVY, color: '#ffffff', fontFamily: 'var(--font-score)', fontWeight: 900, fontSize: 15,
-        }}>
-          {done ? '✓' : noVote ? '–' : index}
+        <span style={{ position: 'relative', flexShrink: 0, display: 'grid', placeItems: 'center', width: 52, height: 52 }}>
+          {awardIcon(award)
+            ? <AwardBadge award={award} size={52} />
+            : <span style={{ width: 40, height: 40, borderRadius: 20, background: NAVY }} />}
+          {/* progress dot: number → ✓ when picked, – when "No vote" */}
+          <span style={{
+            position: 'absolute', right: -4, bottom: -4, width: 24, height: 24, borderRadius: 12, display: 'grid', placeItems: 'center',
+            border: '2px solid #ffffff',
+            background: done ? '#16a34a' : noVote ? '#94a3b8' : NAVY, color: '#ffffff', fontFamily: 'var(--font-score)', fontWeight: 900, fontSize: 13,
+          }}>
+            {done ? '✓' : noVote ? '–' : index}
+          </span>
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -380,8 +417,175 @@ function AwardCard({ index, award, value, noVote, onChange, players, teams, vote
         placeholder={award.kind === 'team' ? 'Search teams…' : 'Search players…'}
         emptyText={award.kind === 'team' ? 'No teams match.' : 'No players match.'}
       />
+      {award.kind === 'player' && <BrowseByTeam options={options} teams={teams} value={value} onPick={onChange} />}
     </div>
   )
+}
+
+/** Tap-through alternative to type-ahead for people who don't know names:
+ *  team tiles → that team's eligible players → tap fills the dropdown above.
+ *  Built from the award's own options, so finalists / no-self rules hold. */
+function BrowseByTeam({ options, teams, value, onPick }: {
+  options: VoteOption[]
+  teams: TeamsMap
+  value: string
+  onPick: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [teamId, setTeamId] = useState<string | null>(null)
+
+  const groups = useMemo(() => {
+    const byTeam = new Map<string, VoteOption[]>()
+    for (const o of options) byTeam.set(o.teamId, [...(byTeam.get(o.teamId) ?? []), o])
+    return [...byTeam.entries()]
+      .map(([id, opts]) => ({ id, name: teams[id]?.name ?? (opts[0]?.sub || 'Other'), logo: teams[id]?.logoUrl ?? '', color: teams[id]?.primaryColor ?? NAVY, opts }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [options, teams])
+
+  const group = teamId ? groups.find(g => g.id === teamId) : null
+  const close = () => { setOpen(false); setTeamId(null) }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} style={browseLink}>
+        Don't know the name? Browse by team →
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #eef2f7', paddingTop: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+        {group
+          ? <button type="button" onClick={() => setTeamId(null)} style={browseLink}>← All teams</button>
+          : <span style={eyebrow}>Pick a team</span>}
+        <button type="button" onClick={close} style={{ ...browseLink, color: '#64748b' }}>Close</button>
+      </div>
+
+      {!group && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+          {groups.map(g => (
+            <button key={g.id} type="button" onClick={() => setTeamId(g.id)} style={{
+              display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, padding: '8px 10px', textAlign: 'left',
+              borderRadius: 10, border: '1px solid #e5e7eb', borderLeft: `4px solid ${g.color}`, background: '#f8fafc', cursor: 'pointer',
+            }}>
+              {g.logo && <img src={g.logo} alt="" style={{ width: 30, height: 30, objectFit: 'contain', flexShrink: 0 }} />}
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>{g.name}</span>
+                <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: NAVY, marginTop: 2 }}>
+                  Tap to see {g.opts.length === 1 ? 'player' : `${g.opts.length} players`}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {group && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            {group.logo && <img src={group.logo} alt="" style={{ width: 28, height: 28, objectFit: 'contain' }} />}
+            <span style={{ fontFamily: 'var(--font-score)', fontSize: 18, fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{group.name}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {group.opts.map(o => {
+              const picked = o.id === value
+              return (
+                <button key={o.id} type="button" onClick={() => { onPick(o.id); close() }} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 48, padding: '0 14px',
+                  borderRadius: 10, border: `1.5px solid ${picked ? '#16a34a' : '#e5e7eb'}`,
+                  background: picked ? 'rgba(22,163,74,0.08)' : '#ffffff', cursor: 'pointer',
+                  fontSize: 16, fontWeight: 600, color: '#0f172a', textAlign: 'left',
+                }}>
+                  <span>{o.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: picked ? '#16a34a' : NAVY }}>{picked ? '✓ Picked' : 'Pick'}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Deadline countdown ───────────────────────────────────────────────────────
+
+/** Ticks once a second; its own state so the ballot doesn't re-render. */
+function useSecondsLeft(deadline: number, onExpire?: () => void): number {
+  const [left, setLeft] = useState(() => Math.max(0, Math.floor((deadline - Date.now()) / 1000)))
+  useEffect(() => {
+    const id = setInterval(() => {
+      const s = Math.max(0, Math.floor((deadline - Date.now()) / 1000))
+      setLeft(s)
+      if (s === 0) { clearInterval(id); onExpire?.() }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [deadline, onExpire])
+  return left
+}
+
+function countdownParts(secs: number) {
+  return { d: Math.floor(secs / 86400), h: Math.floor(secs / 3600) % 24, m: Math.floor(secs / 60) % 60, s: secs % 60 }
+}
+
+function DeadlineCountdown({ deadline, onExpire }: { deadline: number; onExpire: () => void }) {
+  const left = useSecondsLeft(deadline, onExpire)
+  const { d, h, m, s } = countdownParts(left)
+  // Calm navy → amber in the last day → red (pulsing) in the last hour.
+  const tone = left < 3600 ? { bg: '#b91c1c', fg: '#ffffff', sub: '#fecaca' }
+    : left < 86400 ? { bg: '#b45309', fg: '#ffffff', sub: '#fde68a' }
+    : { bg: NAVY, fg: '#ffffff', sub: '#bfdbfe' }
+  const units: [number, string][] = d > 0 ? [[d, 'days'], [h, 'hrs'], [m, 'min'], [s, 'sec']] : [[h, 'hrs'], [m, 'min'], [s, 'sec']]
+  return (
+    <div
+      role="timer"
+      aria-label={`Voting closes in ${d} days ${h} hours ${m} minutes`}
+      className={left < 3600 ? 'vote-pulse' : undefined}
+      style={{ ...card, background: tone.bg, border: 'none', marginBottom: 14, padding: '14px 16px', color: tone.fg }}
+    >
+      <style>{`@keyframes votePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(185,28,28,.5) } 50% { box-shadow: 0 0 0 8px rgba(185,28,28,0) } }
+        @media (prefers-reduced-motion: no-preference) { .vote-pulse { animation: votePulse 1.6s ease-in-out infinite } }`}</style>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: tone.sub }}>
+          {left < 3600 ? 'Last call! Closes in' : 'Voting closes in'}
+        </span>
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: tone.sub, textAlign: 'right' }}>
+          {left < 86400
+            ? `${new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(deadline)} ET`
+            : formatDeadline(deadline)}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${units.length}, minmax(0, 1fr))`, gap: 8 }}>
+        {units.map(([n, label]) => (
+          <div key={label} style={{ background: 'rgba(0,0,0,0.22)', borderRadius: 10, padding: '8px 0 6px', textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-score)', fontSize: 34, fontWeight: 900, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+              {String(n).padStart(2, '0')}
+            </div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: tone.sub, marginTop: 3 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Compact version for the sticky bottom bar: "⏳ 2d 14h left". */
+function MiniCountdown({ deadline }: { deadline: number }) {
+  const left = useSecondsLeft(deadline)
+  const { d, h, m, s } = countdownParts(left)
+  const text = d > 0 ? `${d}d ${h}h left` : h > 0 ? `${h}h ${m}m left` : `${m}m ${String(s).padStart(2, '0')}s left`
+  return (
+    <div style={{ fontSize: 12, fontWeight: 700, color: left < 3600 ? '#b91c1c' : left < 86400 ? '#b45309' : '#64748b', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+      ⏳ {text}
+    </div>
+  )
+}
+
+function AwardBadge({ award, size }: { award: AwardEntry; size: number }) {
+  const src = awardIcon(award)
+  if (!src) return null
+  return <img src={src} alt="" width={size} height={size} style={{ width: size, height: size, flexShrink: 0, display: 'block' }} />
 }
 
 function PickSummary({ awards, picks, players, teams }: {
@@ -397,6 +601,7 @@ function PickSummary({ awards, picks, players, teams }: {
         const opt = pick ? optionLabel(a, pick, players, teams) : null
         return (
           <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderTop: i ? '1px solid #eef2f7' : 'none' }}>
+            <AwardBadge award={a} size={32} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={eyebrow}>{a.name}</div>
               {opt
@@ -458,6 +663,11 @@ function formatWhen(ms: number): string {
 const card: React.CSSProperties = {
   background: '#ffffff', borderRadius: 14, border: '1px solid #e5e7eb', padding: 16,
   boxShadow: '0 1px 2px rgba(15,23,42,0.04)', boxSizing: 'border-box',
+}
+
+const browseLink: React.CSSProperties = {
+  marginTop: 8, padding: '6px 0', background: 'none', border: 'none', cursor: 'pointer',
+  fontSize: 14, fontWeight: 600, color: NAVY, textDecoration: 'underline', textUnderlineOffset: 3,
 }
 
 const eyebrow: React.CSSProperties = {

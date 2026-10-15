@@ -1,73 +1,122 @@
 {
   "rules": {
-    ".read": true,
     "game": {
+      ".read": true,
       ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
     "overlay": {
+      ".read": true,
       ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
     "games": {
+      ".read": true,
       ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
     "gameStats": {
+      ".read": true,
       ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
     "liveRunners": {
+      ".read": true,
       ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
     "gameSummaries": {
+      ".read": true,
       ".write": "auth != null && auth.token.role === 'admin'"
     },
     "teams": {
+      ".read": true,
       ".write": "auth != null && auth.token.role === 'admin'"
     },
     "players": {
+      ".read": true,
       ".write": "auth != null && auth.token.role === 'admin'"
     },
     "subPlayers": {
+      ".read": true,
       ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
     },
     "config": {
+      ".read": true,
       ".write": "auth != null && auth.token.role === 'admin'"
     },
     "derby": {
+      ".read": true,
       ".write": true
     },
     "postseason": {
-      "meta": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
-      "brackets": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
-      "games": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
-      "gameStats": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
-      "liveRunners": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
-      "gameSummaries": { ".write": "auth != null && auth.token.role === 'admin'" },
-      "players": { ".write": "auth != null && auth.token.role === 'admin'" },
-      "subPlayers": { ".write": "auth != null && auth.token.role === 'admin'" }
+      ".read": true,
+      "meta": {
+        ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+      },
+      "brackets": {
+        ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+      },
+      "games": {
+        ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+      },
+      "gameStats": {
+        ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+      },
+      "liveRunners": {
+        ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')"
+      },
+      "gameSummaries": {
+        ".write": "auth != null && auth.token.role === 'admin'"
+      },
+      "players": {
+        ".write": "auth != null && auth.token.role === 'admin'"
+      },
+      "subPlayers": {
+        ".write": "auth != null && auth.token.role === 'admin'"
+      }
     },
     "voting": {
+      ".read": "auth != null && auth.token.role === 'admin'",
       ".write": "auth != null && auth.token.role === 'admin'",
       "ballots": {
         "$playerId": {
-          ".write": "!data.exists() && newData.exists() && root.child('voting/meta/open').val() === true && root.child('voting/voters/' + newData.child('token').val() + '/playerId').val() === $playerId && !root.child('voting/excluded/' + $playerId).exists()",
+          ".write": "!data.exists() && newData.exists() && root.child('voting/meta/open').val() === true && (!root.child('voting/meta/closesAt').exists() || now < root.child('voting/meta/closesAt').val()) && root.child('voting/voters/' + newData.child('token').val() + '/playerId').val() === $playerId && !root.child('voting/excluded/' + $playerId).exists()",
           ".validate": "newData.hasChildren(['token', 'picks', 'submittedAt'])",
-          "token": { ".validate": "newData.isString()" },
-          "submittedAt": { ".validate": "newData.isNumber() && (newData.val() === now || (auth != null && auth.token.role === 'admin'))" },
-          "editedAt": { ".validate": "newData.isNumber() && auth != null && auth.token.role === 'admin'" },
+          "token": {
+            ".validate": "newData.isString()"
+          },
+          "submittedAt": {
+            ".validate": "newData.isNumber() && (newData.val() === now || (auth != null && auth.token.role === 'admin'))"
+          },
+          "editedAt": {
+            ".validate": "newData.isNumber() && auth != null && auth.token.role === 'admin'"
+          },
           "picks": {
             "$awardId": {
               ".validate": "newData.isString() && root.child('voting/awards/' + $awardId + '/name').exists() && (!root.child('voting/awards/' + $awardId + '/candidates').exists() || root.child('voting/awards/' + $awardId + '/candidates/' + newData.val()).val() === true) && ((root.child('voting/awards/' + $awardId + '/kind').val() === 'player' && root.child('players/' + newData.val() + '/name').exists() && !root.child('voting/excluded/' + newData.val()).exists() && newData.val() !== $playerId) || (root.child('voting/awards/' + $awardId + '/kind').val() === 'team' && root.child('teams/' + newData.val() + '/name').exists() && root.child('teams/' + newData.val() + '/isExhibition').val() !== true && newData.val() !== root.child('players/' + $playerId + '/teamId').val()))"
             }
           },
-          "$other": { ".validate": false }
+          "$other": {
+            ".validate": false
+          }
         }
       },
       "voters": {
         "$token": {
+          ".read": true,
           "votedAt": {
-            ".write": "!data.exists() && root.child('voting/meta/open').val() === true && newData.parent().parent().parent().child('ballots/' + root.child('voting/voters/' + $token + '/playerId').val() + '/token').val() === $token",
+            ".write": "!data.exists() && root.child('voting/meta/open').val() === true && (!root.child('voting/meta/closesAt').exists() || now < root.child('voting/meta/closesAt').val()) && newData.parent().parent().parent().child('ballots/' + root.child('voting/voters/' + $token + '/playerId').val() + '/token').val() === $token",
             ".validate": "newData.isNumber() && (newData.val() === now || (auth != null && auth.token.role === 'admin'))"
           }
         }
+      },
+      "meta": {
+        ".read": true,
+        "closesAt": {
+          ".validate": "newData.isNumber()"
+        }
+      },
+      "awards": {
+        ".read": true
+      },
+      "excluded": {
+        ".read": true
       }
     }
   }

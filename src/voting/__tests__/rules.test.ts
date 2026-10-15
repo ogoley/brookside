@@ -87,6 +87,45 @@ describe.skipIf(!HOST)('voting rules (emulator)', () => {
 
   afterAll(async () => { await Promise.all(apps.map(a => deleteApp(a))) })
 
+  describe('reads: ballots and the link list are private', () => {
+    it('anonymous cannot read ballots or list the links', async () => {
+      await vote(admin, 'tok-alice', 'alice', { mvp: 'cara' })
+      await expect(get(ref(anon, 'voting/ballots'))).rejects.toThrow()
+      await expect(get(ref(anon, 'voting/ballots/alice'))).rejects.toThrow()
+      await expect(get(ref(anon, 'voting/voters'))).rejects.toThrow()
+      await expect(get(ref(anon, 'voting'))).rejects.toThrow()
+      await expect(get(ref(anon))).rejects.toThrow()
+    })
+
+    it('scorers cannot read ballots either', async () => {
+      await expect(get(ref(scorer, 'voting/ballots'))).rejects.toThrow()
+      await expect(get(ref(scorer, 'voting/voters'))).rejects.toThrow()
+    })
+
+    it('a link holder can read exactly their own link record (what the ballot page needs)', async () => {
+      const snap = await get(ref(anon, 'voting/voters/tok-alice'))
+      expect(snap.val()).toMatchObject({ playerId: 'alice' })
+      expect((await get(ref(anon, 'voting/voters/tok-nope'))).exists()).toBe(false)
+    })
+
+    it('the ballot page\'s other reads stay public', async () => {
+      for (const path of ['voting/meta', 'voting/awards', 'voting/excluded']) {
+        await expect(get(ref(anon, path))).resolves.toBeTruthy()
+      }
+    })
+
+    it.each(['game', 'overlay', 'games', 'gameStats', 'liveRunners', 'gameSummaries', 'teams', 'players', 'subPlayers', 'config', 'derby', 'postseason'])(
+      'public data stays readable anonymously: /%s', async (path) => {
+        await expect(get(ref(anon, path))).resolves.toBeTruthy()
+      })
+
+    it('admins can read everything under /voting', async () => {
+      await vote(admin, 'tok-alice', 'alice', { mvp: 'cara' })
+      expect((await get(ref(admin, 'voting/ballots/alice'))).exists()).toBe(true)
+      expect(Object.keys((await get(ref(admin, 'voting/voters'))).val())).toHaveLength(3)
+    })
+  })
+
   describe('an anonymous visitor cannot touch anything else', () => {
     it.each([
       ['game/meta/homeScore', 99],
@@ -116,6 +155,24 @@ describe.skipIf(!HOST)('voting rules (emulator)', () => {
       const snap = await get(ref(admin, 'voting'))
       expect(snap.child('ballots/alice/picks').val()).toEqual({ mvp: 'cara', team: 'blue', rookie: 'cara' })
       expect(typeof snap.child('voters/tok-alice/votedAt').val()).toBe('number')
+    })
+
+    it('accepts a ballot before the deadline', async () => {
+      await set(ref(admin, 'voting/meta/closesAt'), Date.now() + 60 * 60 * 1000)
+      await expect(vote(anon, 'tok-alice', 'alice', { mvp: 'cara' })).resolves.toBeUndefined()
+    })
+
+    it('rejects a ballot after the deadline even though voting was left open', async () => {
+      await set(ref(admin, 'voting/meta/closesAt'), Date.now() - 1000)
+      await expect(vote(anon, 'tok-alice', 'alice', { mvp: 'cara' })).rejects.toThrow()
+      expect((await get(ref(admin, 'voting/ballots/alice'))).exists()).toBe(false)
+      expect((await get(ref(admin, 'voting/voters/tok-alice/votedAt'))).exists()).toBe(false)
+    })
+
+    it('only admins can set the deadline, and it must be a number', async () => {
+      await expect(set(ref(anon, 'voting/meta/closesAt'), Date.now() + 1e9)).rejects.toThrow()
+      await expect(set(ref(scorer, 'voting/meta/closesAt'), Date.now() + 1e9)).rejects.toThrow()
+      await expect(set(ref(admin, 'voting/meta/closesAt'), 'sunday')).rejects.toThrow()
     })
 
     it('allows skipping awards (any non-empty subset)', async () => {

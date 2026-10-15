@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Hitter of the Year">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#065f46"/>
+      <stop offset="1" stop-color="#022c22"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#rim)"/>
+  <circle cx="64" cy="64" r="55" fill="url(#face)"/>
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="1.5"/>
+  <ellipse cx="64" cy="34" rx="40" ry="18" fill="#fff" opacity="0.10"/>
+  <g stroke-linecap="round">
+    <line x1="34" y1="96" x2="90" y2="34" stroke="#fde68a" stroke-width="9"/>
+    <line x1="34" y1="96" x2="44" y2="85" stroke="#78350f" stroke-width="7"/>
+    <line x1="94" y1="96" x2="38" y2="34" stroke="#fef3c7" stroke-width="9"/>
+    <line x1="94" y1="96" x2="84" y2="85" stroke="#78350f" stroke-width="7"/>
+  </g>
+  <circle cx="64" cy="40" r="11" fill="#fff" stroke="#d1d5db" stroke-width="1.5"/>
+  <path d="M57 33 Q61 40 57 47 M71 33 Q67 40 71 47" fill="none" stroke="#dc2626" stroke-width="1.6"/>
+</svg>

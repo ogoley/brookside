@@ -4,15 +4,16 @@
  * Usage:  node scripts/exportSeason.mjs [label]      (label defaults to "<year>-regular-season")
  *
  * Writes ./backups/season-<label>/ containing:
- *   full-database.json  — every root, verbatim (includes /voting tokens — keep private)
+ *   full-database.json  — every public root, verbatim (not /voting: links and ballots are admin-only)
  *   hitting.csv         — /players/{id}/stats/hitting, one row per player
  *   pitching.csv        — /players/{id}/stats/pitching, one row per player
  *   standings.csv       — W/L/T, runs for/against from finalized non-exhibition games
  *   games.csv           — every game record (date, teams, score, finalized, flags)
  *   teams.csv           — team ids → names
  *
- * The database is publicly readable, so this uses the REST API and needs no
- * credentials. Nothing is written back to Firebase.
+ * The league data is publicly readable, so this uses the REST API and needs no
+ * credentials. /voting is admin-only and is not included. Nothing is written
+ * back to Firebase.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
@@ -29,9 +30,15 @@ const label = process.argv[2] ?? `${new Date().getFullYear()}-regular-season`
 const outDir = new URL(`../backups/season-${label}/`, import.meta.url)
 mkdirSync(outDir, { recursive: true })
 
-const res = await fetch(`${DB}/.json`)
-if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
-const root = await res.json()
+// The root itself isn't readable anonymously — fetch each public path.
+const PUBLIC_ROOTS = ['game', 'overlay', 'games', 'gameStats', 'liveRunners', 'gameSummaries', 'teams', 'players', 'subPlayers', 'config', 'derby', 'postseason']
+const root = {}
+for (const path of PUBLIC_ROOTS) {
+  const res = await fetch(`${DB}/${path}.json`)
+  if (!res.ok) throw new Error(`Fetch /${path} failed: ${res.status}`)
+  const val = await res.json()
+  if (val !== null) root[path] = val
+}
 const players = root.players ?? {}
 const teams = root.teams ?? {}
 const games = root.games ?? {}

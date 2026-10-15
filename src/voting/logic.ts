@@ -17,12 +17,64 @@ export function voteLink(token: string, base = VOTE_LINK_BASE): string {
   return `${base}/vote/${token}`
 }
 
+// ── Deadline ─────────────────────────────────────────────────────────────────
+
+/** 2026 deadline: first pitch of semifinal game one, Sun Oct 18, 11:00 AM Eastern. */
+export const VOTING_DEADLINE_2026 = Date.parse('2026-10-18T11:00:00-04:00')
+
+/** Whether a ballot would be accepted right now. Mirrors the database rule
+ *  (which uses server time, so this is only the UI's best guess). */
+export function votingAccepting(meta: { open?: boolean; closesAt?: number } | null | undefined, now: number): boolean {
+  return !!meta?.open && (meta.closesAt == null || now < meta.closesAt)
+}
+
+/** "Sunday, Oct 18 at 11:00 AM ET" */
+export function formatDeadline(ms: number): string {
+  const tz = 'America/New_York'
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long', month: 'short', day: 'numeric' }).format(ms)
+  const time = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(ms)
+  return `${day} at ${time} ET`
+}
+
+/** Eastern wall-clock "YYYY-MM-DDTHH:MM" (a datetime-local value) → epoch ms,
+ *  handling EDT/EST. Returns null for a malformed value. */
+export function easternLocalToEpoch(local: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) return null
+  for (const offset of ['-04:00', '-05:00']) {
+    const ms = Date.parse(`${local}:00${offset}`)
+    if (epochToEasternLocal(ms) === local) return ms
+  }
+  return null
+}
+
+/** epoch ms → Eastern wall-clock "YYYY-MM-DDTHH:MM" (for a datetime-local input). */
+export function epochToEasternLocal(ms: number): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(ms)
+  const g = (t: string) => parts.find(p => p.type === t)?.value ?? ''
+  return `${g('year')}-${g('month')}-${g('day')}T${g('hour')}:${g('minute')}`
+}
+
+// 2026 ballot as agreed by the commissioners (2026-10-14). Rookie, Best Value
+// Pick and Best Ump need a finalists list (`candidates`) set in /vote-admin.
 export const STARTER_AWARDS: AwardsMap = {
   mvp:                { name: 'Most Valuable Player', kind: 'player', order: 1, description: 'The player who meant the most to their team this season' },
   cy_young:           { name: 'Cy Young',             kind: 'player', order: 2, description: 'Best pitcher in the league' },
   hitter_of_the_year: { name: 'Hitter of the Year',   kind: 'player', order: 3, description: 'Best bat in the league' },
-  rookie_of_the_year: { name: 'Rookie of the Year',   kind: 'player', order: 4, description: 'Best first-year player' },
-  best_captain:       { name: 'Best Captain',         kind: 'player', order: 5, description: 'Best team captain' },
+  gold_glove:         { name: 'Gold Glove',           kind: 'player', order: 4, description: 'Best fielder in the league' },
+  rookie_of_the_year: { name: 'Rookie of the Year',   kind: 'player', order: 5, description: 'Best first-year player' },
+  best_value_pick:    { name: 'Best Value Pick',      kind: 'player', order: 6, description: 'Best player compared to where they were drafted' },
+  best_ump:           { name: 'Best Ump',             kind: 'player', order: 7, description: 'Best umpire of the season' },
+  papa_fushuego:      { name: 'Papa Fushuego Award',  kind: 'player', order: 8, description: 'Fun, energy, promoting the league, and all-around good vibes' },
+}
+
+/** Award ids with a bundled badge in public/awards/{id}.svg */
+const BUNDLED_ICONS = new Set(['mvp', 'cy_young', 'hitter_of_the_year', 'gold_glove', 'rookie_of_the_year', 'best_value_pick', 'best_ump', 'papa_fushuego'])
+
+/** Badge for an award: its own `icon`, else the bundled one for known ids, else null. */
+export function awardIcon(award: { id: string; icon?: string }): string | null {
+  return award.icon ?? (BUNDLED_ICONS.has(award.id) ? `/awards/${award.id}.svg` : null)
 }
 
 // ── Awards ───────────────────────────────────────────────────────────────────
@@ -66,17 +118,18 @@ export interface VoteOption {
   name: string
   sub: string     // team name for players, short name for teams
   logo: string
+  teamId: string  // the player's team (players) or the team itself (teams) — groups "browse by team"
 }
 
 export function playerOption(id: string, players: PlayersMap, teams: TeamsMap): VoteOption {
   const p = players[id]
   const team = p ? teams[p.teamId] : undefined
-  return { id, name: p?.name ?? id, sub: team?.name ?? '', logo: team?.logoUrl ?? '' }
+  return { id, name: p?.name ?? id, sub: team?.name ?? '', logo: team?.logoUrl ?? '', teamId: p?.teamId ?? '' }
 }
 
 export function teamOption(id: string, teams: TeamsMap): VoteOption {
   const t = teams[id]
-  return { id, name: t?.name ?? id, sub: t?.shortName ?? '', logo: t?.logoUrl ?? '' }
+  return { id, name: t?.name ?? id, sub: t?.shortName ?? '', logo: t?.logoUrl ?? '', teamId: id }
 }
 
 export function optionLabel(award: Award, id: string, players: PlayersMap, teams: TeamsMap): VoteOption {
@@ -175,9 +228,40 @@ export function newVoterUpdates(
   return updates
 }
 
-export function inviteMessage(name: string, link: string, title = DEFAULT_VOTING_TITLE): string {
+/** Writes that replace EVERY link for the given players with a fresh one
+ *  (old links stop working). A player who already has a ballot keeps
+ *  "already voted" on the new link. */
+export function reissueAllUpdates(
+  voters: VotersMap,
+  playerIds: string[],
+  ballots: Record<string, { submittedAt: number }>,
+  makeToken: () => string,
+  now: number,
+): Record<string, unknown> {
+  const wanted = new Set(playerIds)
+  const updates: Record<string, unknown> = {}
+  for (const [token, v] of Object.entries(voters)) {
+    if (v?.playerId && wanted.has(v.playerId)) updates[`voting/voters/${token}`] = null
+  }
+  for (const playerId of playerIds) {
+    const fresh: Record<string, unknown> = { playerId, createdAt: now }
+    if (ballots[playerId]) fresh.votedAt = ballots[playerId].submittedAt
+    updates[`voting/voters/${makeToken()}`] = fresh
+  }
+  return updates
+}
+
+/** The per-player Spond DM. Keep in sync with scripts/voteLinks.mjs. */
+export function inviteMessage(name: string, link: string, title = DEFAULT_VOTING_TITLE, closesAt?: number | null): string {
   const first = name.trim().split(/\s+/)[0] || name
-  return `Hey ${first}! ${title} voting is open. Here's your personal ballot — the link is yours alone, please don't share it: ${link}`
+  return [
+    `Hey ${first}! 🏆 ${title} voting is open.`,
+    `This is your own personal ballot. The link only works for you, so please don't share it:`,
+    link,
+    ...(closesAt != null ? [`⏰ Voting closes ${formatDeadline(closesAt)}. After that, the link stops taking votes.`] : []),
+    `It's 8 awards and takes a couple of minutes on your phone. We strongly encourage everyone to vote on every award you have a preference on. Skip any you don't. You can't vote for yourself, and once you submit, your ballot is final.`,
+    `Thanks for a great season!`,
+  ].join('\n\n')
 }
 
 function csvCell(v: string): string {

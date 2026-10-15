@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Best Ump">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#334155"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#rim)"/>
+  <circle cx="64" cy="64" r="55" fill="url(#face)"/>
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="1.5"/>
+  <ellipse cx="64" cy="34" rx="40" ry="18" fill="#fff" opacity="0.10"/>
+  <path d="M38 48 C38 32 90 32 90 48 L90 78 C90 92 78 100 64 100 C50 100 38 92 38 78 Z" fill="#1e293b" stroke="#e2e8f0" stroke-width="3"/>
+  <g stroke="#e2e8f0" stroke-width="3.5" stroke-linecap="round">
+    <line x1="44" y1="58" x2="84" y2="58"/><line x1="44" y1="72" x2="84" y2="72"/><line x1="48" y1="86" x2="80" y2="86"/>
+    <line x1="56" y1="44" x2="56" y2="98"/><line x1="72" y1="44" x2="72" y2="98"/>
+  </g>
+  <rect x="36" y="44" width="56" height="8" rx="4" fill="#f87171" stroke="#7f1d1d" stroke-width="1.5"/>
+</svg>

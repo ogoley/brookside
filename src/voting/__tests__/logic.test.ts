@@ -4,6 +4,7 @@ import {
   voteLink, sortedAwards, rosterPlayerIds, ballotTeamIds, optionsForAward, cleanPicks,
   buildBallotUpdates, linksByPlayer, newVoterUpdates, linksCsv, inviteMessage,
   turnoutByTeam, tallyAward,
+  VOTING_DEADLINE_2026, votingAccepting, formatDeadline, easternLocalToEpoch, epochToEasternLocal, reissueAllUpdates,
 } from '../logic'
 
 const PLAYERS = {
@@ -64,8 +65,13 @@ describe('optionsForAward', () => {
     expect(optionsForAward(AWARDS.mvp, PLAYERS, TEAMS, 'alice').map(o => o.id)).toEqual(['bob', 'cara'])
   })
 
-  it('player award carries team name + logo for the dropdown', () => {
-    expect(optionsForAward(AWARDS.mvp, PLAYERS, TEAMS, null)[0]).toEqual({ id: 'alice', name: 'Alice A', sub: 'Red', logo: '/r.svg' })
+  it('player award carries team name + logo (dropdown) and team id (browse by team)', () => {
+    expect(optionsForAward(AWARDS.mvp, PLAYERS, TEAMS, null)[0]).toEqual({ id: 'alice', name: 'Alice A', sub: 'Red', logo: '/r.svg', teamId: 'red' })
+  })
+
+  it('browse-by-team groups only eligible players: finalists, minus the voter', () => {
+    const teamsShown = new Set(optionsForAward(AWARDS.rookie, PLAYERS, TEAMS, 'bob').map(o => o.teamId))
+    expect([...teamsShown]).toEqual(['blue'])
   })
 
   it('restricted award: only candidates, still minus the voter', () => {
@@ -115,9 +121,13 @@ describe('links', () => {
     })
   })
 
-  it('invite message uses the first name and includes the link', () => {
-    expect(inviteMessage('Adam Sapowsky', 'https://x/vote/t', '2026 Season Awards'))
-      .toBe("Hey Adam! 2026 Season Awards voting is open. Here's your personal ballot — the link is yours alone, please don't share it: https://x/vote/t")
+  it('invite message: first name, the link on its own line, the deadline, and the nudge to vote', () => {
+    const msg = inviteMessage('Adam Sapowsky', 'https://x/vote/t', '2026 Season Awards', VOTING_DEADLINE_2026)
+    expect(msg.startsWith('Hey Adam! 🏆 2026 Season Awards voting is open.')).toBe(true)
+    expect(msg.split('\n')).toContain('https://x/vote/t')
+    expect(msg).toContain('Voting closes Sunday, Oct 18 at 11:00 AM ET')
+    expect(msg).toContain('strongly encourage')
+    expect(inviteMessage('Adam Sapowsky', 'https://x/vote/t')).not.toContain('closes')
   })
 
   it('csv quotes cells with commas/quotes', () => {
@@ -157,5 +167,47 @@ describe('tallyAward', () => {
       ],
     })
     expect(tallyAward('rookie', ballots)).toEqual({ counted: 0, rows: [] })
+  })
+})
+
+describe('voting deadline', () => {
+  it('2026 deadline is Sun Oct 18, 11:00 AM Eastern (15:00 UTC, daylight time)', () => {
+    expect(new Date(VOTING_DEADLINE_2026).toISOString()).toBe('2026-10-18T15:00:00.000Z')
+    expect(formatDeadline(VOTING_DEADLINE_2026)).toBe('Sunday, Oct 18 at 11:00 AM ET')
+  })
+
+  it('accepts only while open AND before the deadline', () => {
+    const t = VOTING_DEADLINE_2026
+    expect(votingAccepting({ open: true, closesAt: t }, t - 1)).toBe(true)
+    expect(votingAccepting({ open: true, closesAt: t }, t)).toBe(false)
+    expect(votingAccepting({ open: false, closesAt: t }, t - 1)).toBe(false)
+    expect(votingAccepting({ open: true }, t + 1e9)).toBe(true)
+    expect(votingAccepting(null, 0)).toBe(false)
+  })
+
+  it('round-trips Eastern wall-clock times through datetime-local values (EDT and EST)', () => {
+    expect(easternLocalToEpoch('2026-10-18T11:00')).toBe(VOTING_DEADLINE_2026)
+    expect(epochToEasternLocal(VOTING_DEADLINE_2026)).toBe('2026-10-18T11:00')
+    expect(easternLocalToEpoch('2026-12-01T09:30')).toBe(Date.parse('2026-12-01T14:30:00Z'))
+    expect(easternLocalToEpoch('nope')).toBeNull()
+  })
+})
+
+describe('reissueAllUpdates', () => {
+  it('deletes every old link for the players and mints one fresh link each, keeping voted status', () => {
+    let n = 0
+    const u = reissueAllUpdates(
+      { old1: { playerId: 'alice', createdAt: 1 }, old2: { playerId: 'alice', createdAt: 2 }, old3: { playerId: 'bob', createdAt: 1 }, keep: { playerId: 'gone', createdAt: 1 } },
+      ['alice', 'bob'],
+      { bob: { submittedAt: 99 } },
+      () => `new${++n}`,
+      500,
+    )
+    expect(u['voting/voters/old1']).toBeNull()
+    expect(u['voting/voters/old2']).toBeNull()
+    expect(u['voting/voters/old3']).toBeNull()
+    expect(u).not.toHaveProperty('voting/voters/keep')
+    expect(u['voting/voters/new1']).toEqual({ playerId: 'alice', createdAt: 500 })
+    expect(u['voting/voters/new2']).toEqual({ playerId: 'bob', createdAt: 500, votedAt: 99 })
   })
 })

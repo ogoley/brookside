@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Gold Glove">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2937"/>
+      <stop offset="1" stop-color="#030712"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#rim)"/>
+  <circle cx="64" cy="64" r="55" fill="url(#face)"/>
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="1.5"/>
+  <ellipse cx="64" cy="34" rx="40" ry="18" fill="#fff" opacity="0.10"/>
+  <!-- web between thumb and index -->
+  <path d="M38 52 L52 40 L56 66 L44 72 Z" fill="#d97706" stroke="#78350f" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M41 55 L53 47 M42 61 L54 54 M43 67 L55 61" stroke="#78350f" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- fingers -->
+  <rect x="50" y="26" width="13" height="40" rx="6.5" fill="#fbbf24" stroke="#78350f" stroke-width="2.2"/>
+  <rect x="61" y="24" width="13" height="42" rx="6.5" fill="#fbbf24" stroke="#78350f" stroke-width="2.2"/>
+  <rect x="72" y="28" width="13" height="40" rx="6.5" fill="#fbbf24" stroke="#78350f" stroke-width="2.2"/>
+  <rect x="82" y="36" width="12" height="34" rx="6" fill="#fbbf24" stroke="#78350f" stroke-width="2.2"/>
+  <!-- palm / pocket -->
+  <path d="M44 64 C44 56 94 56 94 64 C94 84 84 96 68 96 C54 96 44 86 44 74 Z" fill="#fbbf24" stroke="#78350f" stroke-width="2.4" stroke-linejoin="round"/>
+  <!-- thumb -->
+  <rect x="28" y="56" width="14" height="34" rx="7" transform="rotate(-28 35 73)" fill="#fbbf24" stroke="#78350f" stroke-width="2.2"/>
+  <!-- finger shine -->
+  <path d="M56 30 L56 60 M67 28 L67 60 M78 32 L78 62" stroke="#fde68a" stroke-width="1.4" stroke-linecap="round" opacity="0.8"/>
+  <!-- wrist band -->
+  <rect x="54" y="94" width="30" height="8" rx="3" fill="#92400e" stroke="#78350f" stroke-width="1.5"/>
+</svg>

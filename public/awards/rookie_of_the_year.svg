@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Rookie of the Year">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e7490"/>
+      <stop offset="1" stop-color="#083344"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#rim)"/>
+  <circle cx="64" cy="64" r="55" fill="url(#face)"/>
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="1.5"/>
+  <ellipse cx="64" cy="34" rx="40" ry="18" fill="#fff" opacity="0.10"/>
+  <path d="M64 98 L64 62" stroke="#86efac" stroke-width="6" stroke-linecap="round"/>
+  <path d="M64 76 C50 76 40 68 38 54 C52 54 62 62 64 76 Z" fill="#4ade80" stroke="#166534" stroke-width="2"/>
+  <path d="M64 70 C78 70 88 62 90 48 C76 48 66 56 64 70 Z" fill="#22c55e" stroke="#166534" stroke-width="2"/>
+  <path d="M64 30 L67.5 38 L76 38.8 L69.6 44.4 L71.5 52.8 L64 48.4 L56.5 52.8 L58.4 44.4 L52 38.8 L60.5 38 Z" fill="#fde047" stroke="#b45309" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M46 100 Q64 94 82 100" stroke="#a16207" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Papa Fushuego Award">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#7c2d12"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#rim)"/>
+  <circle cx="64" cy="64" r="55" fill="url(#face)"/>
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="1.5"/>
+  <ellipse cx="64" cy="34" rx="40" ry="18" fill="#fff" opacity="0.10"/>
+  <path d="M64 24 C70 40 90 48 88 72 C87 90 76 100 64 100 C52 100 41 90 40 74 C39 58 50 52 52 40 C58 48 58 56 62 58 C62 46 60 34 64 24 Z" fill="#fde047" stroke="#b45309" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M64 50 C68 60 78 66 77 80 C76 90 70 96 64 96 C58 96 51 90 51 81 C51 72 58 68 59 60 C61 64 63 66 65 66 C65 60 63 56 64 50 Z" fill="#f97316"/>
+  <path d="M46 72 L82 72 L80 80 C79 84 72 84 70 80 L68 76 L60 76 L58 80 C56 84 49 84 48 80 Z" fill="#111827"/>
+  <path d="M51 76 L55 76" stroke="#fff" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/>
+  <path d="M56 89 Q64 94 72 89" fill="none" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+</svg>

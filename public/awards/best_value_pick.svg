@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Best Value Pick">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6d28d9"/>
+      <stop offset="1" stop-color="#2e1065"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#92400e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#rim)"/>
+  <circle cx="64" cy="64" r="55" fill="url(#face)"/>
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="1.5"/>
+  <ellipse cx="64" cy="34" rx="40" ry="18" fill="#fff" opacity="0.10"/>
+  <path d="M40 50 L52 36 L76 36 L88 50 L64 96 Z" fill="#67e8f9" stroke="#0e7490" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M40 50 L88 50 M52 36 L58 50 L64 96 L70 50 L76 36 M58 50 L64 36 L70 50" fill="none" stroke="#0e7490" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M44 50 L58 50 L64 92 Z" fill="#fff" opacity="0.35"/>
+  <path d="M94 30 L96 36 L102 38 L96 40 L94 46 L92 40 L86 38 L92 36 Z" fill="#fff"/>
+</svg>

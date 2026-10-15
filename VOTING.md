@@ -67,6 +67,22 @@ Suggested next session: steps 1 and 5 — neither depends on the award decisions
 
 ---
 
+## Decisions made (2026-10-14) — final ballot
+
+- **8 awards:** MVP, Cy Young, Hitter of the Year, Gold Glove, Rookie of the Year, Best Value
+  Pick, Best Ump, **Papa Fushuego Award** (fun, energy, promoting the league, good vibes).
+  Best Captain dropped; Clutch / Nastiest Pitch / Most Improved / team awards not used.
+- **Finalists** (from the commissioners' shared checklist): Rookie 20, Value Pick 22, Ump 20.
+  Encoded in `src/voting/ballot2026.ts`; `/vote-admin` → Awards → **"Apply 2026 ballot"**
+  writes all 8 awards + finalists in one click (replaces the whole list).
+- **Deadline: Sun Oct 18, 2026, 11:00 AM ET** (first pitch of semifinal game one).
+  `voting/meta/closesAt`, enforced in the database rules with server time — a late ballot is
+  rejected even if voting is left open. Set in `/vote-admin` (one-tap button or ET picker).
+- **Partial ballots are fine** — at least one pick; the invite and ballot copy encourage
+  voting on every award you have a preference on.
+- Ballot additions: award badges (`public/awards/*.svg`), "Browse by team" tap-through picker
+  (respects finalists / no-self), live countdown (navy → amber last day → red last hour).
+
 ## Decisions made (2026-10-06)
 
 - **One private link per player** (`https://www.ogoley.com/vote/<uuid>`). The link is the

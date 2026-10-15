@@ -105,8 +105,19 @@ const rows = eligible
     const l = linkFor.get(id)
     const link = l ? `${VOTE_LINK_BASE}/vote/${l.token}` : ''
     const first = p.name.trim().split(/\s+/)[0]
+    const closesAt = voting.meta?.closesAt
+    const deadline = closesAt
+      ? `${new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'short', day: 'numeric' }).format(closesAt)} at ${new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(closesAt)} ET`
+      : null
     const message = link
-      ? `Hey ${first}! ${title} voting is open. Here's your personal ballot — the link is yours alone, please don't share it: ${link}`
+      ? [
+          `Hey ${first}! 🏆 ${title} voting is open.`,
+          `This is your own personal ballot. The link only works for you, so please don't share it:`,
+          link,
+          ...(deadline ? [`⏰ Voting closes ${deadline}. After that, the link stops taking votes.`] : []),
+          `It's 8 awards and takes a couple of minutes on your phone. We strongly encourage everyone to vote on every award you have a preference on. Skip any you don't. You can't vote for yourself, and once you submit, your ballot is final.`,
+          `Thanks for a great season!`,
+        ].join('\n\n')
       : ''
     return [team, p.name, id, SPOND_GROUP[p.teamId] ?? team, SPOND_NAME[id] ?? p.name, link, voting.ballots?.[id] ? 'yes' : 'no', message]
   })

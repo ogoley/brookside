@@ -6,12 +6,14 @@ import { HomeButton } from '../components/HomeButton'
 import { AuthStatus } from '../components/AuthStatus'
 import { SearchSelect } from '../components/SearchSelect'
 import { useVoting } from '../hooks/useVoting'
+import { BALLOT_2026 } from '../voting/ballot2026'
 import { usePlayers } from '../hooks/usePlayers'
 import { useTeams } from '../hooks/useTeams'
 import {
   sortedAwards, rosterPlayerIds, optionsForAward, optionLabel, cleanPicks, candidateIds,
   linksByPlayer, newVoterUpdates, voteLink, inviteMessage, linksCsv, turnoutByTeam, tallyAward,
   playerOption, teamOption, ballotTeamIds, STARTER_AWARDS, DEFAULT_VOTING_TITLE,
+  VOTING_DEADLINE_2026, formatDeadline, easternLocalToEpoch, epochToEasternLocal, reissueAllUpdates,
   type AwardEntry, type TeamTurnout, type VoterLink,
 } from '../voting/logic'
 import type { Award, AwardKind, PlayersMap, TeamsMap, VotingExcluded, VotingState } from '../types'
@@ -120,7 +122,21 @@ function StatusPanel({ voting, voted, linked, total, awardCount }: {
   voting: VotingState; voted: number; linked: number; total: number; awardCount: number
 }) {
   const open = voting.meta.open
+  const closesAt = voting.meta.closesAt ?? null
+  const [now] = useState(() => Date.now())
+  const pastDeadline = closesAt != null && now >= closesAt
   const [title, setTitle] = useState<string | null>(null)
+  const [deadlineDraft, setDeadlineDraft] = useState<string | null>(null)
+
+  const setDeadline = async (ms: number | null) => {
+    await set(ref(db, 'voting/meta/closesAt'), ms)
+    setDeadlineDraft(null)
+  }
+  const saveDeadlineDraft = async () => {
+    if (deadlineDraft === null) return
+    const ms = easternLocalToEpoch(deadlineDraft)
+    if (ms != null) await setDeadline(ms)
+  }
   const savedTitle = voting.meta.title || DEFAULT_VOTING_TITLE
 
   const toggle = async () => {
@@ -155,7 +171,7 @@ function StatusPanel({ voting, voted, linked, total, awardCount }: {
           title={open ? 'Click to close voting' : 'Click to open voting'}
         >
           <span style={{ width: 12, height: 12, borderRadius: 6, background: open ? '#22c55e' : '#6b7280', boxShadow: open ? '0 0 10px #22c55e' : 'none' }} />
-          {open ? 'Voting open' : 'Voting closed'}
+          {open ? (pastDeadline ? 'Deadline passed' : 'Voting open') : 'Voting closed'}
           <span className="text-xs font-semibold normal-case tracking-normal" style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-ui)' }}>
             {open ? 'click to close' : 'click to open'}
           </span>
@@ -181,6 +197,36 @@ function StatusPanel({ voting, voted, linked, total, awardCount }: {
         >
           Preview ballot ↗
         </a>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-white/40 text-xs uppercase tracking-widest shrink-0" style={label}>Deadline (ET)</span>
+        <input
+          type="datetime-local"
+          value={deadlineDraft ?? (closesAt != null ? epochToEasternLocal(closesAt) : '')}
+          onChange={e => setDeadlineDraft(e.target.value)}
+          onBlur={saveDeadlineDraft}
+          className="h-9 rounded-lg px-3 text-sm"
+          style={{ ...inputStyle, colorScheme: 'dark' }}
+          aria-label="Voting deadline, Eastern time"
+        />
+        {closesAt !== VOTING_DEADLINE_2026 && (
+          <button onClick={() => setDeadline(VOTING_DEADLINE_2026)} className="h-9 px-3 rounded-lg text-xs font-semibold" style={ghostBtn}>
+            Set to Sun Oct 18, 11 AM
+          </button>
+        )}
+        {closesAt != null && (
+          <button onClick={() => setDeadline(null)} className="h-9 px-3 rounded-lg text-xs font-semibold" style={ghostBtn}>
+            Remove deadline
+          </button>
+        )}
+        <span className="text-xs" style={{ color: pastDeadline ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
+          {closesAt == null
+            ? 'No deadline: voting stays open until you close it.'
+            : pastDeadline
+              ? `Closed automatically ${formatDeadline(closesAt)}. Late ballots are rejected.`
+              : `Ballots are rejected after ${formatDeadline(closesAt)}, even if voting is left open.`}
+        </span>
       </div>
 
       <div className="flex items-center gap-2">
@@ -486,6 +532,13 @@ function LinksTab({ ctx }: { ctx: Ctx }) {
     await update(ref(db), updates)
   }
 
+  const reissueAll = async () => {
+    const ids = turnout.flatMap(t => t.players.map(p => p.playerId))
+    if (!window.confirm(`Reissue links for all ${ids.length} players? Every old link stops working immediately. Only do this before sending links out.`)) return
+    setBusy(true)
+    try { await update(ref(db), reissueAllUpdates(voting.voters, ids, voting.ballots, () => crypto.randomUUID(), Date.now())) } finally { setBusy(false) }
+  }
+
   const revoke = async (playerId: string) => {
     const name = players[playerId]?.name ?? playerId
     if (!window.confirm(`Revoke ${name}'s link? It stops working; a ballot they already cast is kept.`)) return
@@ -507,7 +560,7 @@ function LinksTab({ ctx }: { ctx: Ctx }) {
   const downloadCsv = () => {
     const rows = turnout.flatMap(t => t.players.filter(p => links.has(p.playerId)).map(p => {
       const link = voteLink(links.get(p.playerId)!.token)
-      return { team: t.teamName, name: p.name, playerId: p.playerId, link, voted: p.voted, message: inviteMessage(p.name, link, title) }
+      return { team: t.teamName, name: p.name, playerId: p.playerId, link, voted: p.voted, message: inviteMessage(p.name, link, title, voting.meta.closesAt) }
     }))
     const blob = new Blob([linksCsv(rows)], { type: 'text/csv' })
     const a = document.createElement('a')
@@ -535,6 +588,9 @@ function LinksTab({ ctx }: { ctx: Ctx }) {
         <button onClick={downloadCsv} disabled={links.size === 0} className="h-10 px-4 rounded-lg text-sm font-semibold" style={ghostBtn}>
           Download CSV (links + invite text)
         </button>
+        <button onClick={reissueAll} disabled={busy || links.size === 0} className="h-10 px-4 rounded-lg text-sm font-semibold" style={ghostBtn} title="Replace every link with a fresh one">
+          Reissue all links
+        </button>
       </div>
 
       {turnout.map(t => (
@@ -557,7 +613,7 @@ function LinksTab({ ctx }: { ctx: Ctx }) {
                     <button onClick={() => copy(`l-${p.playerId}`, url)} className="h-8 px-2.5 rounded-lg text-xs font-semibold" style={ghostBtn}>
                       {copied === `l-${p.playerId}` ? '✓ Copied' : 'Copy link'}
                     </button>
-                    <button onClick={() => copy(`m-${p.playerId}`, inviteMessage(p.name, url, title))} className="h-8 px-2.5 rounded-lg text-xs font-semibold" style={ghostBtn}>
+                    <button onClick={() => copy(`m-${p.playerId}`, inviteMessage(p.name, url, title, voting.meta.closesAt))} className="h-8 px-2.5 rounded-lg text-xs font-semibold" style={ghostBtn}>
                       {copied === `m-${p.playerId}` ? '✓ Copied' : 'Copy invite'}
                     </button>
                     <button onClick={() => reissue(p.playerId)} className="h-8 px-2.5 rounded-lg text-xs font-semibold" style={ghostBtn} title="New link; the old one stops working">Reissue</button>
@@ -686,6 +742,21 @@ function AwardsTab({ ctx }: { ctx: Ctx }) {
     }
   }
 
+  // One click → the agreed 2026 ballot (8 awards + finalists). Replaces the
+  // whole award list, so anything not in BALLOT_2026 (e.g. Best Captain) goes.
+  const ballotMatches = JSON.stringify(Object.keys(voting.awards).sort()) === JSON.stringify(Object.keys(BALLOT_2026).sort())
+    && Object.entries(BALLOT_2026).every(([id, a]) =>
+      Object.keys(a.candidates ?? {}).sort().join() === Object.keys(voting.awards[id]?.candidates ?? {}).sort().join()
+      && voting.awards[id]?.name === a.name)
+  const applyBallot2026 = async () => {
+    const msg = ballotCount
+      ? `Replace every award with the 2026 ballot? ${ballotCount} ballot(s) are already in; their picks for removed awards will be ignored.`
+      : 'Replace every award with the 2026 ballot (8 awards, finalists for Rookie / Value Pick / Ump)?'
+    if (!window.confirm(msg)) return
+    setSeeding(true)
+    try { await set(ref(db, 'voting/awards'), BALLOT_2026) } finally { setSeeding(false) }
+  }
+
   const rosterSize = rosterPlayerIds(players, voting.excluded).length
   const teamCount = ballotTeamIds(teams).length
 
@@ -694,6 +765,20 @@ function AwardsTab({ ctx }: { ctx: Ctx }) {
       {ballotCount > 0 && (
         <div className="rounded-xl px-3 py-2 text-xs" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24' }}>
           {ballotCount} ballot{ballotCount === 1 ? ' is' : 's are'} already in. Ballots aren't re-checked if you change an award now.
+        </div>
+      )}
+
+      {!ballotMatches && (
+        <div className="rounded-2xl p-4 flex flex-col gap-2" style={card}>
+          <p className="text-white/60 text-sm">The award list doesn't match the agreed 2026 ballot yet.</p>
+          <button
+            onClick={applyBallot2026}
+            disabled={seeding}
+            className="h-11 rounded-xl text-sm font-bold uppercase tracking-wider"
+            style={{ background: '#2563eb', color: '#fff' }}
+          >
+            {seeding ? 'Applying…' : 'Apply 2026 ballot (8 awards + finalists)'}
+          </button>
         </div>
       )}
 
@@ -706,7 +791,7 @@ function AwardsTab({ ctx }: { ctx: Ctx }) {
             className="h-11 rounded-xl text-sm font-bold uppercase tracking-wider"
             style={{ background: 'rgba(37,99,235,0.15)', color: '#60a5fa', border: '1px solid rgba(37,99,235,0.3)' }}
           >
-            {seeding ? 'Adding…' : 'Add starter awards (MVP · Cy Young · Hitter · Rookie · Captain)'}
+            {seeding ? 'Adding…' : 'Add starter awards (no finalists)'}
           </button>
         </div>
       )}
