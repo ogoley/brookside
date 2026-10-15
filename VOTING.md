@@ -6,66 +6,28 @@ voting-related. CLAUDE.md → "Season awards voting" has the condensed engineeri
 
 ---
 
-## ▶ Resume here — status as of 2026-10-14
+## ▶ Resume here — status as of 2026-10-14 (evening): READY TO SEND
 
-**Live right now** (read from prod 2026-10-14)
-- Site + database rules are **deployed** (`brookside-14b4b`). Code is **committed and pushed**
-  on branch `brookside-scorekeeper` (commit 52a2175).
-- **Voting is OPEN** — opened 2026-10-06 only so a commissioner could test their own link.
-  Close it in `/vote-admin` (big toggle) until launch.
-- 5 test awards exist in prod: MVP, Cy Young, Hitter of the Year, Rookie of the Year, Best
-  Captain. **None has a finalists list** (every award offers the whole league).
-- **57 links created** in prod (`/voting/voters`), one per active player. `mark_gee` is
-  excluded. **0 ballots** cast.
-- Local export with the Spond mapping: `vote-links/vote-links.csv` (gitignored; every row
-  is a live ballot credential — never commit or share it). Regenerate on any machine with
-  `node scripts/voteLinks.mjs` (needs `service-account.json`).
-- **Nothing has been sent in Spond.** No player has a link.
-- Working on another machine: `.env.local`, `service-account.json` and `vote-links/` are all
-  gitignored — copy the first two by hand, regenerate the third.
+**Live in prod (commit 19bf637, deployed 2026-10-14):**
+- Final 2026 ballot applied: 8 awards; finalists Rookie 20 / Value Pick 22 / Ump 20.
+- **Deadline set: Sun Oct 18, 11:00 AM ET** (`voting/meta/closesAt`), enforced by the rules.
+- **Voting is OPEN.** 0 ballots.
+- **Hardening done:** root read removed; `/voting/ballots` and the link list are admin-only
+  (anonymous → 401, re-probed live); every league path still public; brooksidewiffle.com's
+  API still answers. If that site stops importing, re-add `".read": true` at the root.
+- **All 57 links reissued** after hardening (old ones verified dead). A real link was opened
+  signed-out at phone size: loads, countdown + ballot correct (nothing submitted).
+- Send list: `vote-links/vote-links.csv` on the laptop (gitignored — every row is a live
+  ballot credential). Columns: team, name, playerId, spondGroup, spondName, link, sent, message.
+  On another machine regenerate it: `node scripts/voteLinks.mjs` (needs `service-account.json`),
+  or `/vote-admin` → Voters & links → Download CSV / per-player "Copy invite".
 
-**⚠ Known exposure — fix before sending links.** The root database rule `".read": true`
-means anyone who queries the raw database (its URL ships in the public JS bundle) can read
-**every link and every ballot**. Verified live 2026-10-06: `/voting/voters` (57) and
-`/voting/ballots` both return HTTP 200 anonymously. The UI never shows other people's
-votes, but the data is readable. See [Hardening plan](#hardening-plan-do-this-before-launch).
-
-### Launch TODO (in order)
-
-Only step 5 is engineering work; 1–4 are commissioner decisions.
-
-- [ ] **1. Close voting** in `/vote-admin` so nobody votes against the unfinished award list.
-- [ ] **2. Finalize the award list** with the co-commissioner. Current five: MVP, Cy Young,
-  Hitter of the Year, Rookie of the Year, Best Captain. Decide on Gold Glove, Best Value
-  Pick, **Best Ump**, and any team awards (see [Award plan](#award-plan-not-final--waiting-on-captains)). ~10 max for
-  phone turnout. Stat titles (batting, HR, K's) are announced from data, not voted.
-- [ ] **3. Collect finalist lists from captains** (send the
-  [captains' message](#captains-message-draft)):
-  - Rookie of the Year → first-year players per team
-  - Best Value Pick → late-round picks (draft order isn't stored anywhere)
-  - Best Captain → the 8 captains
-- [ ] **4. Narrow the dropdowns** — `/vote-admin` → Awards → set finalists on each of those
-  awards. Already built: an award with a `candidates` list shows only those players on the
-  ballot and the rules reject any other pick. No code change needed.
-- [ ] **5. Harden the database rules** — follow the
-  [hardening plan](#hardening-plan-do-this-before-launch): move the root `.read` onto each
-  public path, make `voting` admin-read except `meta` / `awards` / `excluded` /
-  `voters/$token`; add rules tests; `npm run test:rules`; deploy rules; re-probe
-  anonymously (ballots + voters list → 401).
-- [ ] **6. Reissue all 57 links** (they've been publicly readable while unsent, so free to
-  replace), then `node scripts/voteLinks.mjs` for a fresh CSV with Spond mapping + invite text.
-- [ ] **7. Dry run** — open `/vote/preview?as=<someone>` on a phone and click through the
-  real ballot once.
-- [ ] **8. Open voting**, send **one test DM** in Spond, confirm it works, then send the rest
-  (one DM per player, the CSV's `message` column). Mark each row sent so a re-run never
-  double-sends. Claude in Chrome can drive Spond from the commissioner's account — **only on
-  explicit go**.
-- [ ] **9. Watch turnout** in `/vote-admin` → Ballots ("waiting on…"), nudge in Spond, then
-  close voting and read `/vote-admin` → Results (ties flagged).
-
-Suggested next session: steps 1 and 5 — neither depends on the award decisions.
-
----
+**Nothing has been sent in Spond yet.** Next command = "send the Spond invites":
+1. Claude in Chrome needs site permission for **spond.com** (extension → site access).
+2. Send ONE test DM, confirm it renders with a working link, then the other 56 — one DM per
+   player, text = the CSV `message` column, recipient = `spondName` in the `spondGroup`
+   subgroup. Mark `sent` per row so a re-run never double-sends.
+3. Watch turnout in `/vote-admin` → Ballots; nudge in Spond; results after Sunday 11 AM.
 
 ## Decisions made (2026-10-14) — final ballot
 
