@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
+import { gameRoot } from '../postseason/paths'
 import type { GameRecord } from '../types'
 
 export function useGameRecord(gameId: string | null) {
@@ -10,7 +11,7 @@ export function useGameRecord(gameId: string | null) {
   useEffect(() => {
     if (!gameId) { setGame(null); setLoading(false); return }
     setLoading(true)
-    const unsub = onValue(ref(db, `games/${gameId}`), (snap) => {
+    const unsub = onValue(ref(db, `${gameRoot(gameId)}games/${gameId}`), (snap) => {
       setGame(snap.exists() ? snap.val() : null)
       setLoading(false)
     })

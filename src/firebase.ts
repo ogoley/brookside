@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase/app'
-import { getDatabase } from 'firebase/database'
+import { getDatabase, connectDatabaseEmulator } from 'firebase/database'
 import { getStorage } from 'firebase/storage'
 import { getFunctions } from 'firebase/functions'
-import { getAuth, browserLocalPersistence, setPersistence } from 'firebase/auth'
+import { getAuth, browserLocalPersistence, setPersistence, connectAuthEmulator } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -20,3 +20,11 @@ export const storage = getStorage(app)
 export const functions = getFunctions(app, 'us-central1')
 export const auth = getAuth(app)
 setPersistence(auth, browserLocalPersistence).catch(() => {/* non-fatal */})
+
+// Dev-only: `VITE_USE_EMULATORS=1 npm run dev` points the app at local
+// database/auth emulators (firebase emulators:start --only database,auth)
+// so flows like finalize can be exercised without touching production.
+if (import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS) {
+  connectDatabaseEmulator(db, '127.0.0.1', 9000)
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
+}

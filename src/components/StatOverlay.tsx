@@ -3,7 +3,30 @@ import { useLivePlayerStats } from '../hooks/useLivePlayerStats'
 import { useGameData } from '../hooks/useGameData'
 import { useAllstarRosters } from '../hooks/useAllstarRosters'
 import { effectiveGameTeamId, isExhibitionTeam } from '../allstar'
-import type { StatOverlayState, PlayersMap, TeamsMap } from '../types'
+import { usePostseasonMeta, usePostseasonPlayers } from '../hooks/usePostseason'
+import { isPostseasonGameId } from '../postseason/paths'
+import type { StatOverlayState, PlayersMap, TeamsMap, HittingStats, PitchingStats } from '../types'
+
+type StatItem = { label: string; value: string | number }
+
+function hitterItems(h: HittingStats | null): StatItem[] {
+  return [
+    { label: 'AVG', value: h?.avg !== undefined ? h.avg.toFixed(3).replace(/^0/, '') : '---' },
+    { label: 'HR',  value: h?.hr  ?? 0 },
+    { label: 'RBI', value: h?.rbi ?? 0 },
+    { label: 'OPS', value: h?.ops !== undefined ? h.ops.toFixed(3).replace(/^0/, '') : '---' },
+    { label: 'BB',  value: h?.bb  ?? 0 },
+  ]
+}
+
+function pitcherItems(p: PitchingStats | null): StatItem[] {
+  return [
+    { label: 'ERA', value: p?.era !== undefined ? p.era.toFixed(2) : '---' },
+    { label: 'K',   value: p?.k   ?? 0 },
+    { label: 'BB',  value: p?.bb  ?? 0 },
+    { label: 'IP',  value: p?.inningsPitched ?? 0 },
+  ]
+}
 
 interface Props {
   statOverlay: StatOverlayState
@@ -35,25 +58,26 @@ export function StatOverlay({ statOverlay, players, teams, gameId, bottomOffset 
   const primary = team?.primaryColor ?? '#1a3a6b'
   const secondary = team?.secondaryColor ?? '#ffffff'
 
+  // Playoffs: the strip gets a second row. A playoff game's at-bats merge
+  // into the playoff row only — the regular-season row stays frozen.
+  const { meta: postseason } = usePostseasonMeta()
+  const postseasonPlayers = usePostseasonPlayers()
+  const isPlayoffGame = isPostseasonGameId(gameId)
+  const showPlayoffRow = postseason.active || isPlayoffGame
+
   // Live stats = season totals merged with current game at-bats
-  const { hitting: h, pitching: p } = useLivePlayerStats(playerId || null, player, gameId)
+  const { hitting: h, pitching: p } = useLivePlayerStats(playerId || null, player, isPlayoffGame ? null : gameId)
+  const playoffSeason = postseasonPlayers[playerId]?.seasons?.[String(postseason.season)]
+  const { hitting: ph, pitching: pp } = useLivePlayerStats(
+    playerId || null,
+    player ? { ...player, stats: { hitting: playoffSeason?.hitting, pitching: playoffSeason?.pitching } } : undefined,
+    isPlayoffGame ? gameId : null,
+  )
 
-  const hitterStats = [
-    { label: 'AVG', value: h?.avg !== undefined ? h.avg.toFixed(3).replace(/^0/, '') : '---' },
-    { label: 'HR',  value: h?.hr  ?? 0 },
-    { label: 'RBI', value: h?.rbi ?? 0 },
-    { label: 'OPS', value: h?.ops !== undefined ? h.ops.toFixed(3).replace(/^0/, '') : '---' },
-    { label: 'BB',  value: h?.bb  ?? 0 },
-  ]
-
-  const pitcherStats = [
-    { label: 'ERA', value: p?.era !== undefined ? p.era.toFixed(2) : '---' },
-    { label: 'K',   value: p?.k   ?? 0 },
-    { label: 'BB',  value: p?.bb  ?? 0 },
-    { label: 'IP',  value: p?.inningsPitched ?? 0 },
-  ]
-
-  const statItems = isPitcher ? pitcherStats : hitterStats
+  const statItems = isPitcher ? pitcherItems(p) : hitterItems(h)
+  const playoffHasData = isPitcher ? !!pp : !!ph
+  const playoffItems = (isPitcher ? pitcherItems(pp) : hitterItems(ph))
+    .map(s => playoffHasData ? s : { ...s, value: '–' })
 
   return (
     <AnimatePresence>
@@ -164,8 +188,49 @@ export function StatOverlay({ statOverlay, players, teams, gameId, bottomOffset 
               transition={{ delay: 0.38, duration: 0.25, ease: 'easeOut' }}
             />
 
+            {/* Playoffs: two slim rows (regular season / playoffs) */}
+            {showPlayoffRow && (
+              <div className="flex flex-col justify-center flex-1" style={{ gap: 4 }}>
+                {[
+                  { key: 'head', label: '', items: statItems, head: true },
+                  { key: 'reg', label: `${postseason.season} Season`, items: statItems },
+                  { key: 'po', label: 'Playoffs', items: playoffItems, gold: true },
+                ].map((row, r) => (
+                  <motion.div
+                    key={row.key}
+                    className="flex items-center"
+                    initial={{ y: 30, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ type: 'spring', damping: 16, stiffness: 300, delay: 0.42 + r * 0.08 }}
+                    style={{ height: row.head ? 34 : 76 }}
+                  >
+                    <span
+                      className="uppercase font-black leading-none shrink-0"
+                      style={{ width: 186, fontFamily: 'var(--font-score)', fontSize: 30, letterSpacing: '0.08em', color: row.gold ? '#fbbf24' : 'rgba(255,255,255,0.8)' }}
+                    >
+                      {row.label}
+                    </span>
+                    {row.items.map(s => (
+                      <span
+                        key={s.label}
+                        className="text-center leading-none tabular-nums shrink-0"
+                        style={{
+                          width: 150, fontFamily: 'var(--font-score)',
+                          fontSize: row.head ? 30 : 60, fontWeight: row.head ? 700 : 900,
+                          letterSpacing: row.head ? '0.1em' : undefined,
+                          color: row.head ? 'rgba(255,255,255,0.75)' : row.gold ? '#fbbf24' : '#fff',
+                        }}
+                      >
+                        {row.head ? s.label : s.value}
+                      </span>
+                    ))}
+                  </motion.div>
+                ))}
+              </div>
+            )}
+
             {/* Stat chips — staggered pop-up */}
-            <div className="flex gap-16 flex-1">
+            {!showPlayoffRow && <div className="flex gap-16 flex-1">
               {statItems.map((s, i) => (
                 <motion.div
                   key={s.label}
@@ -188,7 +253,7 @@ export function StatOverlay({ statOverlay, players, teams, gameId, bottomOffset 
                   </span>
                 </motion.div>
               ))}
-            </div>
+            </div>}
 
           </div>
         </motion.div>

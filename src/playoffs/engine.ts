@@ -1,8 +1,9 @@
 // Playoff picture engine — pure functions, no Firebase/React.
 //
 // Format (2026): 6 of 8 teams qualify, seeds 1–2 get a first-round bye,
-// quarterfinals are 3v6 and 4v5, semifinals RESEED (the 1 seed gets the
-// lowest surviving seed), then a final.
+// quarterfinals are 3v6 and 4v5, then a FIXED bracket (no reseeding): the
+// 1 seed plays the 4/5 winner, the 2 seed plays the 3/6 winner, then a final.
+// Live bracket results live in src/postseason/bracket.ts.
 //
 // Clinch/elimination is EXACT: with ≤ MAX_EXACT_GAMES regular-season games
 // left we enumerate every win/loss outcome, rank each one with the full
@@ -406,7 +407,7 @@ export interface BracketMatchup {
 export interface Bracket {
   byes: number[]                       // seeds that skip the first round
   quarterfinals: BracketMatchup[]      // 3v6, 4v5
-  /** Semifinal pairing rule as text — actual pairing depends on QF results (reseed) */
+  /** Semifinal pairing rule as text (fixed bracket — see postseason/bracket.ts) */
   semifinalRule: string
 }
 
@@ -425,27 +426,10 @@ export function projectBracket(config: PlayoffConfig = DEFAULT_PLAYOFF_CONFIG): 
   return {
     byes,
     quarterfinals,
-    semifinalRule: `Reseed: the ${ordinalWord(1)} seed plays the lowest remaining seed`,
+    semifinalRule: 'Fixed bracket: the 1 seed plays the 4/5 winner, the 2 seed plays the 3/6 winner',
   }
 }
 
-/**
- * Semifinal pairings after the quarterfinals, with reseeding: the top bye
- * seed faces the LOWEST surviving seed, the next bye seed the next lowest.
- */
-export function reseedSemifinals(byeSeeds: number[], qfWinnerSeeds: number[]): BracketMatchup[] {
-  const survivors = [...qfWinnerSeeds].sort((a, b) => b - a)   // lowest seed (largest number) first
-  const byes = [...byeSeeds].sort((a, b) => a - b)
-  return byes.map((high, i) => ({
-    label: `SF${i + 1}`,
-    highSeed: high,
-    lowSeed: survivors[i],
-  }))
-}
-
-function ordinalWord(n: number): string {
-  return n === 1 ? '1' : String(n)
-}
 
 /** Pretty "x-", "y-", "z-" style prefix for standings tags. */
 export function statusTag(t: TeamOutlook): { text: string; tone: 'gold' | 'green' | 'red' | 'muted' } | null {

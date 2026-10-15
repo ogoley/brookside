@@ -10,7 +10,9 @@ import { useStandings } from '../hooks/useStandings'
 import { useGames } from '../hooks/useGames'
 import { useSponsors } from '../hooks/useSponsors'
 import { usePlayoffPicture } from '../hooks/usePlayoffPicture'
-import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene, PlayoffScene } from '../scenes'
+import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene, PlayoffScene, BracketScene } from '../scenes'
+import { usePostseason } from '../hooks/usePostseason'
+import { PlayoffLogoBug } from '../components/PlayoffLogoBug'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
 import { SponsorInterstitial } from '../components/SponsorInterstitial'
 import { Ticker, TICKER_HEIGHT } from '../components/Ticker'
@@ -28,6 +30,7 @@ function OverlayContent() {
   const { games } = useGames()
   const { sponsors } = useSponsors()
   const { picture } = usePlayoffPicture()
+  const { bracket } = usePostseason()
 
   // Mark body as overlay mode so CSS can set transparent background
   useEffect(() => {
@@ -120,6 +123,18 @@ function OverlayContent() {
             <PlayoffScene teams={teams} picture={picture} />
           </motion.div>
         )}
+        {sceneKey === 'bracket' && (
+          <motion.div
+            key="bracket"
+            className="absolute inset-0"
+            initial={{ y: '-100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+          >
+            <BracketScene teams={teams} bracket={bracket} />
+          </motion.div>
+        )}
         {sceneKey === 'insights' && (
           <motion.div
             key="insights"
@@ -167,23 +182,13 @@ function OverlayContent() {
 
       {/* League logo bug — rendered last so it sits above all scenes;
           lifts above the ticker while it's on air */}
-      {config.leagueLogo && (
-        <img
-          src={config.leagueLogo}
-          alt=""
-          style={{
-            position: 'absolute',
-            bottom: 24 + bottomInset,
-            right: 32,
-            transition: 'bottom 0.4s ease, opacity 0.3s ease',
-            width: 96,
-            height: 96,
-            objectFit: 'contain',
-            opacity: overlay.statOverlay.visible && sceneKey === 'game' ? 0 : 0.7,  // the stat strip owns the bottom-right while it is up
-            pointerEvents: 'none',
-          }}
-        />
-      )}
+      <PlayoffLogoBug
+        leagueLogo={config.leagueLogo}
+        mode={overlay.logoMode}
+        bracket={bracket}
+        bottom={24 + bottomInset}
+        hidden={overlay.statOverlay.visible && sceneKey === 'game'}  // the stat strip owns the bottom-right while it is up
+      />
 
       {/* All-Star Weekend watermark — appears automatically whenever an
           exhibition matchup is on the scorebug, on any overlay route.

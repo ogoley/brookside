@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  computeLines, rankTeams, buildPlayoffPicture, projectBracket, reseedSemifinals,
+  computeLines, rankTeams, buildPlayoffPicture, projectBracket,
   statusTag, outlookLine, winPct, dedupeSchedule, DEFAULT_PLAYOFF_CONFIG,
   type GameResult, type ScheduledGame,
 } from '../engine'
@@ -241,17 +241,6 @@ describe('bracket', () => {
     ])
   })
 
-  it('reseeds the semifinals so the 1 seed gets the lowest survivor', () => {
-    expect(reseedSemifinals([1, 2], [3, 5])).toEqual([
-      { label: 'SF1', highSeed: 1, lowSeed: 5 },
-      { label: 'SF2', highSeed: 2, lowSeed: 3 },
-    ])
-    // 6 upsets 3 → the 1 seed draws the 6, not the QF2 winner
-    expect(reseedSemifinals([1, 2], [6, 4])).toEqual([
-      { label: 'SF1', highSeed: 1, lowSeed: 6 },
-      { label: 'SF2', highSeed: 2, lowSeed: 4 },
-    ])
-  })
 })
 
 describe('dedupeSchedule', () => {

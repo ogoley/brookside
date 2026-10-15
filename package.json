@@ -15,7 +15,7 @@
     "deploy": "npm run build && firebase deploy --only hosting",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rules": "firebase emulators:exec --only database --project demo-wiffle \"vitest run src/voting/__tests__/rules.test.ts\"",
+    "test:rules": "firebase emulators:exec --only database --project demo-wiffle \"vitest run --no-file-parallelism src/voting/__tests__/rules.test.ts src/postseason/__tests__/rules.test.ts\"",
     "schedule:sync": "node scripts/syncSchedule.mjs",
     "sponsors:seed": "node scripts/seedSponsors.mjs"
   },

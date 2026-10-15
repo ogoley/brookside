@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { get, ref } from 'firebase/database'
 import { db, auth } from '../firebase'
+import { gameRoot } from '../postseason/paths'
 import { HomeButton } from '../components/HomeButton'
 import { AuthStatus } from '../components/AuthStatus'
 import { useGames } from '../hooks/useGames'
@@ -262,7 +263,7 @@ Write the recap now.`
       const cache: Record<string, AtBatRecord[]> = {}
       const gameBlocks: { matchup: string; statBlock: string; playByPlay: string }[] = []
       for (const { gameId, game } of gamesForDate) {
-        const snap = await get(ref(db, `gameStats/${gameId}`))
+        const snap = await get(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`))
         const raw: Record<string, AtBatRecord> = snap.exists() ? snap.val() : {}
         const atBats = Object.values(raw).sort((a, b) => a.timestamp - b.timestamp)
         cache[gameId] = atBats
@@ -324,7 +325,7 @@ Write the recap now.`
         // refetch only if the cache is somehow empty (e.g. a refresh edge case).
         let atBats = atBatsByGameId[gameId]
         if (!atBats) {
-          const snap = await get(ref(db, `gameStats/${gameId}`))
+          const snap = await get(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`))
           const raw: Record<string, AtBatRecord> = snap.exists() ? snap.val() : {}
           atBats = Object.values(raw).sort((a, b) => a.timestamp - b.timestamp)
         }

@@ -34,6 +34,16 @@
     "derby": {
       ".write": true
     },
+    "postseason": {
+      "meta": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
+      "brackets": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
+      "games": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
+      "gameStats": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
+      "liveRunners": { ".write": "auth != null && (auth.token.role === 'scorer' || auth.token.role === 'admin')" },
+      "gameSummaries": { ".write": "auth != null && auth.token.role === 'admin'" },
+      "players": { ".write": "auth != null && auth.token.role === 'admin'" },
+      "subPlayers": { ".write": "auth != null && auth.token.role === 'admin'" }
+    },
     "voting": {
       ".write": "auth != null && auth.token.role === 'admin'",
       "ballots": {

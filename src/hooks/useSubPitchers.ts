@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
+import { gameRoot } from '../postseason/paths'
 import type { SubPitcherEntry } from '../types'
 
 /**
@@ -18,7 +19,7 @@ export function useSubPitchers(gameId: string | null) {
 
   useEffect(() => {
     if (!gameId) { setSubPitchers({}); return }
-    const unsub = onValue(ref(db, `games/${gameId}/subPitchers`), (snap) => {
+    const unsub = onValue(ref(db, `${gameRoot(gameId)}games/${gameId}/subPitchers`), (snap) => {
       setSubPitchers(snap.exists() ? snap.val() : {})
     })
     return unsub

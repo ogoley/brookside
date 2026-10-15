@@ -140,7 +140,7 @@ export interface TickerState {
 }
 
 export interface OverlayState {
-  activeScene: 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'insights' | 'allstarLineups' | 'idle'
+  activeScene: SceneName
   statOverlay: StatOverlayState
   timer: TimerState
   homerun: HomrunState
@@ -149,9 +149,14 @@ export interface OverlayState {
   ticker: TickerState
   scoreboardBorder: boolean
   scoreboardScale: number
+  /** Corner logo bug: plain league logo, a playoff-round badge, or 'auto'
+   *  (round badge following the bracket's current round). */
+  logoMode: LogoMode
 }
 
-export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'insights' | 'allstarLineups' | 'idle'
+export type LogoMode = 'league' | 'auto' | 'qf' | 'sf' | 'final'
+
+export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'bracket' | 'insights' | 'allstarLineups' | 'idle'
 
 export interface HittingStats {
   gp?: number       // games played

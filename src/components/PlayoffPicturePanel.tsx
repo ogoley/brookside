@@ -144,7 +144,7 @@ export function PlayoffPicturePanel({ teams, picture }: Props) {
               ))}
             </div>
             <div style={{ fontSize: 12, color: '#64748b' }}>
-              Semifinals reseed: the 1 seed hosts the lowest remaining seed, the 2 seed hosts the other. Winners meet in the final.
+              Fixed bracket: the 1 seed hosts the 4/5 winner, the 2 seed hosts the 3/6 winner. Winners meet in the final.
             </div>
           </div>
         </div>

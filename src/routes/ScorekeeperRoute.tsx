@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { ref, push, set, update, remove, onValue, get } from 'firebase/database'
 import { db } from '../firebase'
+import { gameRoot, isPostseasonGameId } from '../postseason/paths'
 import { HomeButton } from '../components/HomeButton'
 import { AuthStatus } from '../components/AuthStatus'
 import { usePlayers } from '../hooks/usePlayers'
@@ -8,6 +9,9 @@ import { useTeams } from '../hooks/useTeams'
 import { useGameStats } from '../hooks/useGameStats'
 import { useLiveRunners } from '../hooks/useLiveRunners'
 import { useGames } from '../hooks/useGames'
+import { usePostseason } from '../hooks/usePostseason'
+import { finalizePostseasonGame } from '../postseason/finalizeGame'
+import { slotForMatchup, ROUND_LABEL, type ResolvedBracket, type PostseasonMeta } from '../postseason/bracket'
 import { useGameRecord } from '../hooks/useGameRecord'
 import { useGameLineup } from '../hooks/useGameLineup'
 import { useSubPitchers } from '../hooks/useSubPitchers'
@@ -158,7 +162,13 @@ function computeResultDefaults(
 export function ScorekeeperRoute() {
   const { players } = usePlayers()
   const { teams } = useTeams()
-  const { games, loading: gamesLoading } = useGames()
+  const { games: regularGames, loading: gamesLoading } = useGames()
+  // Playoff games live under /postseason but score exactly like any other game
+  const postseason = usePostseason()
+  const games = useMemo(
+    () => [...regularGames, ...postseason.games].sort((a, b) => (b.game.startedAt ?? 0) - (a.game.startedAt ?? 0)),
+    [regularGames, postseason.games],
+  )
 
   // Top-level screen
   const [activeGameId, setActiveGameId] = useState<string | null>(null)
@@ -213,6 +223,8 @@ export function ScorekeeperRoute() {
       onCloseNewGameModal={() => setShowNewGameModal(false)}
       onGameCreated={(id) => { setShowNewGameModal(false); setActiveGameId(id) }}
       players={players}
+      postseasonMeta={postseason.meta}
+      bracket={postseason.bracket}
     />
   )
 }
@@ -222,6 +234,7 @@ export function ScorekeeperRoute() {
 function GameSelectorScreen({
   games, loading, teams, players,
   onSelectGame, onNewGame, showNewGameModal, onCloseNewGameModal, onGameCreated,
+  postseasonMeta, bracket,
 }: {
   games: ReturnType<typeof useGames>['games']
   loading: boolean
@@ -232,6 +245,8 @@ function GameSelectorScreen({
   showNewGameModal: boolean
   onCloseNewGameModal: () => void
   onGameCreated: (id: string) => void
+  postseasonMeta: PostseasonMeta
+  bracket: ResolvedBracket | null
 }) {
   const liveGames = games.filter(({ game }) => !game.finalized)
   const completedGames = games.filter(({ game }) => game.finalized)
@@ -288,6 +303,8 @@ function GameSelectorScreen({
         <NewGameModal
           teams={teams}
           players={players}
+          postseasonMeta={postseasonMeta}
+          bracket={bracket}
           onClose={onCloseNewGameModal}
           onCreated={onGameCreated}
         />
@@ -322,9 +339,9 @@ function GameRow({ gameId, game, teams, onSelect }: {
   const deleteGame = async (e: React.MouseEvent) => {
     e.stopPropagation()
     await Promise.all([
-      remove(ref(db, `games/${gameId}`)),
-      remove(ref(db, `gameStats/${gameId}`)),
-      remove(ref(db, `liveRunners/${gameId}`)),
+      remove(ref(db, `${gameRoot(gameId)}games/${gameId}`)),
+      remove(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`)),
+      remove(ref(db, `${gameRoot(gameId)}liveRunners/${gameId}`)),
     ])
     // Clear from /game/meta if this was the active streamed game
     await update(ref(db, 'game/meta'), { currentGameId: null })
@@ -354,6 +371,7 @@ function GameRow({ gameId, game, teams, onSelect }: {
                 LIVE
               </span>
             )}
+            {isPostseasonGameId(gameId) && <PlayoffBadge />}
           </div>
         </div>
         <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 18 }}>›</span>
@@ -424,6 +442,7 @@ function CompletedGameRow({ gameId, game, teams, onSelect }: {
             <span className="text-xs text-white/30">{winner.shortName} win</span>
           )}
           <span className="text-xs text-white/25">{game.date}</span>
+          {isPostseasonGameId(gameId) && <PlayoffBadge />}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -437,11 +456,21 @@ function CompletedGameRow({ gameId, game, teams, onSelect }: {
   )
 }
 
+function PlayoffBadge() {
+  return (
+    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>
+      🏆 PLAYOFFS
+    </span>
+  )
+}
+
 // ── New Game Modal ──────────────────────────────────────────────────────────
 
-function NewGameModal({ teams, players, onClose, onCreated }: {
+function NewGameModal({ teams, players, postseasonMeta, bracket, onClose, onCreated }: {
   teams: TeamsMap
   players: PlayersMap
+  postseasonMeta: PostseasonMeta
+  bracket: ResolvedBracket | null
   onClose: () => void
   onCreated: (gameId: string) => void
 }) {
@@ -455,16 +484,33 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
 
   const teamOptions = Object.entries(teams).sort(([, a], [, b]) => a.name.localeCompare(b.name))
 
+  // Playoff mode: a matchup that's an open bracket slot is a playoff game by
+  // default (stored under /postseason, never touches season stats). The
+  // scorer can switch it off for e.g. a scrimmage between the same teams.
+  const playoffSlot = postseasonMeta.active && bracket && homeTeamId && awayTeamId
+    ? slotForMatchup(bracket, homeTeamId, awayTeamId)
+    : null
+  const [playoffChoice, setPlayoffChoice] = useState<boolean | null>(null)
+  const isPlayoff = postseasonMeta.active && (playoffChoice ?? !!playoffSlot)
+
+  // Higher seed hosts — swap home/away when the scorer picks a bracket pair backwards
+  const pickTeams = (home: string, away: string) => {
+    const slot = postseasonMeta.active && bracket && home && away ? slotForMatchup(bracket, home, away) : null
+    if (slot?.home && slot.away && home === slot.away.teamId) [home, away] = [slot.home.teamId, slot.away.teamId]
+    setHomeTeamId(home)
+    setAwayTeamId(away)
+  }
+
   const createGame = async () => {
     if (!homeTeamId || !awayTeamId) return
     setCreating(true)
     try {
-      const gameId = await generateGameId(homeTeamId, awayTeamId)
+      const gameId = await generateGameId(homeTeamId, awayTeamId, { postseason: isPlayoff })
       const now = Date.now()
 
       // Write the whole game node as one set() — avoids Firebase ancestor-path
       // conflict that occurs when a parent path and its children are in the same update()
-      await set(ref(db, `games/${gameId}`), {
+      await set(ref(db, `${gameRoot(gameId)}games/${gameId}`), {
         homeTeamId,
         awayTeamId,
         date: getEasternDateString(),
@@ -472,6 +518,9 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
         // Stamped at creation so exhibition detection survives team deletion
         ...(isExhibitionTeam(homeTeamId, teams) || isExhibitionTeam(awayTeamId, teams)
           ? { isExhibition: true }
+          : {}),
+        ...(isPlayoff
+          ? { postseason: { season: postseasonMeta.season, round: playoffSlot?.round ?? null, slot: playoffSlot?.id ?? null } }
           : {}),
         finalized: false,
         startedAt: now,
@@ -514,7 +563,7 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
       }
 
       // Write sibling paths separately
-      await set(ref(db, `liveRunners/${gameId}`), { first: null, second: null, third: null })
+      await set(ref(db, `${gameRoot(gameId)}liveRunners/${gameId}`), { first: null, second: null, third: null })
       if (isStreamed) {
         await update(ref(db, 'game/meta'), { currentGameId: gameId })
       }
@@ -550,14 +599,14 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
           {step === 'teams' && (
             <>
               <ModalField label="Home Team">
-                <ModalSelect value={homeTeamId} onChange={setHomeTeamId} placeholder="— Select home team —">
+                <ModalSelect value={homeTeamId} onChange={id => pickTeams(id, awayTeamId)} placeholder="— Select home team —">
                   {teamOptions.filter(([id]) => id !== awayTeamId).map(([id, t]) => (
                     <option key={id} value={id}>{t.name}</option>
                   ))}
                 </ModalSelect>
               </ModalField>
               <ModalField label="Away Team">
-                <ModalSelect value={awayTeamId} onChange={setAwayTeamId} placeholder="— Select away team —">
+                <ModalSelect value={awayTeamId} onChange={id => pickTeams(homeTeamId, id)} placeholder="— Select away team —">
                   {teamOptions.filter(([id]) => id !== homeTeamId).map(([id, t]) => (
                     <option key={id} value={id}>{t.name}</option>
                   ))}
@@ -577,6 +626,27 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
                   <span>{isStreamed ? '● ON' : '○ OFF'}</span>
                 </button>
               </ModalField>
+              {postseasonMeta.active && (
+                <ModalField label="Playoffs">
+                  <button
+                    onClick={() => setPlayoffChoice(!isPlayoff)}
+                    className="w-full min-h-14 rounded-xl px-4 py-2 flex items-center justify-between font-semibold text-sm text-left"
+                    style={{
+                      background: isPlayoff ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.05)',
+                      color: isPlayoff ? '#fbbf24' : 'rgba(255,255,255,0.5)',
+                      border: `1px solid ${isPlayoff ? 'rgba(251,191,36,0.35)' : 'rgba(255,255,255,0.1)'}`,
+                    }}
+                  >
+                    <span>
+                      🏆 Playoff game{playoffSlot ? ` — ${ROUND_LABEL[playoffSlot.round]} (${playoffSlot.high?.seed} v ${playoffSlot.low?.seed})` : ''}
+                      <span className="block text-xs font-normal opacity-70">
+                        {isPlayoff ? 'Stats go to playoff totals, not the regular season' : 'Counts as a regular-season game'}
+                      </span>
+                    </span>
+                    <span>{isPlayoff ? '● ON' : '○ OFF'}</span>
+                  </button>
+                </ModalField>
+              )}
               <SkBtn onClick={() => setStep('home_lineup')} primary disabled={!homeTeamId || !awayTeamId}>
                 Next — {teams[homeTeamId]?.shortName ?? 'Home'} Lineup →
               </SkBtn>
@@ -636,6 +706,7 @@ function NewGameModal({ teams, players, onClose, onCreated }: {
                       LIVE — feeds scorebug
                     </span>
                   )}
+                  {isPlayoff && <PlayoffBadge />}
                 </div>
                 <LineupSummary label={`${teams[homeTeamId]?.shortName ?? 'Home'} lineup`} lineup={homeLineup} players={players} />
                 <LineupSummary label={`${teams[awayTeamId]?.shortName ?? 'Away'} lineup`} lineup={awayLineup} players={players} />
@@ -891,7 +962,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
   const [lineupPosition, setLineupPosition] = useState(0)
   useEffect(() => {
     if (!gameId || !battingTeamId) return
-    const unsub = onValue(ref(db, `games/${gameId}/lineupPosition/${battingTeamId}`), snap => {
+    const unsub = onValue(ref(db, `${gameRoot(gameId)}games/${gameId}/lineupPosition/${battingTeamId}`), snap => {
       setLineupPosition(snap.exists() ? snap.val() : 0)
     })
     return unsub
@@ -944,8 +1015,8 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     if (!gameId || !pitcherId) return
     const side = isTopInning ? 'lastPitcherHome' : 'lastPitcherAway'
     update(ref(db), {
-      [`games/${gameId}/matchup/pitcherId`]: pitcherId,
-      [`games/${gameId}/matchup/${side}`]: pitcherId,
+      [`${gameRoot(gameId)}games/${gameId}/matchup/pitcherId`]: pitcherId,
+      [`${gameRoot(gameId)}games/${gameId}/matchup/${side}`]: pitcherId,
     })
   }, [pitcherId, gameId, isTopInning])
 
@@ -1142,13 +1213,13 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const newOuts = Math.min(outs + outsOnPlay, 3)  // hard cap — never exceed 3 outs per half-inning
 
     // Write to Firebase
-    await push(ref(db, `gameStats/${gameId}`), record)
+    await push(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`), record)
 
     const updates: Record<string, unknown> = {
-      [`liveRunners/${gameId}`]: engineResult.nextRunners,
-      [`games/${gameId}/outs`]: newOuts,  // intentionally not reset to 0 here — advanceHalfInning owns that
-      [`games/${gameId}/homeScore`]: newHomeScore,
-      [`games/${gameId}/awayScore`]: newAwayScore,
+      [`${gameRoot(gameId)}liveRunners/${gameId}`]: engineResult.nextRunners,
+      [`${gameRoot(gameId)}games/${gameId}/outs`]: newOuts,  // intentionally not reset to 0 here — advanceHalfInning owns that
+      [`${gameRoot(gameId)}games/${gameId}/homeScore`]: newHomeScore,
+      [`${gameRoot(gameId)}games/${gameId}/awayScore`]: newAwayScore,
     }
 
     // Advance lineup position from the ACTUAL batter's slot, not a stale
@@ -1158,7 +1229,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const batterIdx = battingLineup.findIndex(e => e.playerId === batterId)
     if (batterIdx !== -1 && battingLineup.length > 0) {
       const nextPos = (batterIdx + 1) % battingLineup.length
-      updates[`games/${gameId}/lineupPosition/${battingTeamId}`] = nextPos
+      updates[`${gameRoot(gameId)}games/${gameId}/lineupPosition/${battingTeamId}`] = nextPos
     }
 
     // Mirror to /game/meta if streamed
@@ -1237,6 +1308,14 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     }
     setFinalizing(true)
     try {
+      if (isPostseasonGameId(gameId)) {
+        // Playoff game: stats go to /postseason only — see postseason/finalize.ts
+        await finalizePostseasonGame(gameId, players)
+        setShowGameCompletePrompt(false)
+        setConfirmFinalize(false)
+        onBack()
+        return
+      }
       const gamesSnap = await get(ref(db, 'games'))
       const allGames: Record<string, { finalized: boolean; homeTeamId: string; awayTeamId: string; homeScore: number; awayScore: number; inning: number; isTopInning: boolean; outs: number; date: string; isStreamed: boolean; startedAt: number }> = gamesSnap.exists() ? gamesSnap.val() : {}
       const thisGame = allGames[gameId]
@@ -1249,7 +1328,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
       const previousAtBats: Array<AtBatRecord & { gameId: string }> = []
       for (const [gId, gRecord] of prevGameEntries) {
         previousGames[gId] = gRecord
-        const snap = await get(ref(db, `gameStats/${gId}`))
+        const snap = await get(ref(db, `${gameRoot(gId)}gameStats/${gId}`))
         if (snap.exists()) {
           for (const ab of Object.values(snap.val() as Record<string, AtBatRecord>)) {
             previousAtBats.push({ ...ab, gameId: gId })
@@ -1257,7 +1336,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
         }
       }
 
-      const currentSnap = await get(ref(db, `gameStats/${gameId}`))
+      const currentSnap = await get(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`))
       const currentGameAtBats: AtBatRecord[] = currentSnap.exists()
         ? Object.values(currentSnap.val() as Record<string, AtBatRecord>)
         : []
@@ -1304,10 +1383,10 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const nextIsTop = !isTopInning
     const nextInning = !isTopInning ? inning + 1 : inning  // increment inning after bottom half
     const updates: Record<string, unknown> = {
-      [`games/${gameId}/inning`]: nextInning,
-      [`games/${gameId}/isTopInning`]: nextIsTop,
-      [`games/${gameId}/outs`]: 0,
-      [`liveRunners/${gameId}`]: { first: null, second: null, third: null },
+      [`${gameRoot(gameId)}games/${gameId}/inning`]: nextInning,
+      [`${gameRoot(gameId)}games/${gameId}/isTopInning`]: nextIsTop,
+      [`${gameRoot(gameId)}games/${gameId}/outs`]: 0,
+      [`${gameRoot(gameId)}liveRunners/${gameId}`]: { first: null, second: null, third: null },
     }
 
     // Store the incoming pitcher under the correct side so we can pre-fill next time.
@@ -1316,13 +1395,13 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     //   bottom just ended → home team pitches next → lastPitcherHome
     if (nextPitcherId) {
       const side = isTopInning ? 'lastPitcherAway' : 'lastPitcherHome'
-      updates[`games/${gameId}/matchup/${side}`] = nextPitcherId
+      updates[`${gameRoot(gameId)}games/${gameId}/matchup/${side}`] = nextPitcherId
     }
 
     // Set next pitcher as current pitcher for the incoming half
     if (nextPitcherId) {
-      updates[`games/${gameId}/matchup/pitcherId`] = nextPitcherId
-      updates[`games/${gameId}/matchup/batterId`] = null
+      updates[`${gameRoot(gameId)}games/${gameId}/matchup/pitcherId`] = nextPitcherId
+      updates[`${gameRoot(gameId)}games/${gameId}/matchup/batterId`] = null
     }
 
     if (game.isStreamed) {
@@ -1373,18 +1452,18 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
 
     // Delete removed records
     for (const id of deletedIds) {
-      updates[`gameStats/${gameId}/${id}`] = null
+      updates[`${gameRoot(gameId)}gameStats/${gameId}/${id}`] = null
     }
     // Write every recomputed at-bat record back to the same key
     for (const [id, rec] of Object.entries(recompute.recomputedAtBats)) {
-      updates[`gameStats/${gameId}/${id}`] = rec
+      updates[`${gameRoot(gameId)}gameStats/${gameId}/${id}`] = rec
     }
 
     // Game aggregates
-    updates[`games/${gameId}/homeScore`] = recompute.homeScore
-    updates[`games/${gameId}/awayScore`] = recompute.awayScore
-    updates[`games/${gameId}/outs`] = Math.min(recompute.currentHalfOuts, 3)  // hard cap
-    updates[`liveRunners/${gameId}`] = recompute.currentHalfRunners
+    updates[`${gameRoot(gameId)}games/${gameId}/homeScore`] = recompute.homeScore
+    updates[`${gameRoot(gameId)}games/${gameId}/awayScore`] = recompute.awayScore
+    updates[`${gameRoot(gameId)}games/${gameId}/outs`] = Math.min(recompute.currentHalfOuts, 3)  // hard cap
+    updates[`${gameRoot(gameId)}liveRunners/${gameId}`] = recompute.currentHalfRunners
 
     // Recompute lineup positions for both teams from the full at-bat list.
     // Subs are real slots in the rotation, so we pass the full lineup orders.
@@ -1395,11 +1474,11 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     const homeOrder = homeLineup.map(e => e.playerId)
     const awayOrder = awayLineup.map(e => e.playerId)
     if (homeOrder.length > 0 && game.homeTeamId) {
-      updates[`games/${gameId}/lineupPosition/${game.homeTeamId}`] =
+      updates[`${gameRoot(gameId)}games/${gameId}/lineupPosition/${game.homeTeamId}`] =
         computeLineupPosition(allAtBatList, game.homeTeamId, playerTeamMap, homeOrder)
     }
     if (awayOrder.length > 0 && game.awayTeamId) {
-      updates[`games/${gameId}/lineupPosition/${game.awayTeamId}`] =
+      updates[`${gameRoot(gameId)}games/${gameId}/lineupPosition/${game.awayTeamId}`] =
         computeLineupPosition(allAtBatList, game.awayTeamId, playerTeamMap, awayOrder)
     }
 
@@ -1475,7 +1554,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     // Push first, then re-derive game state via the same replay path used for
     // edits/deletes. Keeps outs/runners/lineupPosition consistent and triggers
     // the inning-end interstitial automatically when this is the 3rd out.
-    const newRef = await push(ref(db, `gameStats/${gameId}`), record)
+    const newRef = await push(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`), record)
     const newId = newRef.key
     if (!newId) return
 
@@ -1517,9 +1596,9 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
         updatedAtBats, resolvePlayerName, ab.inning, ab.isTopInning,
       )
       const rollback: Record<string, unknown> = {
-        [`games/${gameId}/inning`]: ab.inning,
-        [`games/${gameId}/isTopInning`]: ab.isTopInning,
-        [`games/${gameId}/matchup/pitcherId`]: ab.pitcherId,
+        [`${gameRoot(gameId)}games/${gameId}/inning`]: ab.inning,
+        [`${gameRoot(gameId)}games/${gameId}/isTopInning`]: ab.isTopInning,
+        [`${gameRoot(gameId)}games/${gameId}/matchup/pitcherId`]: ab.pitcherId,
       }
       if (game.isStreamed) {
         rollback['game/meta/inning'] = ab.inning
@@ -1556,7 +1635,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
     if (!name) return null
     const playerId = `subp_${Date.now()}`
     await update(ref(db), {
-      [`games/${gameId}/subPitchers/${teamId}/${playerId}`]: { playerId, name },
+      [`${gameRoot(gameId)}games/${gameId}/subPitchers/${teamId}/${playerId}`]: { playerId, name },
       // Sub identity lives in /subPlayers (separate from regulars in /players).
       // The merged usePlayers() hook makes name lookups transparent internally.
       [`subPlayers/${playerId}`]: { name, teamId, isSub: true, stats: {} },
@@ -1637,7 +1716,7 @@ function GameWizard({ gameId, players, teams, onBack, onEditLineup }: {
               {gameCompleteReason === 'time' && '90 minutes elapsed.'}
             </p>
             <p className="text-red-400/70 text-xs mb-6">
-              This will lock the game and update season stats. It cannot be undone.
+              {isPostseasonGameId(gameId) ? 'This will lock the game and update playoff stats (regular-season stats are not touched). It cannot be undone.' : 'This will lock the game and update season stats. It cannot be undone.'}
             </p>
             <div className="flex flex-col gap-3">
               <button
@@ -2622,7 +2701,7 @@ function AtBatEditModal({
     if (!name) return null
     const playerId = `subp_${Date.now()}`
     await update(ref(db), {
-      [`games/${gameId}/subPitchers/${abFieldingTeamId}/${playerId}`]: { playerId, name },
+      [`${gameRoot(gameId)}games/${gameId}/subPitchers/${abFieldingTeamId}/${playerId}`]: { playerId, name },
       [`subPlayers/${playerId}`]: { name, teamId: abFieldingTeamId, isSub: true, stats: {} },
     })
     return playerId
@@ -3294,8 +3373,8 @@ function SkDevTools({ gameId, confirmAbandon, setConfirmAbandon, onAbandon }: {
 }) {
   const [open, setOpen] = useState(false)
 
-  const clearAtBats = async () => { await remove(ref(db, `gameStats/${gameId}`)) }
-  const resetRunners = async () => { await set(ref(db, `liveRunners/${gameId}`), { first: null, second: null, third: null }) }
+  const clearAtBats = async () => { await remove(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`)) }
+  const resetRunners = async () => { await set(ref(db, `${gameRoot(gameId)}liveRunners/${gameId}`), { first: null, second: null, third: null }) }
   const abandonGame = async () => {
     // Clear from /game/meta in case it was a streamed game
     await update(ref(db, 'game/meta'), { currentGameId: null })
@@ -3422,8 +3501,8 @@ function LineupEditScreen({ gameId, players, teams, onBack }: {
         : 0
 
       const updates: Record<string, unknown> = {}
-      updates[`games/${gameId}/lineups/${teamId}`] = localLineup
-      updates[`games/${gameId}/lineupPosition/${teamId}`] = nextPos
+      updates[`${gameRoot(gameId)}games/${gameId}/lineups/${teamId}`] = localLineup
+      updates[`${gameRoot(gameId)}games/${gameId}/lineupPosition/${teamId}`] = nextPos
       await update(ref(db), updates)
       onBack()
     } finally {
@@ -3572,7 +3651,7 @@ function GameSummaryView({ gameId, game, teams, players, onBack }: {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsub = onValue(ref(db, `gameSummaries/${gameId}`), snap => {
+    const unsub = onValue(ref(db, `${gameRoot(gameId)}gameSummaries/${gameId}`), snap => {
       setSummaries(snap.exists() ? snap.val() : {})
       setLoading(false)
     })

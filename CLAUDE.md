@@ -43,6 +43,11 @@ A live broadcast overlay system for a small wiffle ball league. Runs as a single
 /voting/voters/{token}             — Voter: { playerId, createdAt, votedAt? } — token = the /vote/<token> link
 /voting/ballots/{playerId}         — Ballot: { token, picks{awardId: id}, submittedAt, editedAt? }
 /voting/excluded/{playerId}        — true = kept out of voting (no link, not on ballot, not in turnout); stats untouched
+/postseason/meta                   — { active, season } — global playoff switch (see Postseason)
+/postseason/brackets/{season}      — BracketConfig: seeds[6], slots{qf36,qf45,sf1,sf2,final}{date,time,venue,winnerOverride}
+/postseason/games|gameStats|gameSummaries|liveRunners/{po_gameId} — playoff games, same shapes as the regular roots
+/postseason/players/{playerId}     — lifetime playoff stats {name, stats{hitting,pitching}, seasons{YYYY:{teamId,hitting,pitching}}}
+/postseason/subPlayers/{playerId}  — same, for one-game subs
 ```
 Full type definitions in `src/types.ts`.
 
@@ -77,7 +82,7 @@ Full type definitions in `src/types.ts`.
 - **Ticker theme is producer-adjustable** from the controller (`overlay/ticker`): accent colour (presets + home/away team colours + custom picker; cap text auto-contrasts via `readableOn`), crawl speed, section toggles, and free-text "League Wire" messages (push keys → chronological order).
 
 ## Playoff picture (src/playoffs/)
-- **Format (2026)**: 6 of 8 qualify, seeds 1–2 get a bye, QF = 3v6 / 4v5, semifinals RESEED (1 seed hosts the lowest survivor). `DEFAULT_PLAYOFF_CONFIG` in `engine.ts`; tiebreakers head-to-head → run differential → runs allowed (→ flagged coin flip). Ranking is by win **pct** (ties = ½) because the postponed game leaves teams with unequal games played.
+- **Format (2026)**: 6 of 8 qualify, seeds 1–2 get a bye, QF = 3v6 / 4v5, then a FIXED bracket — NO reseeding: 1 seed plays the 4/5 winner, 2 seed plays the 3/6 winner (live bracket: `src/postseason/bracket.ts`). `DEFAULT_PLAYOFF_CONFIG` in `engine.ts`; tiebreakers head-to-head → run differential → runs allowed (→ flagged coin flip). Ranking is by win **pct** (ties = ½) because the postponed game leaves teams with unequal games played.
 - **Clinch / elimination is exact, not heuristic** — `buildPlayoffPicture` enumerates every win/loss outcome of the remaining scheduled games (≤ 2^16; above that it falls back to max-wins bounds and says so via `exact: false`) and re-ranks each with the full tiebreak procedure. Per team: best/worst seed, `playoffOdds` (share of outcomes), and "own destiny" numbers `winsToClinch` / `winsToBye` / `winsToTop` / `lossesToElimination`. There is deliberately NO classic magic number — it assumes equal games played and was wrong here. `src/playoffs/__tests__/fixtures/season-2026-09-10.json` is the real season snapshot; the tests assert the real answers with the May 9 makeup counted (Whalers clinched, Gamecocks 95% and clinch with one win, Yetis alive at 3% via the run-differential tiebreak, Moose Knucklers 1.6%) and the cancelled-makeup counterfactual (Yetis out, Nuke Squad bye locked).
 - **Schedule lives at `/config/schedule/{siteGameId}`** — synced from the public site's JSON API by `npm run schedule:sync` (`scripts/syncSchedule.mjs`; the API has no CORS so the browser can't read it). Verified 2026-09-10 game-for-game against Spond. `/config/scheduleMeta` records the sync. **Policy: postponed games WILL be made up** (`countPostponed: true` in `DEFAULT_PLAYOFF_CONFIG`), so a postponed game counts as a remaining game in the enumeration and shows in "Still to play" as "Makeup · date TBD" — a team can never clinch for free by not playing it. The schedule node keeps the honest status (`postponed`); only flip `countPostponed` to false if the league formally cancels a game. `dedupeSchedule` drops any scheduled game that already has a finalized result so a game is never counted twice between syncs. To add a makeup game by hand, write a node under `/config/schedule` with the same shape.
 - **`usePlayoffPicture()`** = finalized non-exhibition `/games` + `/config/schedule` → picture (memoized). Consumers: `PlayoffScene` (overlay `playoffs` scene, "Playoff Picture" button), `StandingsScene` (row tags now say the truth — "Clinched bye" / "Eliminated" — instead of position labels), ticker segments `playoffs` and `upcoming`, and the public `/stats` "Playoffs" tab (`PlayoffPicturePanel`). Display strings come from `src/playoffs/format.ts` so all four agree.
@@ -136,6 +141,17 @@ Full type definitions in `src/types.ts`.
 - **`allstarLineups` scene** (`⭐ Lineups` button) — full-screen board: All-Star Weekend lockup on top, both batting orders side by side with season AVG/HR/RBI and each player's league-team logo. Order preference: scorekeeper lineup (if a game is linked) → drafted roster order → team filter.
 - **Logos are static SVGs in `public/logos/`** — `team-rist.svg`, `team-hiller.svg`, `allstar-2026.svg` (`ALLSTAR_LOGO_URL`). Served same-origin (no Firebase Storage upload); `logoUrl` uses absolute paths like `/logos/team-rist.svg`.
 - **Known mapping caveats** — "Macker" was mapped to `brendan_mcdonald` (only Brendan in the league); "Mike LaFleur" is the push-key id `-OtHHZTZG-3lDFkt196W`.
+
+## Postseason (src/postseason/)
+- **Playoff games live in their own database section, `/postseason`, never in `/games`.** brooksidewiffle.com's server imports our `/games`, `/gameStats`, `/gameSummaries` and `/players` (verified 2026-10-14 from its API: per-game stats keyed by our player ids, standings ids `firebase-…`), so anything written there shows up on the public site as regular season. A playoff game is identified purely by its id prefix `po_`; EVERY game-path read/write goes through `gameRoot(gameId)` (`postseason/paths.ts`) — `` `${gameRoot(id)}games/${id}` ``. New code that touches a game path must do the same.
+- **`useGames()` stays regular-season only** (standings, stats, ticker, derby, playoff picture all build on it). Screens that must list playoff games (scorekeeper game list, controller live-game picker) merge in `usePostseasonGames()`.
+- **The playoff switch (`/postseason/meta.active`) routes nothing by itself.** It (a) makes the scorekeeper's New Game screen default a game to "Playoff game" when the two teams are an open bracket slot — that choice mints the `po_` id and stamps `postseason: {season, round, slot}` on the record, and the scorer can untoggle it; (b) adds the playoff row to the at-bat stat strip; (c) shows the 🏆 Bracket scene button. Turning it off later never moves a game: the id decides, forever.
+- **Finalize**: `po_` games go through `finalizePostseasonGame` (both ControllerRoute and ScorekeeperRoute branch on `isPostseasonGameId`). `computePostseasonFinalization` reuses the regular `computeFinalization` engine and re-points its output: lifetime totals (every playoff game, all seasons) → `postseason/players/{id}/stats`, this season → `…/seasons/{YYYY}`, box score → `postseason/gameSummaries`. It throws on any non-`postseason/` path. Idempotent like the regular finalize. Admin-only (rules).
+- **Bracket** (`bracket.ts`, pure, tested): fixed, single game per round, higher seed hosts. A slot's winner = producer `winnerOverride` (controller dropdown) else the finalized playoff game between the pair. `BRACKET_2026` holds the seeds/schedule; the controller's "Load 2026 bracket" writes it. Next year: add a `BRACKET_2027`-style config and point the button at it.
+- **Overlay**: `bracket` scene (`BracketScene.tsx`), corner logo via `PlayoffLogoBug` + `overlay/logoMode` (`league | auto | qf | sf | final`; auto follows `bracket.currentRound`), and `StatOverlay` shows two rows (season / playoffs) while the switch is on or a playoff game is live — a playoff game's live at-bats merge into the playoff row only.
+- **Rules**: `postseason/{meta,brackets,games,gameStats,liveRunners}` scorer/admin; `postseason/{players,subPlayers,gameSummaries}` admin. Emulator tests in `src/postseason/__tests__/rules.test.ts` (`npm run test:rules`, needs Java).
+- **Season archive**: `node scripts/exportSeason.mjs <label>` writes a read-only full dump + hitting/pitching/standings/games CSVs to `backups/season-<label>/` (gitignored — the dump includes voting tokens). The 2026 regular-season archive was taken 2026-10-14.
+- **Local end-to-end testing**: `firebase emulators:start --only database,auth --project brookside-14b4b` + `VITE_USE_EMULATORS=1 npm run dev` points the app at the emulators (dev builds only).
 
 ## Forfeits
 - **A forfeit is a finalized game scored 1-0 to the winner with no at-bats**, tagged `games/{gameId}/forfeit = { winnerTeamId, forfeitingTeamId }`. It counts in standings, results, and the playoff picture like any other final; it adds nothing to season stats, box scores, or pitcher W/L (all of those are rebuilt from `gameStats`, and a forfeit has none).
@@ -220,7 +236,12 @@ src/
   ticker/
     items.ts                — pure ticker content builders (standings, leaders, results, sponsors, messages) + crawl timing
   playoffs/
-    engine.ts               — pure: standings lines, tiebreak ranking, exact outcome enumeration, bracket projection/reseeding
+    engine.ts               — pure: standings lines, tiebreak ranking, exact outcome enumeration, bracket projection
+  postseason/
+    paths.ts                — po_ prefix + gameRoot(): routes every game path to /postseason for playoff games
+    bracket.ts              — pure fixed-bracket logic: resolveBracket, slotForMatchup, BRACKET_2026, logo round
+    finalize.ts             — pure playoff finalization (wraps computeFinalization, re-points to /postseason)
+    finalizeGame.ts         — Firebase side of playoff finalize
     format.ts               — shared display strings (pct, diff, odds label, game date/time, seed range)
   voting/
     logic.ts                — pure awards-voting rules: links, eligible options, pick cleaning, turnout, tallies, starter awards

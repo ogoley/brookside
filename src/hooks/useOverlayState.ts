@@ -59,6 +59,7 @@ const DEFAULT_OVERLAY: OverlayState = {
   },
   scoreboardBorder: true,
   scoreboardScale: 0.75,
+  logoMode: 'league',
 }
 
 export { DEFAULT_OVERLAY }
@@ -105,6 +106,7 @@ export function useOverlayState() {
           },
           scoreboardBorder: data.scoreboardBorder ?? DEFAULT_OVERLAY.scoreboardBorder,
           scoreboardScale: data.scoreboardScale ?? DEFAULT_OVERLAY.scoreboardScale,
+          logoMode: data.logoMode ?? DEFAULT_OVERLAY.logoMode,
         })
       }
       setLoading(false)

@@ -145,7 +145,7 @@ export function PlayoffScene({ teams, picture }: Props) {
           <div>
             <div style={{ fontFamily: FONT, fontSize: 56, fontWeight: 900, color: '#fff', letterSpacing: '0.1em', lineHeight: 1, textTransform: 'uppercase' }}>Playoff Picture</div>
             <div style={{ fontFamily: FONT, fontSize: 14, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: 8 }}>
-              {spots} teams qualify · top {byes} earn a bye · semifinals reseed
+              {spots} teams qualify · top {byes} earn a bye · fixed bracket
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -192,7 +192,7 @@ export function PlayoffScene({ teams, picture }: Props) {
                 ))}
               </div>
               <div style={{ fontFamily: FONT, fontSize: 13, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.4 }}>
-                Semifinals: 1 seed hosts the lowest remaining seed · 2 seed hosts the other · winners meet in the final
+                Semifinals: 1 seed hosts the 4/5 winner · 2 seed hosts the 3/6 winner · winners meet in the final
               </div>
             </Panel>
 

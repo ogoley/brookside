@@ -5,6 +5,10 @@ import { Link } from 'react-router-dom'
 import { HomeButton } from '../components/HomeButton'
 import { AuthStatus } from '../components/AuthStatus'
 import { db } from '../firebase'
+import { gameRoot, isPostseasonGameId } from '../postseason/paths'
+import { finalizePostseasonGame } from '../postseason/finalizeGame'
+import { usePostseasonGames, usePostseasonMeta } from '../hooks/usePostseason'
+import { PlayoffsControlSection } from '../components/PlayoffsControlSection'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
@@ -27,6 +31,7 @@ const SCENES: { id: SceneName; label: string }[] = [
   { id: 'standings', label: 'Standings' },
   { id: 'leaderboard', label: 'Leaders' },
   { id: 'playoffs', label: 'Playoff Picture' },
+  { id: 'bracket', label: '🏆 Bracket' },  // only listed while playoff mode is on
   { id: 'allstarLineups', label: '⭐ Lineups' },
   { id: 'idle', label: 'Idle' },
 ]
@@ -43,7 +48,10 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
   const { overlay } = useOverlayState()
   const { players } = usePlayers()
   const { matchup } = useMatchup()
-  const { games } = useGames()
+  const { games: regularGames } = useGames()
+  const { games: postseasonGames } = usePostseasonGames()
+  const { meta: postseasonMeta } = usePostseasonMeta()
+  const games = [...regularGames, ...postseasonGames]
   const allstarRosters = useAllstarRosters()
   const { sponsors } = useSponsors()
 
@@ -234,18 +242,18 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
       'game/meta/currentGameId': newGameId,
     }
     if (prevGameId && prevGameId !== newGameId) {
-      flagUpdates[`games/${prevGameId}/isStreamed`] = false
+      flagUpdates[`${gameRoot(prevGameId)}games/${prevGameId}/isStreamed`] = false
     }
     if (newGameId) {
-      flagUpdates[`games/${newGameId}/isStreamed`] = true
+      flagUpdates[`${gameRoot(newGameId)}games/${newGameId}/isStreamed`] = true
     }
     await update(ref(db), flagUpdates)
 
     // Immediately sync new game's state to /game/meta so scorebug reflects it
     if (newGameId) {
       const [gameSnap, runnersSnap] = await Promise.all([
-        get(ref(db, `games/${newGameId}`)),
-        get(ref(db, `liveRunners/${newGameId}`)),
+        get(ref(db, `${gameRoot(newGameId)}games/${newGameId}`)),
+        get(ref(db, `${gameRoot(newGameId)}liveRunners/${newGameId}`)),
       ])
       if (gameSnap.exists()) {
         const g = gameSnap.val()
@@ -297,6 +305,11 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
     if (!gameId) return
     setFinalizing(true)
     try {
+      if (isPostseasonGameId(gameId)) {
+        // Playoff game: stats go to /postseason only — see postseason/finalize.ts
+        await finalizePostseasonGame(gameId, players)
+        return
+      }
       // Read game metadata to find previously-finalized games
       const gamesSnap = await get(ref(db, 'games'))
       const allGames: Record<string, { finalized: boolean; homeTeamId: string; awayTeamId: string; homeScore: number; awayScore: number; inning: number; isTopInning: boolean; outs: number; date: string; isStreamed: boolean; startedAt: number }> = gamesSnap.exists() ? gamesSnap.val() : {}
@@ -311,7 +324,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
       const previousAtBats: Array<AtBatRecord & { gameId: string }> = []
       for (const [gId, gRecord] of prevGameEntries) {
         previousGames[gId] = gRecord
-        const snap = await get(ref(db, `gameStats/${gId}`))
+        const snap = await get(ref(db, `${gameRoot(gId)}gameStats/${gId}`))
         if (snap.exists()) {
           const records = snap.val() as Record<string, AtBatRecord>
           for (const ab of Object.values(records)) {
@@ -321,7 +334,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
       }
 
       // Read current game at-bats
-      const currentSnap = await get(ref(db, `gameStats/${gameId}`))
+      const currentSnap = await get(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`))
       const currentGameAtBats: AtBatRecord[] = currentSnap.exists()
         ? Object.values(currentSnap.val() as Record<string, AtBatRecord>)
         : []
@@ -354,9 +367,9 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
     const gameId = game.currentGameId
     if (!gameId) return
     await Promise.all([
-      remove(ref(db, `games/${gameId}`)),
-      remove(ref(db, `gameStats/${gameId}`)),
-      remove(ref(db, `liveRunners/${gameId}`)),
+      remove(ref(db, `${gameRoot(gameId)}games/${gameId}`)),
+      remove(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`)),
+      remove(ref(db, `${gameRoot(gameId)}liveRunners/${gameId}`)),
       update(ref(db, 'game/meta'), { currentGameId: null }),
     ])
     setConfirmCancelGame(false)
@@ -365,13 +378,13 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
   const devClearAtBats = async () => {
     const gameId = game.currentGameId
     if (!gameId) return
-    await remove(ref(db, `gameStats/${gameId}`))
+    await remove(ref(db, `${gameRoot(gameId)}gameStats/${gameId}`))
   }
 
   const devResetRunners = async () => {
     const gameId = game.currentGameId
     if (!gameId) return
-    await set(ref(db, `liveRunners/${gameId}`), { first: null, second: null, third: null })
+    await set(ref(db, `${gameRoot(gameId)}liveRunners/${gameId}`), { first: null, second: null, third: null })
   }
 
   const resetSeasonStats = async () => {
@@ -622,10 +635,15 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
         {/* ── LEFT COLUMN ── */}
         <div className="flex flex-col gap-4">
 
+          {/* PLAYOFFS — switch, bracket, corner logo */}
+          {!allstar && (
+            <PlayoffsControlSection teams={teams} logoMode={overlay.logoMode} />
+          )}
+
           {/* SCENE SWITCHER */}
           <Section title="Scene">
             <div className="grid grid-cols-2 gap-3">
-              {SCENES.map((s) => (
+              {SCENES.filter(s => s.id !== 'bracket' || postseasonMeta.active || overlay.activeScene === 'bracket').map((s) => (
                 <TouchBtn
                   key={s.id}
                   onClick={() => { setScene(s.id); setInsightsExpanded(false) }}

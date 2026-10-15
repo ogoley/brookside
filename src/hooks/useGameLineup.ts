@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ref, onValue } from 'firebase/database'
 import { db } from '../firebase'
+import { gameRoot } from '../postseason/paths'
 import type { GameLineup } from '../types'
 
 export function useGameLineup(gameId: string | null, teamId: string | null) {
@@ -8,7 +9,7 @@ export function useGameLineup(gameId: string | null, teamId: string | null) {
 
   useEffect(() => {
     if (!gameId || !teamId) { setLineup([]); return }
-    const unsub = onValue(ref(db, `games/${gameId}/lineups/${teamId}`), (snap) => {
+    const unsub = onValue(ref(db, `${gameRoot(gameId)}games/${gameId}/lineups/${teamId}`), (snap) => {
       setLineup(snap.exists() ? snap.val() : [])
     })
     return unsub
