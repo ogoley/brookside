@@ -22,7 +22,14 @@ voting-related. CLAUDE.md → "Season awards voting" has the condensed engineeri
   On another machine regenerate it: `node scripts/voteLinks.mjs` (needs `service-account.json`),
   or `/vote-admin` → Voters & links → Download CSV / per-player "Copy invite".
 
-**Nothing has been sent in Spond yet.** Next command = "send the Spond invites":
+**Invites SENT 2026-10-14 (evening): 55 of 57 via Spond DM** from the Dragon Ogoley account (one blank
+line between paragraphs; every send verified recipient + exact text + link before sending; `sent`
+column in `vote-links/vote-links.csv`). **Not sent:** Dragon Ogoley (the sending account — give him
+his link directly) and **Thai Bui** (Spond opens an existing custom-named conversation for him that
+may be a group chat — send his link by hand). Spond quirks: new chats ignore a scripted Send click
+(needs a real click); blank lines must contain a space or Spond doubles them.
+
+Original send plan (kept for next year):
 1. Claude in Chrome needs site permission for **spond.com** (extension → site access).
 2. Send ONE test DM, confirm it renders with a working link, then the other 56 — one DM per
    player, text = the CSV `message` column, recipient = `spondName` in the `spondGroup`
