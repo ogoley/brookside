@@ -61,6 +61,10 @@ const DEFAULT_OVERLAY: OverlayState = {
   scoreboardBorder: true,
   scoreboardScale: 0.75,
   roundTag: 'off',
+  announcers: {
+    visible: false,
+    people: [{ name: '', role: '' }, { name: '', role: '' }, { name: '', role: '' }],
+  },
 }
 
 export { DEFAULT_OVERLAY }
@@ -108,6 +112,14 @@ export function useOverlayState() {
           scoreboardBorder: data.scoreboardBorder ?? DEFAULT_OVERLAY.scoreboardBorder,
           scoreboardScale: data.scoreboardScale ?? DEFAULT_OVERLAY.scoreboardScale,
           roundTag: data.roundTag ?? DEFAULT_OVERLAY.roundTag,
+          announcers: {
+            visible: !!data.announcers?.visible,
+            // RTDB may hand back a sparse array/object — normalise to 3 slots
+            people: [0, 1, 2].map(i => ({
+              name: data.announcers?.people?.[i]?.name ?? '',
+              role: data.announcers?.people?.[i]?.role ?? '',
+            })),
+          },
         })
       }
       setLoading(false)

@@ -84,6 +84,19 @@ export interface InsightsState {
   visibleCount: number // 0–4: how many points are currently revealed
 }
 
+/** /overlay/announcers — booth ID card, bottom-right. Always 3 slots (blank
+ *  name = slot unused); shown top-to-bottom in slot order. Vertical on
+ *  purpose: the booth seating changes, so nothing implies left/right. */
+export interface Announcer {
+  name: string
+  role: string
+}
+
+export interface AnnouncersState {
+  visible: boolean
+  people: Announcer[]
+}
+
 // ── Sponsors ─────────────────────────────────────────────────────────────────
 
 // /config/sponsors/{sponsorId} — admin-managed (the /config path is
@@ -155,6 +168,7 @@ export interface OverlayState {
   /** Playoff round tag in the notch under the scorebug: off, a fixed round,
    *  or 'auto' (follows the bracket's current round). */
   roundTag: RoundTagMode
+  announcers: AnnouncersState
 }
 
 export type RoundTagMode = 'off' | 'auto' | 'qf' | 'sf' | 'final'

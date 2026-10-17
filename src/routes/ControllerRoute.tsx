@@ -9,6 +9,7 @@ import { gameRoot, isPostseasonGameId } from '../postseason/paths'
 import { finalizePostseasonGame } from '../postseason/finalizeGame'
 import { usePostseasonGames, usePostseasonMeta } from '../hooks/usePostseason'
 import { PlayoffsControlSection } from '../components/PlayoffsControlSection'
+import { AnnouncersControl } from '../components/AnnouncersControl'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
@@ -661,6 +662,8 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
               >
                 Insights
               </TouchBtn>
+              {/* Booth ID card — rides on top of any scene; one tap show/hide, one tap edit */}
+              <AnnouncersControl announcers={overlay.announcers} />
             </div>
 
             {/* Insights staging panel */}

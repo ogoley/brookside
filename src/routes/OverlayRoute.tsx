@@ -13,6 +13,7 @@ import { usePlayoffPicture } from '../hooks/usePlayoffPicture'
 import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene, PlayoffScene, BracketScene } from '../scenes'
 import { usePostseason } from '../hooks/usePostseason'
 import { resolveRoundTag, ROUND_LABEL } from '../postseason/bracket'
+import { AnnouncerCard } from '../components/AnnouncerCard'
 import { OverlayErrorBoundary } from '../components/OverlayErrorBoundary'
 import { SponsorInterstitial } from '../components/SponsorInterstitial'
 import { Ticker, TICKER_HEIGHT } from '../components/Ticker'
@@ -31,6 +32,7 @@ function OverlayContent() {
   const { sponsors } = useSponsors()
   const { picture } = usePlayoffPicture()
   const { bracket } = usePostseason()
+  const announcersOnAir = overlay.announcers.visible && overlay.announcers.people.some(p => p.name.trim())
   const tagRound = resolveRoundTag(overlay.roundTag, bracket)
   const roundTag = tagRound
     ? { season: bracket?.season ?? new Date().getFullYear(), label: bracket?.champion && overlay.roundTag === 'auto' ? 'Champions' : ROUND_LABEL[tagRound] }
@@ -186,6 +188,12 @@ function OverlayContent() {
 
       {/* League logo bug — rendered last so it sits above all scenes;
           lifts above the ticker while it's on air */}
+      {/* Booth ID card — above every scene; clears the stat strip and ticker */}
+      <AnnouncerCard
+        announcers={overlay.announcers}
+        bottom={24 + bottomInset + (overlay.statOverlay.visible && sceneKey === 'game' ? 260 : 0)}
+      />
+
       {config.leagueLogo && (
         <img
           src={config.leagueLogo}
@@ -198,7 +206,7 @@ function OverlayContent() {
             width: 96,
             height: 96,
             objectFit: 'contain',
-            opacity: overlay.statOverlay.visible && sceneKey === 'game' ? 0 : 0.7,  // the stat strip owns the bottom-right while it is up
+            opacity: (overlay.statOverlay.visible && sceneKey === 'game') || announcersOnAir ? 0 : 0.7,  // the stat strip / booth card own the bottom-right while up
             pointerEvents: 'none',
           }}
         />
