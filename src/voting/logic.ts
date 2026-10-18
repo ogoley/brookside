@@ -4,7 +4,7 @@
 
 import { isExhibitionTeam } from '../allstar'
 import type {
-  Award, AwardsMap, Ballot, BallotsMap, PlayersMap, TeamsMap, VotersMap, VotingExcluded,
+  Award, AwardKind, AwardsMap, Ballot, BallotsMap, PlayersMap, TeamsMap, VotersMap, VotingExcluded,
 } from '../types'
 
 /** Links go out on the league domain. Use www: the bare ogoley.com redirect
@@ -341,4 +341,22 @@ export function tallyAward(awardId: string, ballots: BallotsMap): { rows: TallyR
     rows.push({ id, votes, rank })
   })
   return { rows, counted }
+}
+
+// ── Awards night ─────────────────────────────────────────────────────────────
+
+/** The rows revealed on air for one award: everyone ranked 1st–3rd (ties share
+ *  a rank, so a tie for 3rd can make it four rows), with names and team ids
+ *  denormalised so the overlay can draw them without reading /voting. */
+export function revealTopRows(
+  award: { id: string; kind: AwardKind },
+  ballots: BallotsMap,
+  players: PlayersMap,
+  teams: TeamsMap,
+): { top: { id: string; name: string; teamId: string; votes: number; rank: number }[]; counted: number } {
+  const { rows, counted } = tallyAward(award.id, ballots)
+  const top = rows.filter(r => r.rank <= 3).slice(0, 4).map(r => award.kind === 'team'
+    ? { id: r.id, name: teams[r.id]?.name ?? r.id, teamId: r.id, votes: r.votes, rank: r.rank }
+    : { id: r.id, name: players[r.id]?.name ?? r.id, teamId: players[r.id]?.teamId ?? '', votes: r.votes, rank: r.rank })
+  return { top, counted }
 }

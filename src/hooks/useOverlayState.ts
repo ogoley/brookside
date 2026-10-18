@@ -65,6 +65,7 @@ const DEFAULT_OVERLAY: OverlayState = {
     visible: false,
     people: [{ name: '', role: '' }, { name: '', role: '' }, { name: '', role: '' }],
   },
+  awardsReveal: { title: '', board: {}, results: {}, spotlight: null },
 }
 
 export { DEFAULT_OVERLAY }
@@ -119,6 +120,12 @@ export function useOverlayState() {
               name: data.announcers?.people?.[i]?.name ?? '',
               role: data.announcers?.people?.[i]?.role ?? '',
             })),
+          },
+          awardsReveal: {
+            title: data.awardsReveal?.title ?? '',
+            board: data.awardsReveal?.board ?? {},
+            results: data.awardsReveal?.results ?? {},
+            spotlight: data.awardsReveal?.spotlight ?? null,
           },
         })
       }

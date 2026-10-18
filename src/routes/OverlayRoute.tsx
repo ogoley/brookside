@@ -10,7 +10,7 @@ import { useStandings } from '../hooks/useStandings'
 import { useGames } from '../hooks/useGames'
 import { useSponsors } from '../hooks/useSponsors'
 import { usePlayoffPicture } from '../hooks/usePlayoffPicture'
-import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene, PlayoffScene, BracketScene } from '../scenes'
+import { GameScene, StatCardScene, MatchupScene, IdleScene, StandingsScene, LeaderboardScene, InsightsScene, AllStarLineupScene, PlayoffScene, BracketScene, AwardsScene } from '../scenes'
 import { usePostseason } from '../hooks/usePostseason'
 import { resolveRoundTag, ROUND_LABEL } from '../postseason/bracket'
 import { AnnouncerCard } from '../components/AnnouncerCard'
@@ -141,6 +141,18 @@ function OverlayContent() {
             <BracketScene teams={teams} bracket={bracket} />
           </motion.div>
         )}
+        {sceneKey === 'awards' && (
+          <motion.div
+            key="awards"
+            className="absolute inset-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <AwardsScene state={overlay.awardsReveal} teams={teams} leagueLogo={config.leagueLogo} />
+          </motion.div>
+        )}
         {sceneKey === 'insights' && (
           <motion.div
             key="insights"
@@ -206,7 +218,7 @@ function OverlayContent() {
             width: 96,
             height: 96,
             objectFit: 'contain',
-            opacity: (overlay.statOverlay.visible && sceneKey === 'game') || announcersOnAir ? 0 : 0.7,  // the stat strip / booth card own the bottom-right while up
+            opacity: (overlay.statOverlay.visible && sceneKey === 'game') || announcersOnAir || sceneKey === 'awards' ? 0 : 0.7,  // the stat strip / booth card own the bottom-right while up
             pointerEvents: 'none',
           }}
         />

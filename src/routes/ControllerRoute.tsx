@@ -10,6 +10,7 @@ import { finalizePostseasonGame } from '../postseason/finalizeGame'
 import { usePostseasonGames, usePostseasonMeta } from '../hooks/usePostseason'
 import { PlayoffsControlSection } from '../components/PlayoffsControlSection'
 import { AnnouncersControl } from '../components/AnnouncersControl'
+import { AwardsRevealControl } from '../components/AwardsRevealControl'
 import { useGameData } from '../hooks/useGameData'
 import { useTeams } from '../hooks/useTeams'
 import { useOverlayState } from '../hooks/useOverlayState'
@@ -68,6 +69,7 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
   const [forceIsTop, setForceIsTop] = useState(true)
   const [insightsModalOpen, setInsightsModalOpen] = useState(false)
   const [insightsExpanded, setInsightsExpanded] = useState(false)
+  const [awardsOpen, setAwardsOpen] = useState(false)
   const [insightsTitle, setInsightsTitle] = useState('')
   const [insightsPoints, setInsightsPoints] = useState(['', '', '', ''])
 
@@ -662,9 +664,27 @@ export function ControllerRoute({ allstar = false }: { allstar?: boolean }) {
               >
                 Insights
               </TouchBtn>
+              {/* Awards night — puts the (sealed) board on air and opens the reveal panel */}
+              <TouchBtn
+                onClick={() => { setScene('awards'); setInsightsExpanded(false); setAwardsOpen(true) }}
+                active={overlay.activeScene === 'awards'}
+                className="h-16 text-base font-bold"
+              >
+                🏅 Awards
+              </TouchBtn>
               {/* Booth ID card — rides on top of any scene; one tap show/hide, one tap edit */}
               <AnnouncersControl announcers={overlay.announcers} />
             </div>
+            {awardsOpen && (
+              <AwardsRevealControl
+                state={overlay.awardsReveal}
+                players={players}
+                teams={teams}
+                onAir={overlay.activeScene === 'awards'}
+                onPutOnAir={() => setScene('awards')}
+                onClose={() => setAwardsOpen(false)}
+              />
+            )}
 
             {/* Insights staging panel */}
             {insightsExpanded && (() => {

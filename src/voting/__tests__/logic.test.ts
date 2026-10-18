@@ -3,7 +3,7 @@ import type { AwardsMap, BallotsMap, PlayersMap, TeamsMap, VotersMap } from '../
 import {
   voteLink, sortedAwards, rosterPlayerIds, ballotTeamIds, optionsForAward, cleanPicks,
   buildBallotUpdates, linksByPlayer, newVoterUpdates, linksCsv, inviteMessage,
-  turnoutByTeam, tallyAward,
+  turnoutByTeam, tallyAward, revealTopRows,
   VOTING_DEADLINE_2026, votingAccepting, formatDeadline, easternLocalToEpoch, epochToEasternLocal, reissueAllUpdates,
 } from '../logic'
 
@@ -209,5 +209,25 @@ describe('reissueAllUpdates', () => {
     expect(u).not.toHaveProperty('voting/voters/keep')
     expect(u['voting/voters/new1']).toEqual({ playerId: 'alice', createdAt: 500 })
     expect(u['voting/voters/new2']).toEqual({ playerId: 'bob', createdAt: 500, votedAt: 99 })
+  })
+})
+
+describe('revealTopRows', () => {
+  it('top 3 ranks with names + team ids; a tie for a place keeps both', () => {
+    const ballots = {
+      a: { token: '', picks: { mvp: 'cara' }, submittedAt: 1 },
+      b: { token: '', picks: { mvp: 'cara' }, submittedAt: 1 },
+      c: { token: '', picks: { mvp: 'bob' }, submittedAt: 1 },
+      d: { token: '', picks: { mvp: 'alice', team: 'red' }, submittedAt: 1 },
+    } as BallotsMap
+    expect(revealTopRows({ id: 'mvp', kind: 'player' }, ballots, PLAYERS, TEAMS)).toEqual({
+      counted: 4,
+      top: [
+        { id: 'cara', name: 'Cara C', teamId: 'blue', votes: 2, rank: 1 },
+        { id: 'alice', name: 'Alice A', teamId: 'red', votes: 1, rank: 2 },
+        { id: 'bob', name: 'Bob B', teamId: 'red', votes: 1, rank: 2 },
+      ],
+    })
+    expect(revealTopRows({ id: 'team', kind: 'team' }, ballots, PLAYERS, TEAMS).top).toEqual([{ id: 'red', name: 'Red', teamId: 'red', votes: 1, rank: 1 }])
   })
 })

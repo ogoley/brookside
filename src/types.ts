@@ -169,11 +169,27 @@ export interface OverlayState {
    *  or 'auto' (follows the bracket's current round). */
   roundTag: RoundTagMode
   announcers: AnnouncersState
+  awardsReveal: AwardsRevealState
+}
+
+/** Awards-night board (`awards` scene). The controller copies each award's
+ *  name onto `board` when the scene opens, and an award's top-3 tally onto
+ *  `results` only at the moment it's revealed — so the public overlay data
+ *  never holds an unrevealed winner. */
+export interface AwardRevealCard { name: string; order: number; description?: string; icon?: string | null }
+export interface AwardRevealRow { id: string; name: string; teamId: string; votes: number; rank: number }
+export interface AwardRevealResult { top: AwardRevealRow[]; counted: number }
+export interface AwardsRevealState {
+  title: string
+  board: Record<string, AwardRevealCard>
+  results: Record<string, AwardRevealResult>
+  /** Award blown up centre-screen, or null for the board */
+  spotlight: string | null
 }
 
 export type RoundTagMode = 'off' | 'auto' | 'qf' | 'sf' | 'final'
 
-export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'bracket' | 'insights' | 'allstarLineups' | 'idle'
+export type SceneName = 'game' | 'statCard' | 'matchup' | 'standings' | 'leaderboard' | 'playoffs' | 'bracket' | 'insights' | 'allstarLineups' | 'awards' | 'idle'
 
 export interface HittingStats {
   gp?: number       // games played
